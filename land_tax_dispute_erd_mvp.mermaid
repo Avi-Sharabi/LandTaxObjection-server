@@ -1,0 +1,112 @@
+erDiagram
+
+  users {
+    UUID id PK
+    TEXT email
+    TEXT full_name
+    user_role role
+    TEXT phone
+    BOOL is_active
+  }
+
+  clients {
+    UUID id PK
+    TEXT display_name
+    TEXT abn
+    TEXT contact_email
+    UUID assigned_accountant_id FK
+  }
+
+  properties {
+    UUID id PK
+    UUID client_id FK
+    TEXT address
+    TEXT suburb
+    jurisdiction state
+    TEXT postcode
+    NUMERIC land_area_sqm
+    TEXT zoning
+  }
+
+  valuation_notices {
+    UUID id PK
+    UUID property_id FK
+    DATE valuation_date
+    NUMERIC assessed_land_value
+    NUMERIC benchmark_uplift_pct
+    TEXT blob_storage_url
+  }
+
+  dispute_cases {
+    UUID id PK
+    TEXT case_reference
+    UUID client_id FK
+    UUID property_id FK
+    UUID valuation_notice_id FK
+    UUID assigned_accountant_id FK
+    UUID assigned_lawyer_id FK
+    jurisdiction jurisdiction
+    dispute_status status
+    DATE statutory_deadline
+    BOOL flag_heritage
+    BOOL flag_easement
+    BOOL flag_flood_zone
+    BOOL flag_environmental
+    BOOL flag_zoning
+    SMALLINT evidence_strength_score
+    outcome_result outcome
+    NUMERIC original_assessed_value
+    NUMERIC final_agreed_value
+    NUMERIC tax_saving_achieved
+  }
+
+  dispute_legal_grounds {
+    UUID id PK
+    UUID dispute_id FK
+    legal_ground ground
+    TEXT notes
+    BOOL validated
+  }
+
+  comparable_sales {
+    UUID id PK
+    UUID dispute_id FK
+    TEXT property_address
+    DATE sale_date
+    NUMERIC sale_price_total
+    NUMERIC improvements_value
+    NUMERIC adjusted_land_value
+    NUMERIC land_area_sqm
+  }
+
+  site_constraints {
+    UUID id PK
+    UUID dispute_id FK
+    constraint_type constraint_type
+    TEXT description
+    TEXT legal_argument
+    TEXT document_blob_url
+  }
+
+  dispute_documents {
+    UUID id PK
+    UUID dispute_id FK
+    document_type document_type
+    TEXT filename
+    TEXT blob_storage_url
+    UUID uploaded_by FK
+  }
+
+  clients         }o--||  users                : "assigned accountant"
+  clients         ||--o{  properties           : "owns"
+  properties      ||--o{  valuation_notices    : "has"
+  properties      ||--o{  dispute_cases        : "subject of"
+  dispute_cases   }o--||  clients              : "belongs to"
+  dispute_cases   }o--||  valuation_notices    : "disputes"
+  dispute_cases   }o--o|  users                : "accountant"
+  dispute_cases   }o--o|  users                : "lawyer"
+  dispute_cases   ||--o{  dispute_legal_grounds : "must have"
+  dispute_cases   ||--o{  comparable_sales     : "evidenced by"
+  dispute_cases   ||--o{  site_constraints     : "constrained by"
+  dispute_cases   ||--o{  dispute_documents    : "has files"
+  dispute_documents }o--o| users               : "uploaded by"
