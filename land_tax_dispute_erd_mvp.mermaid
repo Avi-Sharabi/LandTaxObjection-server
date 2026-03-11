@@ -14,7 +14,12 @@ erDiagram
     TEXT display_name
     TEXT abn
     TEXT contact_email
+    TEXT contact_phone
+    client_status status
     UUID assigned_accountant_id FK
+    TEXT fyi_client_id
+    TEXT valuation_blob_url
+    TIMESTAMPTZ tc_accepted_at
   }
 
   properties {
@@ -48,6 +53,9 @@ erDiagram
     jurisdiction jurisdiction
     dispute_status status
     DATE statutory_deadline
+    BOOL no_legal_ground_flagged
+    TIMESTAMPTZ client_approval_requested_at
+    TIMESTAMPTZ client_approved_at
     BOOL flag_heritage
     BOOL flag_easement
     BOOL flag_flood_zone
@@ -58,6 +66,7 @@ erDiagram
     NUMERIC original_assessed_value
     NUMERIC final_agreed_value
     NUMERIC tax_saving_achieved
+    NUMERIC invoice_amount
   }
 
   dispute_legal_grounds {
@@ -97,16 +106,16 @@ erDiagram
     UUID uploaded_by FK
   }
 
-  clients         }o--||  users                : "assigned accountant"
-  clients         ||--o{  properties           : "owns"
-  properties      ||--o{  valuation_notices    : "has"
-  properties      ||--o{  dispute_cases        : "subject of"
-  dispute_cases   }o--||  clients              : "belongs to"
-  dispute_cases   }o--||  valuation_notices    : "disputes"
-  dispute_cases   }o--o|  users                : "accountant"
-  dispute_cases   }o--o|  users                : "lawyer"
-  dispute_cases   ||--o{  dispute_legal_grounds : "must have"
-  dispute_cases   ||--o{  comparable_sales     : "evidenced by"
-  dispute_cases   ||--o{  site_constraints     : "constrained by"
-  dispute_cases   ||--o{  dispute_documents    : "has files"
-  dispute_documents }o--o| users               : "uploaded by"
+  clients         }o--||  users                 : "assigned accountant"
+  clients         ||--o{  properties             : "owns"
+  properties      ||--o{  valuation_notices      : "has"
+  properties      ||--o{  dispute_cases          : "subject of"
+  dispute_cases   }o--||  clients                : "belongs to"
+  dispute_cases   }o--||  valuation_notices      : "disputes"
+  dispute_cases   }o--o|  users                  : "accountant"
+  dispute_cases   }o--o|  users                  : "lawyer"
+  dispute_cases   ||--o{  dispute_legal_grounds  : "must have"
+  dispute_cases   ||--o{  comparable_sales       : "evidenced by"
+  dispute_cases   ||--o{  site_constraints       : "constrained by"
+  dispute_cases   ||--o{  dispute_documents      : "has files"
+  dispute_documents }o--o| users                 : "uploaded by"

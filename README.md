@@ -43,6 +43,14 @@ $ npm run start:dev
 # production mode
 $ npm run start:prod
 ```
+## run azure blob-local
+```bash
+$ docker run -p 10000:10000 mcr.microsoft.com/azure-storage/azurite
+```
+## run postgre local
+```bash
+$ docker compose up -d
+```
 
 ## Run tests
 

@@ -1,0 +1,52 @@
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, ManyToOne, OneToMany, JoinColumn } from 'typeorm';
+import { Client } from '../../clients/entities/client.entity';
+import { ValuationNotice } from '../../valuation-notices/entities/valuation-notice.entity';
+import { DisputeCase } from '../../dispute-cases/entities/dispute-case.entity';
+
+export enum Jurisdiction {
+  NSW = 'NSW',
+  VIC = 'VIC',
+  QLD = 'QLD',
+  WA = 'WA',
+}
+
+@Entity('properties')
+export class Property {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column({ type: 'uuid', nullable: false, name: 'client_id' })
+  client_id: string;
+
+  @Column({ type: 'text', nullable: false })
+  address: string;
+
+  @Column({ type: 'text', nullable: false })
+  suburb: string;
+
+  @Column({ type: 'enum', enum: Jurisdiction, nullable: false })
+  state: Jurisdiction;
+
+  @Column({ type: 'text', nullable: false })
+  postcode: string;
+
+  @Column({ type: 'numeric', precision: 12, scale: 2, nullable: true })
+  land_area_sqm: number;
+
+  @Column({ type: 'text', nullable: true })
+  zoning: string;
+
+  @CreateDateColumn({ type: 'timestamptz' })
+  created_at: Date;
+
+  // Relations
+  @ManyToOne(() => Client, (client) => client.properties, { nullable: false, onDelete: 'CASCADE' })
+  @JoinColumn({ name: 'client_id' })
+  client: Client;
+
+  @OneToMany(() => ValuationNotice, (notice) => notice.property)
+  valuation_notices: ValuationNotice[];
+
+  @OneToMany(() => DisputeCase, (disputeCase) => disputeCase.property)
+  dispute_cases: DisputeCase[];
+}
