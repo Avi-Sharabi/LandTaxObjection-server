@@ -1,26 +1,61 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
+import { ValuationNotice } from './entities/valuation-notice.entity';
 import { CreateValuationNoticeDto } from './dto/create-valuation-notice.dto';
 import { UpdateValuationNoticeDto } from './dto/update-valuation-notice.dto';
+import { AzureBlobService } from '../../common/azure-blob/azure-blob.service';
 
 @Injectable()
 export class ValuationNoticesService {
-  create(createValuationNoticeDto: CreateValuationNoticeDto) {
-    return 'This action adds a new valuationNotice';
+  constructor(
+    @InjectRepository(ValuationNotice)
+    private readonly valuationNoticesRepository: Repository<ValuationNotice>,
+    private readonly azureBlobService: AzureBlobService,
+  ) { }
+
+  private mapWithFileUrl(notice: ValuationNotice) {
+    return {
+      ...notice,
+      file_url: notice.file_path
+        ? this.azureBlobService.getFileUrl(notice.file_path)
+        : null,
+      file_path: undefined,
+    };
   }
 
-  findAll() {
-    return `This action returns all valuationNotices`;
+  create(dto: CreateValuationNoticeDto): Promise<ValuationNotice> {
+    const notice = this.valuationNoticesRepository.create(dto);
+    return this.valuationNoticesRepository.save(notice);
   }
 
-  findOne(id: number) {
-    return `This action returns a #${id} valuationNotice`;
+  async findAll() {
+    const notices = await this.valuationNoticesRepository.find({
+      relations: ['property', 'dispute_cases'],
+    });
+    return notices.map(n => this.mapWithFileUrl(n));
   }
 
-  update(id: number, updateValuationNoticeDto: UpdateValuationNoticeDto) {
-    return `This action updates a #${id} valuationNotice`;
+  async findOne(id: string) {
+    const notice = await this.valuationNoticesRepository.findOne({
+      where: { id },
+      relations: ['property', 'dispute_cases'],
+    });
+    if (!notice) throw new NotFoundException(`Valuation notice #${id} not found`);
+    return this.mapWithFileUrl(notice);
   }
 
-  remove(id: number) {
-    return `This action removes a #${id} valuationNotice`;
+  async update(id: string, dto: UpdateValuationNoticeDto) {
+    const notice = await this.valuationNoticesRepository.findOne({ where: { id } });
+    if (!notice) throw new NotFoundException(`Valuation notice #${id} not found`);
+    Object.assign(notice, dto);
+    const updated = await this.valuationNoticesRepository.save(notice);
+    return this.mapWithFileUrl(updated);
+  }
+
+  async remove(id: string): Promise<void> {
+    const notice = await this.valuationNoticesRepository.findOne({ where: { id } });
+    if (!notice) throw new NotFoundException(`Valuation notice #${id} not found`);
+    await this.valuationNoticesRepository.remove(notice);
   }
 }

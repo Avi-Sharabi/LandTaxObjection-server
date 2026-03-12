@@ -19,16 +19,16 @@ export class ValuationNoticesController {
 
   @Get(':id')
   findOne(@Param('id') id: string) {
-    return this.valuationNoticesService.findOne(+id);
+    return this.valuationNoticesService.findOne(id);
   }
 
   @Patch(':id')
   update(@Param('id') id: string, @Body() updateValuationNoticeDto: UpdateValuationNoticeDto) {
-    return this.valuationNoticesService.update(+id, updateValuationNoticeDto);
+    return this.valuationNoticesService.update(id, updateValuationNoticeDto);
   }
 
   @Delete(':id')
   remove(@Param('id') id: string) {
-    return this.valuationNoticesService.remove(+id);
+    return this.valuationNoticesService.remove(id);
   }
 }

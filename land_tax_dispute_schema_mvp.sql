@@ -92,19 +92,45 @@ CREATE TABLE users (
 -- 2. CLIENTS  (prospects + active clients in one table)
 -- ═══════════════════════════════════════════════════════════
 
+
 CREATE TABLE clients (
-  id                      UUID          PRIMARY KEY DEFAULT uuid_generate_v4(),
-  display_name            TEXT          NOT NULL,
-  abn                     TEXT,
-  contact_email           TEXT,
-  contact_phone           TEXT,
-  status                  client_status NOT NULL DEFAULT 'prospect',
-  assigned_accountant_id  UUID          REFERENCES users(id),
-  fyi_client_id           TEXT,                     -- FYI external ref (UC-02)
-  valuation_blob_url      TEXT,                     -- initial uploaded VG notice
-  tc_accepted_at          TIMESTAMPTZ,              -- when T&C was signed
-  created_at              TIMESTAMPTZ   NOT NULL DEFAULT NOW(),
-  updated_at              TIMESTAMPTZ   NOT NULL DEFAULT NOW()
+  -- Core
+  id                     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  status                 client_status_enum NOT NULL DEFAULT 'prospect',
+
+  -- Identity
+  name                   TEXT NOT NULL,
+  email                  TEXT,
+  phone                  TEXT,
+  mobile                 TEXT,
+
+  -- Address
+  address                TEXT,
+  city                   TEXT,
+  region                 TEXT,
+  postcode               TEXT,
+  country                TEXT,
+
+  -- Business
+  business_number        TEXT,
+  company_number         TEXT,
+  client_code            TEXT,
+  source                 TEXT,
+  source_id              TEXT,
+
+  -- FYI Metadata
+  fyi_id                 TEXT,
+  fyi_uuid               TEXT,
+  fyi_manager_email      TEXT,
+  fyi_partner_email      TEXT,
+
+  -- Internal
+  assigned_accountant_id UUID REFERENCES users(id) ON DELETE SET NULL,
+  tc_accepted_at         TIMESTAMPTZ,
+
+  -- Timestamps
+  created_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at             TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 -- ═══════════════════════════════════════════════════════════
@@ -240,6 +266,8 @@ CREATE TABLE dispute_documents (
 
 -- ── INDEXES ─────────────────────────────────────────────────
 
+CREATE INDEX idx_clients_status            ON clients(status);
+CREATE INDEX idx_clients_email             ON clients(email);
 CREATE INDEX idx_clients_status            ON clients(status);
 CREATE INDEX idx_clients_accountant        ON clients(assigned_accountant_id);
 CREATE INDEX idx_dispute_cases_client      ON dispute_cases(client_id);

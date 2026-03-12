@@ -10,6 +10,7 @@ import { DisputeCasesController } from './dispute-cases.controller';
 import { DisputeCasesService } from './dispute-cases.service';
 import { DisputeCase } from './entities/dispute-case.entity';
 import { AzureBlobModule } from 'src/common/azure-blob/azure-blob.module';
+import { AzureEmailService } from 'src/common/azure-email/azure-email.service';
 
 @Module({
   imports: [
@@ -25,6 +26,6 @@ import { AzureBlobModule } from 'src/common/azure-blob/azure-blob.module';
     ]),
   ],
   controllers: [DisputeCasesController],
-  providers: [DisputeCasesService],
+  providers: [DisputeCasesService, AzureEmailService],
 })
 export class DisputeCasesModule { }

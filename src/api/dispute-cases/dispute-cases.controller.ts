@@ -38,21 +38,14 @@ export class DisputeCasesController {
 
 
     // Validate PDF if provided
-    if (intakeDto.pdfBase64) {
-      if (!intakeDto.pdfFileName) {
-        throw new BadRequestException('PDF filename is required when PDF is provided');
-      }
+    if (intakeDto.attachment) {
 
       // Validate base64 format
       const base64Regex = /^[A-Za-z0-9+/=]+$/;
-      if (!base64Regex.test(intakeDto.pdfBase64)) {
+      if (!base64Regex.test(intakeDto.attachment)) {
         throw new BadRequestException('Invalid base64 format for PDF');
       }
 
-      // Validate PDF filename extension
-      if (!intakeDto.pdfFileName.toLowerCase().endsWith('.pdf')) {
-        throw new BadRequestException('Only PDF files are allowed');
-      }
     }
 
     return this.disputeCasesService.submitIntakeApplication(intakeDto);

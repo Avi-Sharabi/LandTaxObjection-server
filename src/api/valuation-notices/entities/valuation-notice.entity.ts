@@ -23,7 +23,7 @@ export class ValuationNotice {
   notice_reference: string | null;
 
   @Column({ type: 'text', nullable: true })
-  blob_storage_url: string | null;
+  file_path: string | null;
 
   @CreateDateColumn({ type: 'timestamptz' })
   created_at: Date;
