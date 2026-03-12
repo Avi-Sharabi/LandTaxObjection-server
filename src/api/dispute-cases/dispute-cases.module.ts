@@ -11,6 +11,9 @@ import { DisputeCasesService } from './dispute-cases.service';
 import { DisputeCase } from './entities/dispute-case.entity';
 import { AzureBlobModule } from 'src/common/azure-blob/azure-blob.module';
 import { AzureEmailService } from 'src/common/azure-email/azure-email.service';
+import { DisputeIntakeOrchestrator } from './intake/dispute-intake.orchestrator';
+import { FyiClientHandler } from './intake/fyi-client.handler';
+import { PdfStorageHandler } from './intake/pdf-storage.handler';
 
 @Module({
   imports: [
@@ -26,6 +29,12 @@ import { AzureEmailService } from 'src/common/azure-email/azure-email.service';
     ]),
   ],
   controllers: [DisputeCasesController],
-  providers: [DisputeCasesService, AzureEmailService],
+  providers: [
+    DisputeCasesService,
+    AzureEmailService,
+    DisputeIntakeOrchestrator,
+    FyiClientHandler,
+    PdfStorageHandler,
+  ],
 })
-export class DisputeCasesModule { }
+export class DisputeCasesModule {}
