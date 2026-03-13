@@ -51,7 +51,7 @@ export class DisputeIntakeOrchestrator {
     const disputeCase = await this.createDisputeCase(client, property.id, notice.id, caseReference, intakeDto);
 
     await this.createLegalGrounds(disputeCase.id, intakeDto.grounds);
-    await this.notifyInternalAssessor(caseReference, intakeDto.accountantId);
+    //await this.notifyInternalAssessor(caseReference, intakeDto.accountantId);
 
     return { case_reference: caseReference };
   }
