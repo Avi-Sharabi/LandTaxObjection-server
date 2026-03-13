@@ -14,7 +14,7 @@ export class FyiClientHandler {
     private readonly config: ConfigService,
     @InjectRepository(Client)
     private clientsRepository: Repository<Client>,
-  ) {}
+  ) { }
 
   async findClientInFyi(email: string): Promise<any | null> {
     try {
@@ -38,11 +38,7 @@ export class FyiClientHandler {
       );
 
       const results = data?.results ?? [];
-      const matched = results.find((entity: any) =>
-        entity.contacts?.some((contact: any) =>
-          contact.email?.toLowerCase() === email.toLowerCase(),
-        ),
-      );
+      const matched = results[0].email?.toLowerCase() === email.toLowerCase()
 
       return matched ?? null;
     } catch (error) {
