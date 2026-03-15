@@ -14,6 +14,7 @@ import { AzureEmailService } from 'src/common/azure-email/azure-email.service';
 import { DisputeIntakeOrchestrator } from './intake/dispute-intake.orchestrator';
 import { FyiClientHandler } from './intake/fyi-client.handler';
 import { PdfStorageHandler } from './intake/pdf-storage.handler';
+import { fyiStorageService } from 'src/common/fyi-storage/fyi-storage.service';
 
 @Module({
   imports: [
@@ -35,6 +36,7 @@ import { PdfStorageHandler } from './intake/pdf-storage.handler';
     DisputeIntakeOrchestrator,
     FyiClientHandler,
     PdfStorageHandler,
+    fyiStorageService
   ],
 })
-export class DisputeCasesModule {}
+export class DisputeCasesModule { }

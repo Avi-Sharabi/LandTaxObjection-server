@@ -1,6 +1,7 @@
 import { BlobSASPermissions, BlobServiceClient, generateBlobSASQueryParameters, StorageSharedKeyCredential } from "@azure/storage-blob";
 import { Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { blob } from "stream/consumers";
 
 @Injectable()
 export class AzureBlobService {
@@ -17,13 +18,28 @@ export class AzureBlobService {
         this.accountKey = this.extractFromConnectionString(connectionString, 'AccountKey');
     }
 
+    uploadToFyiDev(base64, caseReference) {
+        return this.uploadToAzureBlob(base64, caseReference, 'dispute-cases-fyi-dev');
+    }
+
+
+    public uploadToAzureBlob(
+        base64: string,
+        caseReference: string,
+        folderName = 'dispute-cases',
+    ): string | null {
+        const blobName = `${folderName}/${caseReference}/valuation-notice.pdf`;
+        // const blobName = `${folderName}/${caseReference}/valuation-notice-${Date.now()}.pdf`;
+        this.uploadFile(blobName, base64);
+        return blobName;
+    }
     private extractFromConnectionString(connectionString: string, key: string): string {
         const match = connectionString.match(new RegExp(`${key}=([^;]+)`));
         if (!match) throw new Error(`Unable to extract ${key} from connection string`);
         return match[1];
     }
 
-    async uploadFile(blobName: string, base64: string): Promise<string> {
+    async uploadFile(blobName: string, base64: string): Promise<string | null> {
         const base64Data = base64.includes(',') ? base64.split(',')[1] : base64;
         const buffer = Buffer.from(base64Data, 'base64');
 
@@ -34,7 +50,9 @@ export class AzureBlobService {
         return this.getFileUrl(blobName);
     }
 
-    getFileUrl(blobName: string, expiresInMinutes = 60): string {
+    getFileUrl(blobName: string | null, expiresInMinutes = 60): string | null {
+
+        if (!blobName) return null
         const sharedKeyCredential = new StorageSharedKeyCredential(this.accountName, this.accountKey);
 
         const sasToken = generateBlobSASQueryParameters({
@@ -51,4 +69,21 @@ export class AzureBlobService {
         const containerClient = this.client.getContainerClient(this.containerName);
         await containerClient.getBlockBlobClient(blobName).delete();
     }
+
+    async getFileContent(blobName: string | null): Promise<Buffer> {
+        if (!blobName) return Buffer.alloc(0); // Return empty buffer if blobName is null
+        const containerClient = this.client.getContainerClient(this.containerName);
+        const blockBlobClient = containerClient.getBlockBlobClient(blobName);
+
+        const downloadResponse = await blockBlobClient.download(0);
+
+        const chunks: Buffer[] = [];
+        for await (const chunk of downloadResponse.readableStreamBody!) {
+            chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+        }
+
+        return Buffer.concat(chunks);
+    }
+
+
 }

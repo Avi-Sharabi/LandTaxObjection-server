@@ -14,8 +14,12 @@ import { CreateDisputeCaseDto } from './dto/create-dispute-case.dto';
 import { UpdateDisputeCaseDto } from './dto/update-dispute-case.dto';
 import { CreateDisputeIntakeDto } from './dto/create-dispute-intake.dto';
 
+
 @ApiTags('dispute-cases')
-@Controller('dispute-cases')
+@Controller({
+  path: 'dispute-cases',
+  version: '1',
+})
 export class DisputeCasesController {
   constructor(private readonly disputeCasesService: DisputeCasesService) { }
 

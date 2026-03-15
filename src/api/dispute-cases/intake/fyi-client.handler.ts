@@ -71,6 +71,7 @@ export class FyiClientHandler {
       email: intakeDto.email,
       assigned_accountant_id: intakeDto.accountantId,
       status: ClientStatus.PROSPECT,
+      source: 'intake_form',
     });
     return this.clientsRepository.save(client);
   }

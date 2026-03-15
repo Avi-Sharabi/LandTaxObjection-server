@@ -1,12 +1,34 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
-import { ValidationPipe } from '@nestjs/common';
+import { ValidationPipe, VersioningType } from '@nestjs/common';
 import { json, urlencoded } from 'express';
 
 async function bootstrap() {
 
   const app = await NestFactory.create(AppModule);
+
+  const whitelist =
+    process.env.CORS_WHITELIST?.split(',').map((origin) => origin.trim()) || [];
+  app.setGlobalPrefix('api');
+  app.enableCors({
+    origin: (origin, callback) => {
+      if (!origin || whitelist.includes(origin)) {
+        callback(null, true);
+      } else {
+        callback(new Error(`CORS blocked for origin: ${origin}`));
+      }
+    },
+    credentials: true,
+  });
+
+  app.use(json({ limit: '10mb' }));
+  app.use(urlencoded({ extended: true, limit: '10mb' }));
+
+  app.enableVersioning({
+    type: VersioningType.URI,
+  });
+
   app.useGlobalPipes(new ValidationPipe({
     whitelist: true,
     forbidNonWhitelisted: true,
@@ -22,8 +44,8 @@ async function bootstrap() {
 
   const document = SwaggerModule.createDocument(app, config);
   SwaggerModule.setup('api/docs', app, document);
-  app.use(json({ limit: '10mb' }));
-  app.use(urlencoded({ extended: true, limit: '10mb' }));
+
+
   await app.listen(process.env.PORT ?? 3000);
 
   console.log(`Application is running on: http://localhost:${process.env.PORT ?? 3000}`);

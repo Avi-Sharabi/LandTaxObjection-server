@@ -6,39 +6,39 @@ export async function seedUsers(dataSource: DataSource): Promise<void> {
 
     const users: Partial<User>[] = [
         {
-            email: 'uraman2000@gmail.com',
-            full_name: 'Pol Imbing',
+            email: 'pol.imbing@ymlgroup.com.au',
+            fullName: 'Pol Imbing',
             role: UserRole.ACCOUNTANT,
             phone: '+61 2 1234 5678',
-            is_active: true,
+            isActive: true,
         },
         {
-            email: 'ArvinJamesBermudes21@gmail.com',
-            full_name: 'Arvin James Bermudes',
+            email: 'arvin.bermudez@ymlgroup.com.au',
+            fullName: 'Arvin James Bermudez',
             role: UserRole.ACCOUNTANT,
             phone: '+61 2 1234 5678',
-            is_active: true,
+            isActive: true,
         },
         {
             email: 'april.clemente@ymlgroup.com.au',
-            full_name: 'April Clemente',
+            fullName: 'April Clemente',
             role: UserRole.ACCOUNTANT,
             phone: '+61 2 1234 5678',
-            is_active: true,
+            isActive: true,
         },
         {
             email: 'avi.sharabi@ymlgroup.com.au',
-            full_name: 'Avi Sharabi',
+            fullName: 'Avi Sharabi',
             role: UserRole.ACCOUNTANT,
             phone: '+61 2 1234 5678',
-            is_active: true,
+            isActive: true,
         },
         {
             email: 'landtaxdispute@ymlgroup.com.au',
-            full_name: 'Internal Assessor',
+            fullName: 'Internal Assessor',
             role: UserRole.INTERNAL_Assessor,
             phone: '+61 2 1234 5678',
-            is_active: true,
+            isActive: true,
         },
     ];
 

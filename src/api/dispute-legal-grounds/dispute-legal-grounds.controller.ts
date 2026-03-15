@@ -3,9 +3,12 @@ import { DisputeLegalGroundsService } from './dispute-legal-grounds.service';
 import { CreateDisputeLegalGroundDto } from './dto/create-dispute-legal-ground.dto';
 import { UpdateDisputeLegalGroundDto } from './dto/update-dispute-legal-ground.dto';
 
-@Controller('dispute-legal-grounds')
+@Controller({
+  path: 'dispute-legal-grounds',
+  version: '1',
+})
 export class DisputeLegalGroundsController {
-  constructor(private readonly disputeLegalGroundsService: DisputeLegalGroundsService) {}
+  constructor(private readonly disputeLegalGroundsService: DisputeLegalGroundsService) { }
 
   @Post()
   create(@Body() createDisputeLegalGroundDto: CreateDisputeLegalGroundDto) {
