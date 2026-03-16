@@ -30,11 +30,9 @@ export class TypeOrmConfigService implements TypeOrmOptionsFactory {
       logger: 'file',
       logging: true,
       synchronize: true,
-      ...(isProduction && {
-        ssl: {
-          rejectUnauthorized: false,
-        },
-      }),
+      ssl: {
+        rejectUnauthorized: false,
+      },
     };
   }
 }
