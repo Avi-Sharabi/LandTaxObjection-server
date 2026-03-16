@@ -8,6 +8,12 @@ export class TypeOrmConfigService implements TypeOrmOptionsFactory {
   private readonly config: ConfigService;
 
   public createTypeOrmOptions(): TypeOrmModuleOptions {
+
+    console.log('DB Host:', this.config.get<string>('DB_HOST'));
+    console.log('DB Port:', this.config.get<number>('DB_PORT'));
+    console.log('DB Username:', this.config.get<string>('DB_USERNAME'));
+    console.log('DB Name:', this.config.get<string>('DB_NAME'));
+    console.log('DB Password:', this.config.get<string>('DB_PASSWORD'));
     const ENV = this.config.get<string>('NODE_ENV') || 'development';
 
     const sslValue =
