@@ -8,23 +8,14 @@ export class TypeOrmConfigService implements TypeOrmOptionsFactory {
   private readonly config: ConfigService;
 
   public createTypeOrmOptions(): TypeOrmModuleOptions {
-    console.log("first")
+    const ENV = this.config.get<string>('NODE_ENV') || 'development';
+    const isProduction = ENV !== 'development';
+
     console.log('DB Host:', this.config.get<string>('DB_HOST'));
     console.log('DB Port:', this.config.get<number>('DB_PORT'));
     console.log('DB Username:', this.config.get<string>('DB_USERNAME'));
     console.log('DB Name:', this.config.get<string>('DB_NAME'));
-    console.log('DB Password:', this.config.get<string>('DB_PASSWORD'));
-    const ENV = this.config.get<string>('NODE_ENV') || 'development';
-    console.log("first")
-
-    const sslValue =
-      ENV === 'development'
-        ? {}
-        : {
-          ssl: {
-            rejectUnauthorized: false,
-          },
-        };
+    console.log('NODE_ENV:', ENV);
 
     return {
       type: 'postgres',
@@ -38,8 +29,12 @@ export class TypeOrmConfigService implements TypeOrmOptionsFactory {
       migrationsTableName: 'typeorm_migrations',
       logger: 'file',
       logging: true,
-      synchronize: true, // never use TRUE in production!
-      extra: sslValue,
+      synchronize: true,
+      ...(isProduction && {
+        ssl: {
+          rejectUnauthorized: false,
+        },
+      }),
     };
   }
 }
