@@ -3,6 +3,8 @@ import { AppModule } from './app.module';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { ValidationPipe, VersioningType } from '@nestjs/common';
 import { json, urlencoded } from 'express';
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const cookieParser = require('cookie-parser');
 
 async function bootstrap() {
 
@@ -22,6 +24,7 @@ async function bootstrap() {
     credentials: true,
   });
 
+  app.use(cookieParser());
   app.use(json({ limit: '10mb' }));
   app.use(urlencoded({ extended: true, limit: '10mb' }));
 
@@ -40,6 +43,7 @@ async function bootstrap() {
     .setDescription('API documentation')
     .setVersion('1.0')
     .addBearerAuth()
+    .addCookieAuth('access_token')
     .build();
 
   const document = SwaggerModule.createDocument(app, config);

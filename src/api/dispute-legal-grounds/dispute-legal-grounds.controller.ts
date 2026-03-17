@@ -1,8 +1,10 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { DisputeLegalGroundsService } from './dispute-legal-grounds.service';
 import { CreateDisputeLegalGroundDto } from './dto/create-dispute-legal-ground.dto';
 import { UpdateDisputeLegalGroundDto } from './dto/update-dispute-legal-ground.dto';
 
+@UseGuards(JwtAuthGuard) 
 @Controller({
   path: 'dispute-legal-grounds',
   version: '1',

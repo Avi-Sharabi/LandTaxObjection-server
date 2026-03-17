@@ -7,12 +7,14 @@ import {
   Param,
   Delete,
   BadRequestException,
+  UseGuards,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBody, ApiResponse, ApiCreatedResponse } from '@nestjs/swagger';
 import { DisputeCasesService } from './dispute-cases.service';
 import { CreateDisputeCaseDto } from './dto/create-dispute-case.dto';
 import { UpdateDisputeCaseDto } from './dto/update-dispute-case.dto';
 import { CreateDisputeIntakeDto } from './dto/create-dispute-intake.dto';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 
 @ApiTags('dispute-cases')
@@ -23,6 +25,7 @@ import { CreateDisputeIntakeDto } from './dto/create-dispute-intake.dto';
 export class DisputeCasesController {
   constructor(private readonly disputeCasesService: DisputeCasesService) { }
 
+  @UseGuards(JwtAuthGuard)
   @Post()
   create(@Body() createDisputeCaseDto: CreateDisputeCaseDto) {
     return this.disputeCasesService.create(createDisputeCaseDto);
@@ -54,22 +57,25 @@ export class DisputeCasesController {
 
     return this.disputeCasesService.submitIntakeApplication(intakeDto);
   }
-
+  @UseGuards(JwtAuthGuard)
   @Get()
   findAll() {
     return this.disputeCasesService.findAll();
   }
 
+  @UseGuards(JwtAuthGuard)
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.disputeCasesService.findOne(id);
   }
 
+  @UseGuards(JwtAuthGuard)
   @Patch(':id')
   update(@Param('id') id: string, @Body() updateDisputeCaseDto: UpdateDisputeCaseDto) {
     return this.disputeCasesService.update(id, updateDisputeCaseDto);
   }
 
+  @UseGuards(JwtAuthGuard)
   @Delete(':id')
   remove(@Param('id') id: string) {
     return this.disputeCasesService.remove(id);

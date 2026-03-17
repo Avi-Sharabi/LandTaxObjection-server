@@ -1,11 +1,13 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, ParseUUIDPipe } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, ParseUUIDPipe, UseGuards } from '@nestjs/common';
 import { ClientsService } from './clients.service';
 import { CreateClientDto } from './dto/create-client.dto';
 import { UpdateClientDto } from './dto/update-client.dto';
 import { AcceptTCDto } from './dto/accept-tc.dto';
 import { ApiOperation, ApiParam, ApiResponse } from '@nestjs/swagger';
 import { AcceptTcResponseDto } from './dto/accept-tc-response.dto';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
+@UseGuards(JwtAuthGuard) 
 @Controller({
   path: 'clients',
   version: '1',

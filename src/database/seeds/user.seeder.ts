@@ -1,8 +1,12 @@
 import { User, UserRole } from 'src/api/users/entities/user.entity';
 import { DataSource } from 'typeorm';
+import * as bcrypt from 'bcrypt';
+
+const DEFAULT_PASSWORD = 'Admin@123';
 
 export async function seedUsers(dataSource: DataSource): Promise<void> {
     const userRepository = dataSource.getRepository(User);
+    const hashedPassword = await bcrypt.hash(DEFAULT_PASSWORD, 10);
 
     const users: Partial<User>[] = [
         {
@@ -11,6 +15,7 @@ export async function seedUsers(dataSource: DataSource): Promise<void> {
             role: UserRole.ACCOUNTANT,
             phone: '+61 2 1234 5678',
             isActive: true,
+            password: hashedPassword,
         },
         {
             email: 'arvin.bermudez@ymlgroup.com.au',
@@ -18,6 +23,7 @@ export async function seedUsers(dataSource: DataSource): Promise<void> {
             role: UserRole.ACCOUNTANT,
             phone: '+61 2 1234 5678',
             isActive: true,
+            password: hashedPassword,
         },
         {
             email: 'april.clemente@ymlgroup.com.au',
@@ -25,6 +31,7 @@ export async function seedUsers(dataSource: DataSource): Promise<void> {
             role: UserRole.ACCOUNTANT,
             phone: '+61 2 1234 5678',
             isActive: true,
+            password: hashedPassword,
         },
         {
             email: 'avi.sharabi@ymlgroup.com.au',
@@ -32,6 +39,7 @@ export async function seedUsers(dataSource: DataSource): Promise<void> {
             role: UserRole.ACCOUNTANT,
             phone: '+61 2 1234 5678',
             isActive: true,
+            password: hashedPassword,
         },
         {
             email: 'landtaxdispute@ymlgroup.com.au',
@@ -39,6 +47,7 @@ export async function seedUsers(dataSource: DataSource): Promise<void> {
             role: UserRole.INTERNAL_Assessor,
             phone: '+61 2 1234 5678',
             isActive: true,
+            password: hashedPassword,
         },
     ];
 
@@ -48,7 +57,13 @@ export async function seedUsers(dataSource: DataSource): Promise<void> {
             await userRepository.save(userRepository.create(userData));
             console.log(`✅ Seeded user: ${userData.email}`);
         } else {
-            console.log(`⚠️  Skipped (already exists): ${userData.email}`);
+            // Update password if not set
+            if (!exists.password) {
+                await userRepository.update(exists.id, { password: hashedPassword });
+                console.log(`🔑 Updated password for: ${userData.email}`);
+            } else {
+                console.log(`⚠️  Skipped (already exists): ${userData.email}`);
+            }
         }
     }
 }

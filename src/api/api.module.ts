@@ -5,9 +5,11 @@ import { DisputeLegalGroundsModule } from './dispute-legal-grounds/dispute-legal
 import { PropertiesModule } from './properties/properties.module';
 import { UsersModule } from './users/users.module';
 import { ValuationNoticesModule } from './valuation-notices/valuation-notices.module';
+import { AuthModule } from './auth/auth.module';
 
 @Module({
     imports: [
+        AuthModule,
         ClientsModule,
         PropertiesModule,
         DisputeCasesModule,

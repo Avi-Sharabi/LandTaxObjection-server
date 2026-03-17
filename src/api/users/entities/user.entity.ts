@@ -33,6 +33,9 @@ export class User {
   @Column({ type: 'text', nullable: true })
   phone: string | null;
 
+  @Column({ type: 'text', nullable: true, select: false })
+  password: string | null;
+
   @Column({ name: 'is_active', type: 'boolean', default: true })
   isActive: boolean;
 
