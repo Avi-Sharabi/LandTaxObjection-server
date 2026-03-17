@@ -46,7 +46,10 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: node-app
-      
+          
+      - name: Install production dependencies
+        run: npm ci --omit=dev
+        
       - name: 'Deploy to Azure Web App'
         id: deploy-to-webapp
         uses: azure/webapps-deploy@v3
