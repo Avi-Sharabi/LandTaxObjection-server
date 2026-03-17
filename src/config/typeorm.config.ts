@@ -11,12 +11,6 @@ export class TypeOrmConfigService implements TypeOrmOptionsFactory {
     const ENV = this.config.get<string>('NODE_ENV') || 'development';
     const isProduction = ENV !== 'development';
 
-    console.log('DB Host:', this.config.get<string>('DB_HOST'));
-    console.log('DB Port:', this.config.get<number>('DB_PORT'));
-    console.log('DB Username:', this.config.get<string>('DB_USERNAME'));
-    console.log('DB Name:', this.config.get<string>('DB_NAME'));
-    console.log('NODE_ENV:', ENV);
-
     return {
       type: 'postgres',
       host: this.config.get<string>('DB_HOST'),
