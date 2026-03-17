@@ -45,11 +45,21 @@ export class AuthService {
     response.cookie('access_token', token, {
       httpOnly: true,
       secure: isProduction,
-      sameSite: 'none',
+      sameSite: isProduction ? 'none' : 'lax',
       path: '/',
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days in ms
     });
 
+    return {
+      id: user.id,
+      email: user.email,
+      fullName: user.fullName,
+      role: user.role,
+    };
+  }
+
+  async getMe(userId: string): Promise<AuthResponseDto> {
+    const user = await this.usersService.findOne(userId);
     return {
       id: user.id,
       email: user.email,
