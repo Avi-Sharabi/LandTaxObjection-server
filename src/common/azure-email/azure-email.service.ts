@@ -18,19 +18,34 @@ export class AzureEmailService {
         this.sender = this.config.get('AZURE_COMMUNICATION_SENDER') || "";
     }
 
-    private loadTemplate(templateName: string, variables: Record<string, string>): string {
+    private loadTemplate(templateName: string, variables: Record<string, string | string[]>): string {
         const filePath = path.join(__dirname, 'templates', `${templateName}.html`);
         let html = fs.readFileSync(filePath, 'utf-8');
 
         Object.entries(variables).forEach(([key, value]) => {
-            html = html.replaceAll(`{{${key}}}`, value);
+            if (Array.isArray(value)) {
+                // Replace {{#each key}}...body...{{/each}} blocks
+                const blockRegex = new RegExp(
+                    `\\{\\{#each ${key}\\}\\}([\\s\\S]*?)\\{\\{/each\\}\\}`,
+                    'g',
+                );
+                html = html.replace(blockRegex, (_match, body: string) =>
+                    value.map((item) => body.replaceAll('{{this}}', item)).join(''),
+                );
+            } else {
+                html = html.replaceAll(`{{${key}}}`, value);
+            }
         });
 
         return html;
     }
 
-    async sendDisputeApplication(caseReference: string, sendTo: string): Promise<void> {
-        const html = this.loadTemplate('dispute-application-submitted', { caseReference });
+    async sendDisputeApplication(caseReferences: string[], sendTo: string): Promise<void> {
+        const html = this.loadTemplate('dispute-application-submitted', { caseReferences });
+
+        const subjectLabel = caseReferences.length === 1
+            ? `[${caseReferences[0]}]`
+            : `[${caseReferences.length} Cases]`;
 
         const message = {
             senderAddress: this.sender,
@@ -38,7 +53,7 @@ export class AzureEmailService {
                 to: [{ address: sendTo, displayName: 'Land Tax Dispute Team' }],
             },
             content: {
-                subject: `[${caseReference}] New Land Tax Dispute Intake`,
+                subject: `${subjectLabel} New Land Tax Dispute Intake`,
                 html,
             },
         };
