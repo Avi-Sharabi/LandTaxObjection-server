@@ -43,18 +43,24 @@
                   A new land tax dispute intake has been submitted and requires your review.
                 </p>
 
-                <!-- Case Reference Badge -->
-                <table cellpadding="0" cellspacing="0" align="center" style="margin-bottom: 32px;">
+                <!-- Case References -->
+                <table cellpadding="0" cellspacing="0" align="center" style="margin-bottom: 32px; width: 100%;">
                   <tr>
-                    <td style="background-color: #e3f2fd; border: 1.5px solid #1976d2; border-radius: 6px; padding: 12px 32px; text-align: center;">
-                      <p style="margin: 0 0 4px 0; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #1976d2; font-weight: bold;">
-                        Case Reference
-                      </p>
-                      <p style="margin: 0; font-size: 26px; font-weight: bold; color: #1976d2; letter-spacing: 1px;">
-                        {{caseReference}}
+                    <td style="padding-bottom: 12px; text-align: center;">
+                      <p style="margin: 0; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #1976d2; font-weight: bold;">
+                        Case References
                       </p>
                     </td>
                   </tr>
+                  {{#each caseReferences}}
+                  <tr>
+                    <td style="padding: 4px 0; text-align: center;">
+                      <span style="background-color: #e3f2fd; border: 1.5px solid #1976d2; border-radius: 6px; padding: 8px 24px; font-size: 20px; font-weight: bold; color: #1976d2; letter-spacing: 1px; display: inline-block; min-width: 200px;">
+                        {{this}}
+                      </span>
+                    </td>
+                  </tr>
+                  {{/each}}
                 </table>
 
                 <!-- Info text -->

@@ -30,10 +30,7 @@ export class ValuationNoticesService {
   }
 
   async findAll() {
-    const notices = await this.valuationNoticesRepository.find({
-      relations: ['property', 'dispute_cases'],
-    });
-    return notices.map(n => this.mapWithFileUrl(n));
+    return this.valuationNoticesRepository.find()
   }
 
   async findOne(id: string) {
