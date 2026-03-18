@@ -1,44 +1,53 @@
 import { User, UserRole } from 'src/api/users/entities/user.entity';
 import { DataSource } from 'typeorm';
+import * as bcrypt from 'bcrypt';
+
+const DEFAULT_PASSWORD = 'Admin@123';
 
 export async function seedUsers(dataSource: DataSource): Promise<void> {
     const userRepository = dataSource.getRepository(User);
+    const hashedPassword = await bcrypt.hash(DEFAULT_PASSWORD, 10);
 
     const users: Partial<User>[] = [
         {
-            email: 'uraman2000@gmail.com',
-            full_name: 'Pol Imbing',
+            email: 'pol.imbing@ymlgroup.com.au',
+            fullName: 'Pol Imbing',
             role: UserRole.ACCOUNTANT,
             phone: '+61 2 1234 5678',
-            is_active: true,
+            isActive: true,
+            password: hashedPassword,
         },
         {
-            email: 'ArvinJamesBermudes21@gmail.com',
-            full_name: 'Arvin James Bermudes',
+            email: 'arvin.bermudez@ymlgroup.com.au',
+            fullName: 'Arvin James Bermudez',
             role: UserRole.ACCOUNTANT,
             phone: '+61 2 1234 5678',
-            is_active: true,
+            isActive: true,
+            password: hashedPassword,
         },
         {
             email: 'april.clemente@ymlgroup.com.au',
-            full_name: 'April Clemente',
+            fullName: 'April Clemente',
             role: UserRole.ACCOUNTANT,
             phone: '+61 2 1234 5678',
-            is_active: true,
+            isActive: true,
+            password: hashedPassword,
         },
         {
             email: 'avi.sharabi@ymlgroup.com.au',
-            full_name: 'Avi Sharabi',
+            fullName: 'Avi Sharabi',
             role: UserRole.ACCOUNTANT,
             phone: '+61 2 1234 5678',
-            is_active: true,
+            isActive: true,
+            password: hashedPassword,
         },
         {
             email: 'landtaxdispute@ymlgroup.com.au',
-            full_name: 'Internal Assessor',
+            fullName: 'Internal Assessor',
             role: UserRole.INTERNAL_Assessor,
             phone: '+61 2 1234 5678',
-            is_active: true,
+            isActive: true,
+            password: hashedPassword,
         },
     ];
 
@@ -48,7 +57,13 @@ export async function seedUsers(dataSource: DataSource): Promise<void> {
             await userRepository.save(userRepository.create(userData));
             console.log(`✅ Seeded user: ${userData.email}`);
         } else {
-            console.log(`⚠️  Skipped (already exists): ${userData.email}`);
+            // Update password if not set
+            if (!exists.password) {
+                await userRepository.update(exists.id, { password: hashedPassword });
+                console.log(`🔑 Updated password for: ${userData.email}`);
+            } else {
+                console.log(`⚠️  Skipped (already exists): ${userData.email}`);
+            }
         }
     }
 }

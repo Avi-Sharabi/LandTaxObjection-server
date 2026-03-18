@@ -29,7 +29,7 @@ export class DisputeIntakeOrchestrator {
     private valuationNoticesRepository: Repository<ValuationNotice>,
     @InjectRepository(User)
     private usersRepository: Repository<User>,
-  ) {}
+  ) { }
 
   async submitIntakeApplication(intakeDto: CreateDisputeIntakeDto) {
     const fyiClient = await this.fyiClientHandler.findClientInFyi(intakeDto.email);
@@ -98,7 +98,6 @@ export class DisputeIntakeOrchestrator {
       client_id: client.id,
       property_id: propertyId,
       valuation_notice_id: valuationNoticeId,
-      assigned_accountant_id: client.assigned_accountant_id,
       jurisdiction: intakeDto.state,
       status: DisputeStatus.DRAFT,
       statutory_deadline: new Date(intakeDto.statutoryDeadline),

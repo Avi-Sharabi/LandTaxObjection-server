@@ -1,11 +1,15 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete } from '@nestjs/common';
-import { ValuationNoticesService } from './valuation-notices.service';
+import { Body, Controller, Delete, Get, Param, Patch, Post, UseGuards } from '@nestjs/common';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CreateValuationNoticeDto } from './dto/create-valuation-notice.dto';
 import { UpdateValuationNoticeDto } from './dto/update-valuation-notice.dto';
-
-@Controller('valuation-notices')
+import { ValuationNoticesService } from './valuation-notices.service';
+@UseGuards(JwtAuthGuard) 
+@Controller({
+  path: 'valuation-notices',
+  version: '1',
+})
 export class ValuationNoticesController {
-  constructor(private readonly valuationNoticesService: ValuationNoticesService) {}
+  constructor(private readonly valuationNoticesService: ValuationNoticesService) { }
 
   @Post()
   create(@Body() createValuationNoticeDto: CreateValuationNoticeDto) {

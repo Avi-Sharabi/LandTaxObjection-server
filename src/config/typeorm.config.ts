@@ -9,15 +9,7 @@ export class TypeOrmConfigService implements TypeOrmOptionsFactory {
 
   public createTypeOrmOptions(): TypeOrmModuleOptions {
     const ENV = this.config.get<string>('NODE_ENV') || 'development';
-
-    const sslValue =
-      ENV === 'development'
-        ? {}
-        : {
-          ssl: {
-            rejectUnauthorized: false,
-          },
-        };
+    const isProduction = ENV !== 'development';
 
     return {
       type: 'postgres',
@@ -31,8 +23,12 @@ export class TypeOrmConfigService implements TypeOrmOptionsFactory {
       migrationsTableName: 'typeorm_migrations',
       logger: 'file',
       logging: true,
-      synchronize: true, // never use TRUE in production!
-      extra: sslValue,
+      synchronize: true,
+      ...(isProduction && {
+        ssl: {
+          rejectUnauthorized: false,
+        },
+      }),
     };
   }
 }

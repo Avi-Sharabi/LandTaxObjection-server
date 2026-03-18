@@ -26,6 +26,14 @@ export class UsersService {
     return this.usersRepository.save(user);
   }
 
+  async findByEmailWithPassword(email: string): Promise<User | null> {
+    return this.usersRepository
+      .createQueryBuilder('user')
+      .addSelect('user.password')
+      .where('user.email = :email', { email })
+      .getOne();
+  }
+
   async findAll(): Promise<User[]> {
     return this.usersRepository.find();
   }
