@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Documents Required</title>
+  <style>
+    body { font-family: Arial, sans-serif; background: #f5f5f5; margin: 0; padding: 0; }
+    .wrapper { max-width: 600px; margin: 40px auto; background: #ffffff; border-radius: 6px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,.08); }
+    .header { background: #1a3c5e; padding: 28px 32px; }
+    .header h1 { color: #ffffff; margin: 0; font-size: 20px; font-weight: 600; }
+    .header p { color: #a8c4de; margin: 6px 0 0; font-size: 13px; }
+    .body { padding: 32px; color: #333333; font-size: 15px; line-height: 1.6; }
+    .body h2 { color: #1a3c5e; font-size: 16px; margin-top: 0; }
+    .doc-list { background: #f0f6ff; border-left: 4px solid #1a3c5e; border-radius: 4px; padding: 16px 16px 16px 24px; margin: 20px 0; }
+    .doc-list li { margin-bottom: 6px; color: #1a3c5e; font-weight: 500; }
+    .cta { margin-top: 28px; text-align: center; }
+    .cta a { background: #1a3c5e; color: #ffffff; padding: 12px 28px; border-radius: 4px; text-decoration: none; font-size: 15px; font-weight: 600; display: inline-block; }
+    .footer { background: #f5f5f5; padding: 16px 32px; font-size: 12px; color: #888888; border-top: 1px solid #e0e0e0; }
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+    <div class="header">
+      <h1>YML Group — Land Tax Dispute</h1>
+      <p>Case Reference: {{caseReference}}</p>
+    </div>
+    <div class="body">
+      <h2>Action Required: Supporting Documents Needed</h2>
+      <p>
+        Your land tax dispute case includes a <strong>{{constraintLabel}}</strong> site constraint.
+        To proceed with your objection submission, we require supporting documentation for this constraint.
+      </p>
+      <p>Please upload <strong>at least one</strong> of the following document types via your client portal:</p>
+      <div class="doc-list">
+        <ul>{{docList}}</ul>
+      </div>
+      <p>
+        Once your documents are uploaded, our team will review them and progress your case.
+        If you have any questions, please contact your assigned assessor.
+      </p>
+      <div class="cta">
+        <a href="#">Upload Documents via Client Portal</a>
+      </div>
+    </div>
+    <div class="footer">
+      YML Group · Tax, SMSF &amp; AI Division · Level 22, Westfield Bondi Junction, Sydney NSW 2022<br/>
+      02 8383 4400 · ymlgroup.com.au
+    </div>
+  </div>
+</body>
+</html>

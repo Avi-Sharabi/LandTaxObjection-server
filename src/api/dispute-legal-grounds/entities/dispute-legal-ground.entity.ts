@@ -6,6 +6,7 @@ export enum LegalGround {
   CONSTRAINT_OVERSIGHT = 'constraint_oversight',
   INCORRECT_AREA_OR_DIMENSIONS = 'incorrect_area_or_dimensions',
   INCORRECT_APPORTIONMENT = 'incorrect_apportionment',
+  Not_Sure = 'not_sure'
 }
 
 @Entity('dispute_legal_grounds')
