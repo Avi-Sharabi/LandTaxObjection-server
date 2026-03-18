@@ -7,9 +7,8 @@ import {
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
-import { SiteConstraint, ConstraintType, ConstraintDocStatus } from './entities/site-constraint.entity';
+import { SiteConstraint, ConstraintType } from './entities/site-constraint.entity';
 import { CreateSiteConstraintDto, UpdateSiteConstraintDto } from './dto/site-constraint.dto';
-import { AzureEmailService } from '../../common/azure-email/azure-email.service';
 
 /** Maps each constraint type to the document_type values that satisfy it.
  *  Based on the `document_type` DB enum from the MVP schema. */
@@ -25,18 +24,6 @@ const REQUIRED_DOC_TYPES: Record<ConstraintType, string[]> = {
   [ConstraintType.OTHER]:                               ['other'],
 };
 
-const CONSTRAINT_LABELS: Record<ConstraintType, string> = {
-  [ConstraintType.HERITAGE_LISTING]:                    'Heritage Listing',
-  [ConstraintType.FLOOD_ZONE_100YR]:                    '100-Year Flood Zone',
-  [ConstraintType.BUSHFIRE_BAL_RESTRICTION]:            'Bushfire BAL Restriction',
-  [ConstraintType.EASEMENT_OR_RIGHT_OF_WAY]:            'Easement or Right of Way',
-  [ConstraintType.ENVIRONMENTAL_CONSERVATION_OVERLAY]:  'Environmental Conservation Overlay',
-  [ConstraintType.ZONING_PLANNING_RESTRICTION]:         'Zoning / Planning Restriction',
-  [ConstraintType.ACCESS_RESTRICTION_LANDLOCKED]:       'Access Restriction (Landlocked)',
-  [ConstraintType.CONTAMINATION_REMEDIATION]:           'Contamination / Remediation',
-  [ConstraintType.OTHER]:                               'Other Constraint',
-};
-
 @Injectable()
 export class SiteConstraintsService {
   private readonly logger = new Logger(SiteConstraintsService.name);
@@ -44,12 +31,11 @@ export class SiteConstraintsService {
   constructor(
     @InjectRepository(SiteConstraint)
     private readonly constraintRepo: Repository<SiteConstraint>,
-    private readonly azureEmail: AzureEmailService,
   ) {}
 
   // ── CREATE ─────────────────────────────────────────────────────────────────
 
-  async create(dto: CreateSiteConstraintDto): Promise<SiteConstraint> {
+  async create(dto: CreateSiteConstraintDto, userId: string): Promise<SiteConstraint> {
     // Prevent duplicate constraint types on the same dispute
     const existing = await this.constraintRepo.findOne({
       where: { dispute_id: dto.dispute_id, constraint_type: dto.constraint_type },
@@ -60,21 +46,19 @@ export class SiteConstraintsService {
       );
     }
 
-    const constraint = this.constraintRepo.create({
-      ...dto,
-      doc_status: ConstraintDocStatus.PENDING_DOCUMENTS,
-      email_sent: false,
-      email_retry_count: 0,
-    });
-
+    const constraint = this.constraintRepo.create({ ...dto });
     const saved = await this.constraintRepo.save(constraint);
+
+    // Log: constraint selection + user info + timestamp
     this.logger.log(
-      `[CONSTRAINT] Created — id=${saved.id} dispute=${dto.dispute_id} type=${dto.constraint_type}`,
+      `[CONSTRAINT] Created — id=${saved.id} type=${dto.constraint_type} dispute=${dto.dispute_id} user=${userId} timestamp=${saved.created_at.toISOString()}`,
     );
 
-    // Non-blocking: verify docs and trigger email if needed
+    // Validation: constraint selected → check for supporting documents
     this.runVerificationFlow(saved).catch((err) =>
-      this.logger.error(`Verification flow error for constraint ${saved.id}: ${err.message}`),
+      this.logger.error(
+        `[CONSTRAINT] Verification flow error — id=${saved.id} error=${err.message}`,
+      ),
     );
 
     return saved;
@@ -83,10 +67,16 @@ export class SiteConstraintsService {
   // ── GET BY DISPUTE ─────────────────────────────────────────────────────────
 
   async findByDispute(disputeId: string): Promise<SiteConstraint[]> {
-    return this.constraintRepo.find({
+    const results = await this.constraintRepo.find({
       where: { dispute_id: disputeId },
       order: { created_at: 'ASC' },
     });
+
+    this.logger.log(
+      `[CONSTRAINT] Fetched ${results.length} constraint(s) — dispute=${disputeId}`,
+    );
+
+    return results;
   }
 
   // ── GET ONE ────────────────────────────────────────────────────────────────
@@ -103,7 +93,7 @@ export class SiteConstraintsService {
     const constraint = await this.findOne(id);
     Object.assign(constraint, dto);
 
-    // If a document blob URL was just provided, re-run verification
+    // Re-run document verification if blob URL was just provided
     if (dto.document_blob_url) {
       await this.runVerificationFlow(constraint);
     }
@@ -121,60 +111,35 @@ export class SiteConstraintsService {
     this.logger.log(`[CONSTRAINT] Removed — id=${id}`);
   }
 
-  // ── DOCUMENT VERIFICATION + EMAIL FLOW ────────────────────────────────────
+  // ── DOCUMENT VERIFICATION FLOW ─────────────────────────────────────────────
 
+  /**
+   * KAN-8 Validation logic:
+   *  1. Constraint selected → check for supporting documents
+   *  2. Query dispute_documents for uploaded files
+   *  3. Match against required types for this constraint_type
+   */
   async runVerificationFlow(constraint: SiteConstraint): Promise<void> {
     const hasDocuments = await this.hasRequiredDocuments(constraint);
 
     if (hasDocuments) {
-      await this.constraintRepo.update(constraint.id, {
-        doc_status: ConstraintDocStatus.DOCUMENTS_UPLOADED,
-      });
-      this.logger.log(`[CONSTRAINT] doc_status → DOCUMENTS_UPLOADED — id=${constraint.id}`);
-      return;
+      this.logger.log(
+        `[CONSTRAINT] Supporting documents found — id=${constraint.id} type=${constraint.constraint_type}`,
+      );
+    } else {
+      this.logger.warn(
+        `[CONSTRAINT] Missing supporting documents — id=${constraint.id} type=${constraint.constraint_type} dispute=${constraint.dispute_id}`,
+      );
     }
-
-    if (!constraint.email_sent) {
-      await this.sendMissingDocumentEmail(constraint);
-    }
-  }
-
-  async retryVerification(constraintId: string): Promise<void> {
-    const constraint = await this.findOne(constraintId);
-
-    if (
-      constraint.doc_status === ConstraintDocStatus.DOCUMENTS_UPLOADED ||
-      constraint.doc_status === ConstraintDocStatus.VERIFIED
-    ) {
-      return;
-    }
-
-    const hasDocuments = await this.hasRequiredDocuments(constraint);
-
-    if (hasDocuments) {
-      await this.constraintRepo.update(constraintId, {
-        doc_status: ConstraintDocStatus.DOCUMENTS_UPLOADED,
-      });
-      this.logger.log(`[CONSTRAINT] Docs received on retry — id=${constraintId}`);
-      return;
-    }
-
-    await this.sendMissingDocumentEmail(constraint);
-  }
-
-  async findAllPendingDocuments(): Promise<SiteConstraint[]> {
-    return this.constraintRepo.find({
-      where: { doc_status: ConstraintDocStatus.PENDING_DOCUMENTS },
-    });
   }
 
   // ── PRIVATE ────────────────────────────────────────────────────────────────
 
   private async hasRequiredDocuments(constraint: SiteConstraint): Promise<boolean> {
-    // Check 1: constraint has its own document_blob_url set directly
+    // Check 1: document_blob_url set directly on the constraint
     if (constraint.document_blob_url) return true;
 
-    // Check 2: raw query against dispute_documents table — no entity import needed
+    // Check 2: query dispute_documents for matching document types
     const requiredTypes = REQUIRED_DOC_TYPES[constraint.constraint_type] ?? [];
     if (requiredTypes.length === 0) return false;
 
@@ -187,51 +152,11 @@ export class SiteConstraintsService {
     );
 
     const count = parseInt(result[0]?.count ?? '0', 10);
+
     this.logger.debug(
-      `[DOC_VERIFY] dispute=${constraint.dispute_id} type=${constraint.constraint_type} required=${requiredTypes.join(',')} found=${count}`,
+      `[CONSTRAINT] Doc check — dispute=${constraint.dispute_id} type=${constraint.constraint_type} required=[${requiredTypes.join(', ')}] found=${count}`,
     );
+
     return count > 0;
-  }
-
-  private async sendMissingDocumentEmail(constraint: SiteConstraint): Promise<void> {
-    const label = CONSTRAINT_LABELS[constraint.constraint_type] ?? constraint.constraint_type;
-    const requiredTypes = REQUIRED_DOC_TYPES[constraint.constraint_type] ?? [];
-
-    // Resolve client email by joining dispute → client via raw query
-    const rows = await this.constraintRepo.query(
-      `SELECT c.email, dc.case_reference
-       FROM site_constraints sc
-       INNER JOIN dispute_cases dc ON dc.id = sc.dispute_id
-       INNER JOIN clients c ON c.id = dc.client_id
-       WHERE sc.id = $1`,
-      [constraint.id],
-    );
-
-    const clientEmail: string | undefined = rows[0]?.email;
-    const caseReference: string = rows[0]?.case_reference ?? constraint.dispute_id;
-
-    if (!clientEmail) {
-      this.logger.warn(
-        `[CONSTRAINT] No client email found for constraint ${constraint.id} — skipping email.`,
-      );
-      return;
-    }
-
-    await this.azureEmail.sendConstraintDocumentRequest(
-      caseReference,
-      label,
-      requiredTypes,
-      clientEmail,
-    );
-
-    await this.constraintRepo.update(constraint.id, {
-      email_sent: true,
-      email_sent_at: new Date(),
-      email_retry_count: (constraint.email_retry_count ?? 0) + 1,
-    });
-
-    this.logger.log(
-      `[CONSTRAINT] Missing-doc email sent → ${clientEmail} | constraint=${constraint.id} retry=${constraint.email_retry_count + 1}`,
-    );
   }
 }

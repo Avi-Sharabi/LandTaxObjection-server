@@ -8,26 +8,18 @@ import {
 } from 'typeorm';
 import { DisputeCase } from '../../dispute-cases/entities/dispute-case.entity';
 
-/**
- * Mirrors the `constraint_type` PostgreSQL ENUM from the MVP schema.
- * Values are snake_case to match the DB enum exactly.
- */
 export enum ConstraintType {
-  HERITAGE_LISTING                  = 'heritage_listing',
-  FLOOD_ZONE_100YR                  = 'flood_zone_100yr',
-  BUSHFIRE_BAL_RESTRICTION          = 'bushfire_bal_restriction',
-  EASEMENT_OR_RIGHT_OF_WAY          = 'easement_or_right_of_way',
+  HERITAGE_LISTING                   = 'heritage_listing',
+  FLOOD_ZONE_100YR                   = 'flood_zone_100yr',
+  BUSHFIRE_BAL_RESTRICTION           = 'bushfire_bal_restriction',
+  EASEMENT_OR_RIGHT_OF_WAY           = 'easement_or_right_of_way',
   ENVIRONMENTAL_CONSERVATION_OVERLAY = 'environmental_conservation_overlay',
-  ZONING_PLANNING_RESTRICTION       = 'zoning_planning_restriction',
-  ACCESS_RESTRICTION_LANDLOCKED     = 'access_restriction_landlocked',
-  CONTAMINATION_REMEDIATION         = 'contamination_remediation',
-  OTHER                             = 'other',
+  ZONING_PLANNING_RESTRICTION        = 'zoning_planning_restriction',
+  ACCESS_RESTRICTION_LANDLOCKED      = 'access_restriction_landlocked',
+  CONTAMINATION_REMEDIATION          = 'contamination_remediation',
+  OTHER                              = 'other',
 }
 
-/**
- * Tracks whether supporting documents have been uploaded for this constraint.
- * This is application-level state — NOT stored in the DB enum (no migration needed).
- */
 export enum ConstraintDocStatus {
   PENDING_DOCUMENTS  = 'pending_documents',
   DOCUMENTS_UPLOADED = 'documents_uploaded',
@@ -39,7 +31,7 @@ export class SiteConstraint {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  /** FK → dispute_cases.id (matches schema: dispute_id UUID NOT NULL) */
+  /** FK → dispute_cases.id */
   @Column({ type: 'uuid', nullable: false, name: 'dispute_id' })
   dispute_id: string;
 
@@ -58,32 +50,6 @@ export class SiteConstraint {
   /** Matches schema: document_blob_url TEXT */
   @Column({ type: 'text', nullable: true })
   document_blob_url: string | null;
-
-  // ── Application-level tracking columns (add via migration below) ──────────
-
-  /**
-   * Tracks document upload progress for this constraint.
-   * Stored as varchar — avoids a DB enum migration.
-   */
-  @Column({
-    type: 'varchar',
-    length: 30,
-    nullable: false,
-    default: ConstraintDocStatus.PENDING_DOCUMENTS,
-    name: 'doc_status',
-  })
-  doc_status: ConstraintDocStatus;
-
-  /** True once the missing-documents email has been sent to the client */
-  @Column({ type: 'boolean', nullable: false, default: false, name: 'email_sent' })
-  email_sent: boolean;
-
-  @Column({ type: 'timestamptz', nullable: true, name: 'email_sent_at' })
-  email_sent_at: Date | null;
-
-  /** How many reminder emails have been sent */
-  @Column({ type: 'smallint', nullable: false, default: 0, name: 'email_retry_count' })
-  email_retry_count: number;
 
   @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
   created_at: Date;

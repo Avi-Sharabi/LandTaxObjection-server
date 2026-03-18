@@ -9,6 +9,8 @@ import {
   ParseUUIDPipe,
   HttpCode,
   HttpStatus,
+  Request,
+  UseGuards,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -24,9 +26,11 @@ import {
   UpdateSiteConstraintDto,
   SiteConstraintResponseDto,
 } from './dto/site-constraint.dto';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 @ApiTags('Site Constraints')
 @ApiBearerAuth()
+@UseGuards(JwtAuthGuard)
 @Controller('constraints')
 export class SiteConstraintsController {
   constructor(private readonly service: SiteConstraintsService) {}
@@ -37,13 +41,17 @@ export class SiteConstraintsController {
   @ApiOperation({
     summary: 'Add a site constraint to a dispute case',
     description:
-      'Creates a SiteConstraint record. Automatically checks for supporting documents ' +
-      'in dispute_documents and emails the client if any are missing.',
+      'Creates a SiteConstraint record and automatically checks for ' +
+      'supporting documents in dispute_documents.',
   })
   @ApiResponse({ status: 201, type: SiteConstraintResponseDto })
   @ApiResponse({ status: 400, description: 'Duplicate constraint type or invalid payload.' })
-  create(@Body() dto: CreateSiteConstraintDto): Promise<SiteConstraintResponseDto> {
-    return this.service.create(dto) as any;
+  create(
+    @Body() dto: CreateSiteConstraintDto,
+    @Request() req: any,
+  ): Promise<SiteConstraintResponseDto> {
+    const userId = req.user?.sub ?? req.user?.id ?? 'unknown';
+    return this.service.create(dto, userId) as any;
   }
 
   // GET /constraints/:disputeId
@@ -69,12 +77,7 @@ export class SiteConstraintsController {
 
   // PATCH /constraints/detail/:id
   @Patch('detail/:id')
-  @ApiOperation({
-    summary: 'Update a site constraint',
-    description:
-      'Updates description, legal_argument, or document_blob_url. ' +
-      'If document_blob_url is provided, re-runs document verification.',
-  })
+  @ApiOperation({ summary: 'Update a site constraint' })
   @ApiParam({ name: 'id', description: 'Constraint UUID' })
   @ApiResponse({ status: 200, type: SiteConstraintResponseDto })
   @ApiResponse({ status: 404, description: 'Not found.' })
@@ -94,20 +97,5 @@ export class SiteConstraintsController {
   @ApiResponse({ status: 404, description: 'Not found.' })
   remove(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
     return this.service.remove(id);
-  }
-
-  // POST /constraints/detail/:id/retry-verification
-  @Post('detail/:id/retry-verification')
-  @HttpCode(HttpStatus.OK)
-  @ApiOperation({
-    summary: 'Manually re-trigger document verification and missing-doc email',
-  })
-  @ApiParam({ name: 'id', description: 'Constraint UUID' })
-  @ApiResponse({ status: 200, schema: { example: { message: 'Verification retry complete.' } } })
-  async retryVerification(
-    @Param('id', ParseUUIDPipe) id: string,
-  ): Promise<{ message: string }> {
-    await this.service.retryVerification(id);
-    return { message: 'Verification retry complete.' };
   }
 }
