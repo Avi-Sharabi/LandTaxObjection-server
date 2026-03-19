@@ -29,11 +29,15 @@ export class ComparablesService {
     await this.assertDisputeCaseExists(disputeCaseId);
     this.assertSaleDateNotFuture(dto.sale_date);
 
+    const adjustedLandValue = dto.sale_price - dto.estimated_improvements_value;
+
     const comparable = this.comparablesRepository.create({
       dispute_case_id: disputeCaseId,
       address: dto.address,
       sale_date: new Date(dto.sale_date),
       sale_price: dto.sale_price,
+      estimated_improvements_value: dto.estimated_improvements_value,
+      adjusted_land_value: adjustedLandValue,
       land_area_sqm: dto.land_area_sqm ?? null,
       notes: dto.notes ?? null,
       created_by_id: createdById,

@@ -24,6 +24,14 @@ export class ComparableResponseDto {
   sale_price: number;
 
   @Expose()
+  @ApiProperty({ description: 'Estimated value of improvements (buildings, structures) in AUD' })
+  estimated_improvements_value: number;
+
+  @Expose()
+  @ApiProperty({ description: 'Adjusted land-only value: Sale Price − Improvements' })
+  adjusted_land_value: number;
+
+  @Expose()
   @ApiProperty({ nullable: true })
   land_area_sqm: number | null;
 

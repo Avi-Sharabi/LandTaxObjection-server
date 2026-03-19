@@ -31,6 +31,11 @@ export class CreateComparableDto {
   @IsPositive()
   sale_price: number;
 
+  @ApiProperty({ example: 250000.0, description: 'Estimated value of improvements (buildings, structures) in AUD' })
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @IsPositive()
+  estimated_improvements_value: number;
+
   @ApiProperty({ example: 612.5, required: false, description: 'Land area in square metres' })
   @IsOptional()
   @IsNumber({ maxDecimalPlaces: 2 })

@@ -26,6 +26,12 @@ export class ComparableSale {
   @Column({ type: 'numeric', precision: 15, scale: 2, nullable: false })
   sale_price: number;
 
+  @Column({ type: 'numeric', precision: 15, scale: 2, nullable: false })
+  estimated_improvements_value: number;
+
+  @Column({ type: 'numeric', precision: 15, scale: 2, nullable: false })
+  adjusted_land_value: number;
+
   @Column({ type: 'numeric', precision: 10, scale: 2, nullable: true })
   land_area_sqm: number | null;
 
