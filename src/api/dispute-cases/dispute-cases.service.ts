@@ -4,13 +4,15 @@ import { Repository } from 'typeorm';
 import { CreateDisputeCaseDto } from './dto/create-dispute-case.dto';
 import { UpdateDisputeCaseDto } from './dto/update-dispute-case.dto';
 import { CreateDisputeIntakeDto } from './dto/create-dispute-intake.dto';
-import { DisputeCase } from './entities/dispute-case.entity';
+import { DisputeCase, DisputeStatus } from './entities/dispute-case.entity';
 import { DisputeIntakeOrchestrator } from './intake/dispute-intake.orchestrator';
+import { ComparablesService } from '../comparables/comparables.service';
 
 @Injectable()
 export class DisputeCasesService {
   constructor(
     private readonly intakeOrchestrator: DisputeIntakeOrchestrator,
+    private readonly comparablesService: ComparablesService,
     @InjectRepository(DisputeCase)
     private disputeCasesRepository: Repository<DisputeCase>,
   ) {}
@@ -24,9 +26,7 @@ export class DisputeCasesService {
   }
 
   async findAll(): Promise<DisputeCase[]> {
-    return this.disputeCasesRepository.find({
-      relations: ['client', 'property', 'valuation_notice', 'assigned_accountant', 'assigned_lawyer', 'legal_grounds'],
-    });
+    return this.disputeCasesRepository.find();
   }
 
   async findOne(id: string): Promise<DisputeCase> {
@@ -41,6 +41,13 @@ export class DisputeCasesService {
   async update(id: string, updateDisputeCaseDto: UpdateDisputeCaseDto): Promise<DisputeCase> {
     const disputeCase = await this.findOne(id);
     Object.assign(disputeCase, updateDisputeCaseDto);
+    return this.disputeCasesRepository.save(disputeCase);
+  }
+
+  async advanceToAppraisal(id: string): Promise<DisputeCase> {
+    const disputeCase = await this.findOne(id);
+    await this.comparablesService.assertMinimumComparables(id);
+    disputeCase.status = DisputeStatus.APPRAISAL;
     return this.disputeCasesRepository.save(disputeCase);
   }
 
