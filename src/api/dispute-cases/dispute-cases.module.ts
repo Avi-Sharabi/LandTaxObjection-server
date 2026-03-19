@@ -1,6 +1,7 @@
 import { HttpModule } from '@nestjs/axios';
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { ComparablesModule } from '../comparables/comparables.module';
 import { Client } from '../clients/entities/client.entity';
 import { DisputeLegalGround } from '../dispute-legal-grounds/entities/dispute-legal-ground.entity';
 import { Property } from '../properties/entities/property.entity';
@@ -20,6 +21,7 @@ import { fyiStorageService } from 'src/common/fyi-storage/fyi-storage.service';
   imports: [
     HttpModule,
     AzureBlobModule,
+    ComparablesModule,
     TypeOrmModule.forFeature([
       DisputeCase,
       DisputeLegalGround,

@@ -9,7 +9,7 @@ import {
   BadRequestException,
   UseGuards,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBody, ApiResponse, ApiCreatedResponse } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiBody, ApiParam, ApiResponse, ApiCreatedResponse } from '@nestjs/swagger';
 import { DisputeCasesService } from './dispute-cases.service';
 import { CreateDisputeCaseDto } from './dto/create-dispute-case.dto';
 import { UpdateDisputeCaseDto } from './dto/update-dispute-case.dto';
@@ -73,6 +73,17 @@ export class DisputeCasesController {
   @Patch(':id')
   update(@Param('id') id: string, @Body() updateDisputeCaseDto: UpdateDisputeCaseDto) {
     return this.disputeCasesService.update(id, updateDisputeCaseDto);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post(':id/advance-to-appraisal')
+  @ApiOperation({ summary: 'Advance a dispute case to valuation appraisal' })
+  @ApiParam({ name: 'id', description: 'Dispute case UUID' })
+  @ApiResponse({ status: 201, description: 'Case advanced to appraisal' })
+  @ApiResponse({ status: 404, description: 'Dispute case not found' })
+  @ApiResponse({ status: 422, description: 'Fewer than 3 comparable sales exist' })
+  advanceToAppraisal(@Param('id') id: string) {
+    return this.disputeCasesService.advanceToAppraisal(id);
   }
 
   @UseGuards(JwtAuthGuard)
