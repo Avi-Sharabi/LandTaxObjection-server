@@ -18,8 +18,8 @@ export class AzureBlobService {
         this.accountKey = this.extractFromConnectionString(connectionString, 'AccountKey');
     }
 
-    uploadToFyiDev(base64, caseReference) {
-        return this.uploadToAzureBlob(base64, caseReference, 'dispute-cases-fyi-dev');
+    uploadToFyiDev(base64, caseReference, filename) {
+        return this.uploadToAzureBlob(base64, caseReference, 'dispute-cases-fyi-dev', filename);
     }
 
 
