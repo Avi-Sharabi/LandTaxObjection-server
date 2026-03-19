@@ -18,8 +18,8 @@ export class AzureBlobService {
         this.accountKey = this.extractFromConnectionString(connectionString, 'AccountKey');
     }
 
-    uploadToFyiDev(base64, caseReference, filename) {
-        return this.uploadToAzureBlob(base64, caseReference, 'dispute-cases-fyi-dev', filename);
+    uploadToFyiDev(base64, caseReference) {
+        return this.uploadToAzureBlob(base64, caseReference, 'dispute-cases-fyi-dev');
     }
 
 
@@ -27,9 +27,8 @@ export class AzureBlobService {
         base64: string,
         caseReference: string,
         folderName = 'dispute-cases',
-        filename :string
     ): string | null {
-        const blobName = `${folderName}/${caseReference}/${filename}`;
+        const blobName = `${folderName}/${caseReference}/valuation-notice.pdf`;
         // const blobName = `${folderName}/${caseReference}/valuation-notice-${Date.now()}.pdf`;
         this.uploadFile(blobName, base64);
         return blobName;
