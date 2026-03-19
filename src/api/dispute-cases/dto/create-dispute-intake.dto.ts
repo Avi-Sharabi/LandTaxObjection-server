@@ -1,19 +1,57 @@
 import { ApiProperty } from '@nestjs/swagger';
 import {
   IsArray,
+  IsBoolean,
   IsDateString,
   IsEmail,
   IsEnum,
-  IsInt,
   IsNotEmpty,
   IsNumber,
   IsOptional,
   IsString,
   Max,
   Min,
+  ValidateNested,
 } from 'class-validator';
+import { Type } from 'class-transformer';
 import { LegalGround } from '../../dispute-legal-grounds/entities/dispute-legal-ground.entity';
 import { Jurisdiction } from '../../properties/entities/property.entity';
+
+export class IntakeValuationNoticeDto {
+  @ApiProperty({ example: 280798, description: 'Assessed land value from the notice' })
+  @IsNumber()
+  assessed_land_value: number;
+
+  @ApiProperty({ example: '2024-07-01', description: 'Valuation date on the notice' })
+  @IsDateString()
+  valuation_date: string;
+}
+
+export class IntakePropertyDto {
+  @ApiProperty({ example: 'Unit 4 25 TERMINUS ST CASTLE HILL', description: 'Property address' })
+  @IsString()
+  @IsNotEmpty()
+  address: string;
+
+  @ApiProperty({ enum: Jurisdiction, example: 'NSW', description: 'State/jurisdiction' })
+  @IsEnum(Jurisdiction)
+  state: Jurisdiction;
+
+  @ApiProperty({ example: 100, description: 'Ownership percentage (0–100)' })
+  @IsNumber()
+  @Min(0)
+  @Max(100)
+  ownership_pct: number;
+
+  @ApiProperty({ type: () => IntakeValuationNoticeDto })
+  @ValidateNested()
+  @Type(() => IntakeValuationNoticeDto)
+  valuation_notice: IntakeValuationNoticeDto;
+
+  @ApiProperty({ example: true, description: 'Whether to create a dispute case for this property' })
+  @IsBoolean()
+  create_dispute: boolean;
+}
 
 export class CreateDisputeIntakeDto {
   // ─── File Upload ────────────────────────────────────────────────────────────
@@ -27,70 +65,41 @@ export class CreateDisputeIntakeDto {
   @IsString()
   attachment?: string;
 
-
   // ─── Applicant Details ──────────────────────────────────────────────────────
 
-  @ApiProperty({
-    example: 'Jane Smith',
-    description: 'Full name of the applicant (maps to JSON: FullName)',
-  })
+  @ApiProperty({ example: 'Jane Smith', description: 'Full name of the applicant' })
   @IsString()
   @IsNotEmpty()
   fullName: string;
 
-  @ApiProperty({
-    example: 'jane@example.com',
-    description: 'Email address of the applicant (maps to JSON: email)',
-  })
+  @ApiProperty({ example: 'jane@example.com', description: 'Email address of the applicant' })
   @IsEmail()
   email: string;
 
-  // ─── Property ───────────────────────────────────────────────────────────────
+  // ─── Properties ─────────────────────────────────────────────────────────────
 
   @ApiProperty({
-    example: '123 Example St, Sydney NSW 2000',
-    description: 'Property address (maps to JSON: propertyAddress)',
+    type: () => IntakePropertyDto,
+    isArray: true,
+    description: 'List of properties included in this intake submission',
   })
-  @IsString()
-  @IsNotEmpty()
-  propAddress: string;
-
-  @ApiProperty({
-    enum: Jurisdiction,
-    example: 'NSW',
-    description: 'State/jurisdiction for the property (maps to JSON: state)',
-  })
-  @IsEnum(Jurisdiction)
-  state: Jurisdiction;
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => IntakePropertyDto)
+  properties: IntakePropertyDto[];
 
   // ─── Valuation / Notice Details ─────────────────────────────────────────────
 
-  @ApiProperty({
-    example: '2026-04-03',
-    description: 'Date on the valuation notice (maps to JSON: noticeDate)',
-  })
+  @ApiProperty({ example: '2026-04-03', description: 'Date on the valuation notice' })
   @IsDateString()
   noticeDate: string;
 
-  @ApiProperty({
-    example: '2024',
-    description: 'Valuation year on the notice (maps to JSON: valuationYear)',
-  })
+  @ApiProperty({ example: '2024', description: 'Valuation year on the notice' })
   @IsString()
   @IsNotEmpty()
   valuationYear: string;
 
-  @ApiProperty({
-    example: 5555555555555,
-    description: 'Assessed land value from the notice (maps to JSON: assessedLandValue)',
-  })
-  @IsNumber()
-  assessedLandValue: number;
-
-  @ApiProperty({
-    example: '2024-03-01',
-    description: 'Statutory deadline for lodging the dispute (maps to JSON: statutoryDeadline)',
-  })
+  @ApiProperty({ example: '2024-03-01', description: 'Statutory deadline for lodging the dispute' })
   @IsDateString()
   statutoryDeadline: string;
 
@@ -98,7 +107,7 @@ export class CreateDisputeIntakeDto {
 
   @ApiProperty({
     example: 'ddd8a242-12f6-46eb-8e09-80d3b96ea460',
-    description: 'Accountant ID to assign to the dispute (maps to JSON: accountantId)',
+    description: 'Accountant ID to assign to the dispute',
   })
   @IsString()
   accountantId: string;
@@ -108,7 +117,7 @@ export class CreateDisputeIntakeDto {
   @ApiProperty({
     enum: LegalGround,
     isArray: true,
-    description: 'Legal grounds for dispute (maps to JSON: legalGrounds)',
+    description: 'Legal grounds for dispute (applied to all dispute cases in this submission)',
     example: ['incorrect_land_value', 'incorrect_area_or_dimensions'],
   })
   @IsArray()
