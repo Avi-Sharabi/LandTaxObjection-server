@@ -30,6 +30,9 @@ export class Property {
   @Column({ type: 'text', nullable: false })
   postcode: string;
 
+  @Column({ type: 'numeric', precision: 5, scale: 2, nullable: true })
+  ownership_pct: number;
+
   @Column({ type: 'numeric', precision: 12, scale: 2, nullable: true })
   land_area_sqm: number;
 
