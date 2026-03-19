@@ -31,4 +31,5 @@ jobs:
           app-name: 'landtaxdispute-server'
           slot-name: 'Production'
           package: .
+          
           publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_A76461515FA9422A88808EE1E33679FD }}
