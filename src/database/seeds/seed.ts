@@ -1,5 +1,5 @@
 import { DataSource } from 'typeorm';
-import AppDataSource from '../data-source';
+import { AppDataSource } from '../data-source';
 import { seedUsers } from './user.seeder';
 
 async function runSeeders(dataSource: DataSource): Promise<void> {
