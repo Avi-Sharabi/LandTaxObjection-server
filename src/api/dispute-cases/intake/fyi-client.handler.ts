@@ -38,9 +38,8 @@ export class FyiClientHandler {
       );
 
       const results = data?.results ?? [];
-      const matched = results[0].email?.toLowerCase() === email.toLowerCase()
-
-      return matched ?? null;
+      const candidate = results[0];
+      return candidate?.email?.toLowerCase() === email.toLowerCase() ? candidate : null;
     } catch (error) {
       console.error('FYI lookup failed:', error.message);
       return null;
