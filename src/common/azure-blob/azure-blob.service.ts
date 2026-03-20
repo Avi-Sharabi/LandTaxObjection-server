@@ -19,18 +19,17 @@ export class AzureBlobService {
     }
 
     uploadToFyiDev(base64, caseReference) {
-        return this.uploadToAzureBlob(base64, caseReference, 'dispute-cases-fyi-dev');
+        return this.uploadToAzureBlob(base64, caseReference, 'dispute-cases-fyi-dev', 'valuation-notice.pdf');
     }
 
-
-    public uploadToAzureBlob(
+    public async uploadToAzureBlob(
         base64: string,
         caseReference: string,
-        folderName = 'dispute-cases',
-    ): string | null {
-        const blobName = `${folderName}/${caseReference}/valuation-notice.pdf`;
-        // const blobName = `${folderName}/${caseReference}/valuation-notice-${Date.now()}.pdf`;
-        this.uploadFile(blobName, base64);
+        folderName: string,
+        fileName: string,
+    ): Promise<string | null> {
+        const blobName = `${folderName}/${caseReference}/${fileName}`;
+        await this.uploadFile(blobName, base64);  // ← awaited
         return blobName;
     }
     private extractFromConnectionString(connectionString: string, key: string): string {

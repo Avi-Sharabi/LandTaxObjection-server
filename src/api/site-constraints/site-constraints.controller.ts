@@ -31,7 +31,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 @ApiTags('Site Constraints')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard)
-@Controller('api/v1/constraints')
+@Controller('v1/constraints')
 export class SiteConstraintsController {
   constructor(private readonly service: SiteConstraintsService) {}
 

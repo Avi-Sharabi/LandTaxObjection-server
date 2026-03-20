@@ -29,8 +29,13 @@ export class PdfStorageHandler {
         : this.azureBlobService.uploadToFyiDev(base64, caseReference); // simulate FYI
     }
 
-    return this.azureBlobService.uploadToAzureBlob(base64, caseReference);
+    return await this.azureBlobService.uploadToAzureBlob(
+      base64,
+      caseReference,
+      'dispute-cases',            // ← add folderName
+      'valuation-notice.pdf',     // ← add fileName
+    );
   }
- 
+
 
 }

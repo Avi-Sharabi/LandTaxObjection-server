@@ -9,19 +9,20 @@ import { Repository } from 'typeorm';
 
 import { SiteConstraint, ConstraintType } from './entities/site-constraint.entity';
 import { CreateSiteConstraintDto, UpdateSiteConstraintDto } from './dto/site-constraint.dto';
+import { AzureBlobService } from '../../common/azure-blob/azure-blob.service';
 
 /** Maps each constraint type to the document_type values that satisfy it.
  *  Based on the `document_type` DB enum from the MVP schema. */
 const REQUIRED_DOC_TYPES: Record<ConstraintType, string[]> = {
-  [ConstraintType.HERITAGE_LISTING]:                    ['legal_document', 'property_report'],
-  [ConstraintType.FLOOD_ZONE_100YR]:                    ['property_report', 'other'],
-  [ConstraintType.BUSHFIRE_BAL_RESTRICTION]:            ['property_report', 'other'],
-  [ConstraintType.EASEMENT_OR_RIGHT_OF_WAY]:            ['land_title_search', 'legal_document'],
-  [ConstraintType.ENVIRONMENTAL_CONSERVATION_OVERLAY]:  ['property_report', 'other'],
-  [ConstraintType.ZONING_PLANNING_RESTRICTION]:         ['property_report', 'legal_document'],
-  [ConstraintType.ACCESS_RESTRICTION_LANDLOCKED]:       ['land_title_search', 'property_report'],
-  [ConstraintType.CONTAMINATION_REMEDIATION]:           ['property_report', 'independent_valuation'],
-  [ConstraintType.OTHER]:                               ['other'],
+  [ConstraintType.HERITAGE_LISTING]: ['legal_document', 'property_report'],
+  [ConstraintType.FLOOD_ZONE_100YR]: ['property_report', 'other'],
+  [ConstraintType.BUSHFIRE_BAL_RESTRICTION]: ['property_report', 'other'],
+  [ConstraintType.EASEMENT_OR_RIGHT_OF_WAY]: ['land_title_search', 'legal_document'],
+  [ConstraintType.ENVIRONMENTAL_CONSERVATION_OVERLAY]: ['property_report', 'other'],
+  [ConstraintType.ZONING_PLANNING_RESTRICTION]: ['property_report', 'legal_document'],
+  [ConstraintType.ACCESS_RESTRICTION_LANDLOCKED]: ['land_title_search', 'property_report'],
+  [ConstraintType.CONTAMINATION_REMEDIATION]: ['property_report', 'independent_valuation'],
+  [ConstraintType.OTHER]: ['other'],
 };
 
 @Injectable()
@@ -31,7 +32,8 @@ export class SiteConstraintsService {
   constructor(
     @InjectRepository(SiteConstraint)
     private readonly constraintRepo: Repository<SiteConstraint>,
-  ) {}
+    private readonly azureBlobService: AzureBlobService,
+  ) { }
 
   // ── CREATE ─────────────────────────────────────────────────────────────────
 
@@ -47,6 +49,30 @@ export class SiteConstraintsService {
     }
 
     const constraint = this.constraintRepo.create({ ...dto });
+
+    // ── Azure Blob upload ──────────────────────────────────────────────────
+    // If the caller supplied a raw base64 attachment, upload it to Azure and
+    // store the resulting SAS URL in document_blob_url automatically.
+    if (dto.attachment) {
+      try {
+        const blobName = await this.azureBlobService.uploadToAzureBlob(
+          dto.attachment,
+          dto.dispute_id,
+          'site-constraints',
+          'constraint-document.pdf',  // ← add fileName
+        );
+        if (blobName) {
+          const sasUrl = await this.azureBlobService.getFileUrl(blobName);
+          constraint.document_blob_url = sasUrl;
+        }
+      } catch (err) {
+        this.logger.error(
+          `[CONSTRAINT] Azure upload failed — dispute=${dto.dispute_id} error=${err.message}`,
+        );
+        // Non-fatal: constraint is still created; document_blob_url stays null
+      }
+    }
+
     const saved = await this.constraintRepo.save(constraint);
 
     // Log: constraint selection + user info + timestamp

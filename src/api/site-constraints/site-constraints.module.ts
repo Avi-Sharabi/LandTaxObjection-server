@@ -4,13 +4,14 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { SiteConstraint } from './entities/site-constraint.entity';
 import { SiteConstraintsController } from './site-constraints.controller';
 import { SiteConstraintsService } from './site-constraints.service';
+import { AzureBlobService } from '../../common/azure-blob/azure-blob.service';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([SiteConstraint]),
   ],
   controllers: [SiteConstraintsController],
-  providers: [SiteConstraintsService],
+  providers: [SiteConstraintsService, AzureBlobService],
   exports: [SiteConstraintsService],
 })
 export class SiteConstraintsModule {}

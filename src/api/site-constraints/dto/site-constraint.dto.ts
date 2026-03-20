@@ -6,6 +6,7 @@ import {
   IsString,
   IsUUID,
 } from 'class-validator';
+import { Transform } from 'class-transformer';
 import { ConstraintType } from '../entities/site-constraint.entity';
 
 // ── CREATE ────────────────────────────────────────────────────────────────────
@@ -41,6 +42,22 @@ export class CreateSiteConstraintDto {
   @IsOptional()
   @IsString()
   document_blob_url?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'Raw base64 string of the supporting document. ' +
+      'Data URI prefix (e.g. data:application/pdf;base64,) is stripped automatically. ' +
+      'When provided the service uploads the file to Azure Blob Storage and ' +
+      'stores the resulting SAS URL in document_blob_url automatically.',
+    example: 'JVBERi0x...',
+  })
+  @IsOptional()
+  @IsString()
+  @Transform(({ value }) => {
+    if (!value || typeof value !== 'string') return value;
+    return value.includes(',') ? value.split(',')[1] : value;
+  })
+  attachment?: string;
 }
 
 // ── UPDATE ────────────────────────────────────────────────────────────────────
