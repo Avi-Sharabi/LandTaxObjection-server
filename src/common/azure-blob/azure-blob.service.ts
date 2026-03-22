@@ -22,8 +22,7 @@ export class AzureBlobService {
         return this.uploadToAzureBlob(base64, documentId, 'assessment-documents-fyi-dev');
     }
 
-uploadToAzureBlob
-    public (
+    public uploadToAzureBlob(
         base64: string,
         documentId: string,
         folderName = 'assessment-documents',
