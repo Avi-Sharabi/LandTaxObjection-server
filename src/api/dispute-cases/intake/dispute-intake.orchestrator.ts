@@ -1,13 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { ConfigService } from '@nestjs/config';
 import {
   CreateDisputeIntakeDto,
   IntakePropertyDto,
   IntakeValuationNoticeDto,
 } from '../dto/create-dispute-intake.dto';
 import { DisputeCase, DisputeStatus } from '../entities/dispute-case.entity';
+import { AssessmentDocument } from '../entities/assessment-document.entity';
 import { DisputeLegalGround, LegalGround } from '../../dispute-legal-grounds/entities/dispute-legal-ground.entity';
 import { Property, Jurisdiction } from '../../properties/entities/property.entity';
 import { ValuationNotice } from '../../valuation-notices/entities/valuation-notice.entity';
@@ -16,15 +16,24 @@ import { FyiClientHandler } from './fyi-client.handler';
 import { PdfStorageHandler } from './pdf-storage.handler';
 import { AzureEmailService } from 'src/common/azure-email/azure-email.service';
 
+interface PropertyFlags {
+  flag_heritage: boolean;
+  flag_easement: boolean;
+  flag_flood_zone: boolean;
+  flag_environmental: boolean;
+  flag_zoning: boolean;
+}
+
 @Injectable()
 export class DisputeIntakeOrchestrator {
   constructor(
     private readonly fyiClientHandler: FyiClientHandler,
     private readonly pdfStorageHandler: PdfStorageHandler,
     private readonly azureEmailService: AzureEmailService,
-    private readonly config: ConfigService,
     @InjectRepository(DisputeCase)
     private disputeCasesRepository: Repository<DisputeCase>,
+    @InjectRepository(AssessmentDocument)
+    private assessmentDocumentsRepository: Repository<AssessmentDocument>,
     @InjectRepository(DisputeLegalGround)
     private legalGroundsRepository: Repository<DisputeLegalGround>,
     @InjectRepository(Property)
@@ -50,13 +59,17 @@ export class DisputeIntakeOrchestrator {
       !!fyiClient,
     );
 
+    // Create one source document record for this assessment submission
+    const assessmentDocument = await this.createAssessmentDocument(client.id, filePath, intakeDto.noticeDate, intakeDto.valuationYear);
+
     const caseReferences: string[] = [];
     let firstCase = true;
 
     for (const prop of intakeDto.properties) {
       const property = await this.createProperty(client.id, prop);
 
-      if (!prop.create_dispute) {
+      // create_dispute defaults to true when not provided
+      if (prop.create_dispute === false) {
         continue;
       }
 
@@ -64,10 +77,11 @@ export class DisputeIntakeOrchestrator {
       const caseReference = firstCase ? tempRef : await this.generateCaseReference();
       firstCase = false;
 
-      const notice = await this.createValuationNotice(property.id, filePath, prop.valuation_notice, intakeDto.valuationYear);
-      const disputeCase = await this.createDisputeCase(client, property.id, notice.id, caseReference, prop.state, prop.valuation_notice.assessed_land_value, intakeDto);
+      const flags = this.mapConstraintsToFlags(prop.constraints ?? []);
+      const notice = await this.createValuationNotice(property.id, filePath, prop.valuation_notice, intakeDto.valuationYear, assessmentDocument.id);
+      const disputeCase = await this.createDisputeCase(client, property.id, notice.id, caseReference, prop.state, prop.valuation_notice.assessed_land_value, intakeDto, flags);
 
-      await this.createLegalGrounds(disputeCase.id, intakeDto.grounds);
+      await this.createLegalGrounds(disputeCase.id, prop.grounds);
       caseReferences.push(caseReference);
     }
 
@@ -76,6 +90,32 @@ export class DisputeIntakeOrchestrator {
     }
 
     return { case_references: caseReferences };
+  }
+
+  private mapConstraintsToFlags(constraints: string[]): PropertyFlags {
+    const normalised = constraints.map((c) => c.toLowerCase());
+    return {
+      flag_heritage: normalised.some((c) => c.includes('heritage')),
+      flag_easement: normalised.some((c) => c.includes('easement')),
+      flag_flood_zone: normalised.some((c) => c.includes('flood')),
+      flag_environmental: normalised.some((c) => c.includes('environment')),
+      flag_zoning: normalised.some((c) => c.includes('zoning')),
+    };
+  }
+
+  private async createAssessmentDocument(
+    clientId: string,
+    filePath: string | null,
+    noticeDate: string,
+    valuationYear: string,
+  ): Promise<AssessmentDocument> {
+    const doc = this.assessmentDocumentsRepository.create({
+      client_id: clientId,
+      file_path: filePath,
+      notice_date: new Date(noticeDate),
+      valuation_year: valuationYear,
+    });
+    return this.assessmentDocumentsRepository.save(doc);
   }
 
   private async createProperty(clientId: string, prop: IntakePropertyDto): Promise<Property> {
@@ -95,6 +135,7 @@ export class DisputeIntakeOrchestrator {
     filePath: string | null,
     valuationNotice: IntakeValuationNoticeDto,
     valuationYear: string,
+    sourceDocumentId: string,
   ): Promise<ValuationNotice> {
     const notice = this.valuationNoticesRepository.create({
       property_id: propertyId,
@@ -102,6 +143,7 @@ export class DisputeIntakeOrchestrator {
       assessed_land_value: valuationNotice.assessed_land_value,
       notice_reference: `INTAKE-${valuationYear}-${Date.now()}`,
       file_path: filePath,
+      source_document_id: sourceDocumentId,
     });
     return this.valuationNoticesRepository.save(notice);
   }
@@ -114,6 +156,7 @@ export class DisputeIntakeOrchestrator {
     jurisdiction: Jurisdiction,
     assessedLandValue: number,
     intakeDto: CreateDisputeIntakeDto,
+    flags: PropertyFlags,
   ): Promise<DisputeCase> {
     const disputeCase = this.disputeCasesRepository.create({
       case_reference: caseReference,
@@ -126,6 +169,7 @@ export class DisputeIntakeOrchestrator {
       statutory_deadline: new Date(intakeDto.statutoryDeadline),
       original_assessed_value: assessedLandValue,
       notes: intakeDto.addNotes || null,
+      ...flags,
     });
     return this.disputeCasesRepository.save(disputeCase);
   }
