@@ -3,7 +3,7 @@ name: Build and deploy Node.js app to Azure Web App - landtaxdispute-server
 on:
   push:
     branches:
-      - master
+      - main
   workflow_dispatch:
 
 jobs:
@@ -25,11 +25,11 @@ jobs:
           npm ci
           npm run build
           npm prune --omit=dev
+
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
         with:
           app-name: 'landtaxdispute-server'
           slot-name: 'Production'
           package: .
-          
           publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_A76461515FA9422A88808EE1E33679FD }}

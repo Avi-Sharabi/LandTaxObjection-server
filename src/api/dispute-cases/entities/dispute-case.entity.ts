@@ -4,9 +4,7 @@ import { Property } from '../../properties/entities/property.entity';
 import { ValuationNotice } from '../../valuation-notices/entities/valuation-notice.entity';
 import { User } from '../../users/entities/user.entity';
 import { DisputeLegalGround } from '../../dispute-legal-grounds/entities/dispute-legal-ground.entity';
-import { SiteConstraint } from '../../site-constraints/entities/site-constraint.entity';
-
-
+import { ComparableSale } from '../../comparables/entities/comparable-sale.entity';
 
 export enum DisputeStatus {
   DRAFT = 'draft',
@@ -149,7 +147,6 @@ export class DisputeCase {
   @OneToMany(() => DisputeLegalGround, (ground) => ground.dispute)
   legal_grounds: DisputeLegalGround[];
 
-  @OneToMany(() => SiteConstraint, (sc) => sc.dispute, { cascade: true })
-  site_constraints: SiteConstraint[];
-
+  @OneToMany(() => ComparableSale, (comparable) => comparable.dispute_case)
+  comparables: ComparableSale[];
 }
