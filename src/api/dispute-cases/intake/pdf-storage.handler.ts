@@ -17,7 +17,7 @@ export class PdfStorageHandler {
 
   async handlePdfStorage(
     base64: string | undefined,
-    caseReference: string,
+    documentId: string,
     isFyiClient: boolean,
   ): Promise<string | null> {
     if (!base64) return null;
@@ -25,11 +25,11 @@ export class PdfStorageHandler {
 
     if (isFyiClient) {
       return isFyiProdEnabled
-        ? this.fyiStorageService.uploadToFyi(base64, caseReference)
-        : this.azureBlobService.uploadToFyiDev(base64, caseReference); // simulate FYI
+        ? this.fyiStorageService.uploadToFyi(base64, documentId)
+        : this.azureBlobService.uploadToFyiDev(base64, documentId); // simulate FYI
     }
 
-    return this.azureBlobService.uploadToAzureBlob(base64, caseReference);
+    return this.azureBlobService.uploadToAzureBlob(base64, documentId);
   }
  
 

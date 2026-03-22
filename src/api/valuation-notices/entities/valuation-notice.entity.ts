@@ -23,9 +23,6 @@ export class ValuationNotice {
   @Column({ type: 'text', nullable: true })
   notice_reference: string | null;
 
-  @Column({ type: 'text', nullable: true })
-  file_path: string | null;
-
   @Column({ type: 'uuid', nullable: true, name: 'source_document_id' })
   source_document_id: string | null;
 

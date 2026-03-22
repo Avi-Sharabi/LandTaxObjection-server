@@ -51,19 +51,21 @@ export class DisputeIntakeOrchestrator {
       ? await this.fyiClientHandler.handleExistingClient(intakeDto, fyiClient)
       : await this.fyiClientHandler.handleNewProspect(intakeDto);
 
-    // Generate a temporary reference for PDF naming before the loop
-    const tempRef = await this.generateCaseReference();
+    // Create the source document first so its UUID can be used as the storage folder
+    const assessmentDocument = await this.createAssessmentDocument(client.id, null, intakeDto.noticeDate, intakeDto.valuationYear);
+
+    // Upload PDF into assessment-documents/{doc.id}/valuation-notice.pdf
     const filePath = await this.pdfStorageHandler.handlePdfStorage(
       intakeDto.attachment,
-      tempRef,
+      assessmentDocument.id,
       !!fyiClient,
     );
-
-    // Create one source document record for this assessment submission
-    const assessmentDocument = await this.createAssessmentDocument(client.id, filePath, intakeDto.noticeDate, intakeDto.valuationYear);
+    if (filePath) {
+      await this.assessmentDocumentsRepository.update(assessmentDocument.id, { file_path: filePath });
+      assessmentDocument.file_path = filePath;
+    }
 
     const caseReferences: string[] = [];
-    let firstCase = true;
 
     for (const prop of intakeDto.properties) {
       const property = await this.createProperty(client.id, prop);
@@ -73,12 +75,10 @@ export class DisputeIntakeOrchestrator {
         continue;
       }
 
-      // Reuse tempRef for the first dispute case, generate new ones for subsequent
-      const caseReference = firstCase ? tempRef : await this.generateCaseReference();
-      firstCase = false;
+      const caseReference = await this.generateCaseReference();
 
       const flags = this.mapConstraintsToFlags(prop.constraints ?? []);
-      const notice = await this.createValuationNotice(property.id, filePath, prop.valuation_notice, intakeDto.valuationYear, assessmentDocument.id);
+      const notice = await this.createValuationNotice(property.id, prop.valuation_notice, intakeDto.valuationYear, assessmentDocument.id);
       const disputeCase = await this.createDisputeCase(client, property.id, notice.id, caseReference, prop.state, prop.valuation_notice.assessed_land_value, intakeDto, flags);
 
       await this.createLegalGrounds(disputeCase.id, prop.grounds);
@@ -132,7 +132,6 @@ export class DisputeIntakeOrchestrator {
 
   private async createValuationNotice(
     propertyId: string,
-    filePath: string | null,
     valuationNotice: IntakeValuationNoticeDto,
     valuationYear: string,
     sourceDocumentId: string,
@@ -142,7 +141,6 @@ export class DisputeIntakeOrchestrator {
       valuation_date: new Date(valuationNotice.valuation_date),
       assessed_land_value: valuationNotice.assessed_land_value,
       notice_reference: `INTAKE-${valuationYear}-${Date.now()}`,
-      file_path: filePath,
       source_document_id: sourceDocumentId,
     });
     return this.valuationNoticesRepository.save(notice);
