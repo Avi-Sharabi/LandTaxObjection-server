@@ -18,7 +18,7 @@ export class fyiStorageService {
 
     public async uploadToFyi(
         base64: string,
-        caseReference: string,
+        documentId: string,
     ): Promise<string | null> {
         try {
             const buffer = Buffer.from(base64, 'base64');
@@ -32,7 +32,7 @@ export class fyiStorageService {
                             action: { value: 'upsert' },
                             data: {
                                 model: {
-                                    name: `${caseReference} Valuation Notice`,
+                                    name: `${documentId} Valuation Notice`,
                                     document_type: 'Pdf',
                                     client_code: this.config.get('FYI_CLIENT_CODE'),
                                 },
@@ -81,7 +81,7 @@ export class fyiStorageService {
             form.append(
                 'file',
                 new Blob([buffer], { type: 'application/pdf' }),
-                `${caseReference}.pdf`,
+                `${documentId}.pdf`,
             );
 
             await firstValueFrom(

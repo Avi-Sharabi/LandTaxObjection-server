@@ -48,9 +48,31 @@ export class IntakePropertyDto {
   @Type(() => IntakeValuationNoticeDto)
   valuation_notice: IntakeValuationNoticeDto;
 
-  @ApiProperty({ example: true, description: 'Whether to create a dispute case for this property' })
+  @ApiProperty({
+    enum: LegalGround,
+    isArray: true,
+    description: 'Legal grounds for dispute for this property',
+    example: ['incorrect_land_value'],
+  })
+  @IsArray()
+  @IsEnum(LegalGround, { each: true })
+  grounds: LegalGround[];
+
+  @ApiProperty({
+    isArray: true,
+    description: 'Constraint types affecting this property (e.g. "Easements", "Heritage", "Flood Zone")',
+    example: ['Easements'],
+    required: false,
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  constraints?: string[];
+
+  @ApiProperty({ example: true, description: 'Whether to create a dispute case for this property', required: false })
+  @IsOptional()
   @IsBoolean()
-  create_dispute: boolean;
+  create_dispute?: boolean;
 }
 
 export class CreateDisputeIntakeDto {
@@ -111,18 +133,6 @@ export class CreateDisputeIntakeDto {
   })
   @IsString()
   accountantId: string;
-
-  // ─── Grounds for Dispute ────────────────────────────────────────────────────
-
-  @ApiProperty({
-    enum: LegalGround,
-    isArray: true,
-    description: 'Legal grounds for dispute (applied to all dispute cases in this submission)',
-    example: ['incorrect_land_value', 'incorrect_area_or_dimensions'],
-  })
-  @IsArray()
-  @IsEnum(LegalGround, { each: true })
-  grounds: LegalGround[];
 
   // ─── Additional Notes ───────────────────────────────────────────────────────
 

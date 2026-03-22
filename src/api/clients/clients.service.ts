@@ -88,17 +88,20 @@ export class ClientsService {
 
       const valuationNotices = await this.valuationNoticesRepository.findOne({
         where: { id: disputeCase.valuation_notice_id },
+        relations: ['source_document'],
       })
 
-      if (valuationNotices?.file_path) {
+      const filePath = valuationNotices?.source_document?.file_path ?? null;
+
+      if (filePath) {
 
         const isFyiProdEnabled = this.config.get('IS_FYI_PROD_ENABLED') === 'true';
-        const file = await this.azureBlobService.getFileContent(valuationNotices.file_path);
+        const file = await this.azureBlobService.getFileContent(filePath);
         const base64 = file.toString('base64');
-        const caseReference = valuationNotices.file_path.split('/')[1];
+        const documentId = valuationNotices!.source_document.id;
         const fyiDocumentUrl = isFyiProdEnabled
-          ? await this.fyiStorageService.uploadToFyi(base64, caseReference)
-          : this.azureBlobService.uploadToFyiDev(base64, caseReference); // simulate FYI
+          ? await this.fyiStorageService.uploadToFyi(base64, documentId)
+          : this.azureBlobService.uploadToFyiDev(base64, documentId); // simulate FYI
 
         return {
           tcAccepted: true,
