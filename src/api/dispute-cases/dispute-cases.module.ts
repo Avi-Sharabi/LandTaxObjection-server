@@ -10,6 +10,7 @@ import { ValuationNotice } from '../valuation-notices/entities/valuation-notice.
 import { DisputeCasesController } from './dispute-cases.controller';
 import { DisputeCasesService } from './dispute-cases.service';
 import { DisputeCase } from './entities/dispute-case.entity';
+import { AssessmentDocument } from './entities/assessment-document.entity';
 import { AzureBlobModule } from 'src/common/azure-blob/azure-blob.module';
 import { AzureEmailService } from 'src/common/azure-email/azure-email.service';
 import { DisputeIntakeOrchestrator } from './intake/dispute-intake.orchestrator';
@@ -24,6 +25,7 @@ import { fyiStorageService } from 'src/common/fyi-storage/fyi-storage.service';
     ComparablesModule,
     TypeOrmModule.forFeature([
       DisputeCase,
+      AssessmentDocument,
       DisputeLegalGround,
       Client,
       Property,
