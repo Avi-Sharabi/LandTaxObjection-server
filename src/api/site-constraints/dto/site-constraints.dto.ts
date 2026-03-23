@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
 import { Transform } from 'class-transformer';
+import { IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
 import { ConstraintType } from '../entities/site-constraints.entity';
 
 export { UpdateSiteConstraintDto } from './update-site-constraints.dto';
@@ -38,18 +38,18 @@ export class CreateSiteConstraintDto {
   document_blob_url?: string;
 
   @ApiPropertyOptional({
-    description:
-      'Raw base64 string of the supporting document. ' +
-      'Data URI prefix (e.g. data:application/pdf;base64,) is stripped automatically. ' +
-      'When provided the service uploads the file to Azure Blob Storage and ' +
-      'stores the resulting SAS URL in document_blob_url automatically.',
-    example: 'JVBERi0x...',
-  })
-  @Transform(({ value }) => {
-    if (!value || typeof value !== 'string') return value;
-    return value.includes(',') ? value.split(',')[1] : value;
-  })
-  @IsOptional()
-  @IsString()
-  attachment?: string;
+  description:
+    'Raw base64 string of the supporting document. ' +
+    'Data URI prefix (e.g. data:application/pdf;base64,) is stripped automatically. ' +
+    'When provided the service uploads the file to Azure Blob Storage and ' +
+    'stores the resulting SAS URL in document_blob_url automatically.',
+  example: 'JVBERi0x...',
+    })
+    @Transform(({ value }) => {
+      if (!value || typeof value !== 'string') return value;
+      return value.includes(',') ? value.split(',')[1] : value;
+    })
+    @IsOptional()
+    @IsString()
+    attachment?: string;
 }
