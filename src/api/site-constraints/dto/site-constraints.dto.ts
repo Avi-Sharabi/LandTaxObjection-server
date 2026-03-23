@@ -1,9 +1,9 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { OmitType, PartialType } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import { IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
 import { ConstraintType } from '../entities/site-constraints.entity';
 
-export { UpdateSiteConstraintDto } from './update-site-constraints.dto';
 // ── CREATE ────────────────────────────────────────────────────────────────────
 
 export class CreateSiteConstraintDto {
@@ -38,18 +38,32 @@ export class CreateSiteConstraintDto {
   document_blob_url?: string;
 
   @ApiPropertyOptional({
-  description:
-    'Raw base64 string of the supporting document. ' +
-    'Data URI prefix (e.g. data:application/pdf;base64,) is stripped automatically. ' +
-    'When provided the service uploads the file to Azure Blob Storage and ' +
-    'stores the resulting SAS URL in document_blob_url automatically.',
-  example: 'JVBERi0x...',
-    })
-    @Transform(({ value }) => {
-      if (!value || typeof value !== 'string') return value;
-      return value.includes(',') ? value.split(',')[1] : value;
-    })
-    @IsOptional()
-    @IsString()
-    attachment?: string;
+    description:
+      'Raw base64 string of the supporting document. ' +
+      'Data URI prefix (e.g. data:application/pdf;base64,) is stripped automatically. ' +
+      'When provided the service uploads the file to Azure Blob Storage and ' +
+      'stores the resulting SAS URL in document_blob_url automatically.',
+    example: 'JVBERi0x...',
+  })
+  @Transform(({ value }) => {
+    if (!value || typeof value !== 'string') return value;
+    return value.includes(',') ? value.split(',')[1] : value;
+  })
+  @IsOptional()
+  @IsString()
+  attachment?: string;
+}
+
+// ── UPDATE ────────────────────────────────────────────────────────────────────
+
+export class UpdateSiteConstraintDto extends PartialType(
+  OmitType(CreateSiteConstraintDto, ['dispute_id', 'constraint_type'] as const),
+) {
+  @ApiProperty({
+    description: 'Constraint type — must match the constraint_type DB enum',
+    enum: ConstraintType,
+    example: ConstraintType.FLOOD_ZONE_100YR,
+  })
+  @IsEnum(ConstraintType)
+  constraint_type: ConstraintType;
 }
