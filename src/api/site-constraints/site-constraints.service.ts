@@ -1,29 +1,16 @@
-import {
-  Injectable,
-  NotFoundException,
-  BadRequestException,
-  Logger,
-} from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { In, Repository } from 'typeorm';
+import { plainToInstance } from 'class-transformer';
 
-import { SiteConstraint, ConstraintType } from './entities/site-constraint.entity';
-import { CreateSiteConstraintDto, UpdateSiteConstraintDto } from './dto/site-constraint.dto';
+import { SiteConstraint, ConstraintType } from './entities/site-constraints.entity';
+import { DisputeCase } from '../dispute-cases/entities/dispute-case.entity';
+import { DisputeDocument } from '../dispute-documents/entities/dispute-document.entity';
+import { CreateSiteConstraintDto, UpdateSiteConstraintDto } from './dto/site-constraints.dto';
+import { SiteConstraintResponseDto } from './dto/site-constraints-response.dto';
 import { AzureBlobService } from '../../common/azure-blob/azure-blob.service';
-
-/** Maps each constraint type to the document_type values that satisfy it.
- *  Based on the `document_type` DB enum from the MVP schema. */
-const REQUIRED_DOC_TYPES: Record<ConstraintType, string[]> = {
-  [ConstraintType.HERITAGE_LISTING]: ['legal_document', 'property_report'],
-  [ConstraintType.FLOOD_ZONE_100YR]: ['property_report', 'other'],
-  [ConstraintType.BUSHFIRE_BAL_RESTRICTION]: ['property_report', 'other'],
-  [ConstraintType.EASEMENT_OR_RIGHT_OF_WAY]: ['land_title_search', 'legal_document'],
-  [ConstraintType.ENVIRONMENTAL_CONSERVATION_OVERLAY]: ['property_report', 'other'],
-  [ConstraintType.ZONING_PLANNING_RESTRICTION]: ['property_report', 'legal_document'],
-  [ConstraintType.ACCESS_RESTRICTION_LANDLOCKED]: ['land_title_search', 'property_report'],
-  [ConstraintType.CONTAMINATION_REMEDIATION]: ['property_report', 'independent_valuation'],
-  [ConstraintType.OTHER]: ['other'],
-};
+import { REQUIRED_DOC_TYPES } from './constants/required-doc-types.constant';
+import { DuplicateConstraintException } from './exceptions/duplicate-constraint.exception';
 
 @Injectable()
 export class SiteConstraintsService {
@@ -32,155 +19,153 @@ export class SiteConstraintsService {
   constructor(
     @InjectRepository(SiteConstraint)
     private readonly constraintRepo: Repository<SiteConstraint>,
+    @InjectRepository(DisputeCase)
+    private readonly disputeCaseRepo: Repository<DisputeCase>,
+    @InjectRepository(DisputeDocument)
+    private readonly disputeDocumentRepo: Repository<DisputeDocument>,
     private readonly azureBlobService: AzureBlobService,
-  ) { }
+  ) {}
 
   // ── CREATE ─────────────────────────────────────────────────────────────────
 
-  async create(dto: CreateSiteConstraintDto, userId: string): Promise<SiteConstraint> {
-    // Prevent duplicate constraint types on the same dispute
-    const existing = await this.constraintRepo.findOne({
-      where: { dispute_id: dto.dispute_id, constraint_type: dto.constraint_type },
+  async create(dto: CreateSiteConstraintDto, userId: string): Promise<SiteConstraintResponseDto> {
+    const disputeCase = await this.assertDisputeCaseExists(dto.dispute_id);
+    await this.assertNoDuplicateConstraint(dto.dispute_id, dto.constraint_type);
+
+    const constraint = this.constraintRepo.create({
+      dispute_id:        dto.dispute_id,
+      constraints_type:   dto.constraint_type,
+      description:       dto.description      ?? null,
+      legal_argument:    dto.legal_argument    ?? null,
+      document_blob_url: dto.document_blob_url ?? null,
     });
-    if (existing) {
-      throw new BadRequestException(
-        `Constraint '${dto.constraint_type}' already exists on dispute ${dto.dispute_id}.`,
-      );
-    }
 
-    const constraint = this.constraintRepo.create({ ...dto });
-
-    // ── Azure Blob upload ──────────────────────────────────────────────────
-    // If the caller supplied a raw base64 attachment, upload it to Azure and
-    // store the resulting SAS URL in document_blob_url automatically.
     if (dto.attachment) {
-      try {
-        const blobName = await this.azureBlobService.uploadToAzureBlob(
-          dto.attachment,
-          dto.dispute_id,
-          'site-constraints',
-          'constraint-document.pdf',  // ← add fileName
-        );
-        if (blobName) {
-          const sasUrl = await this.azureBlobService.getFileUrl(blobName);
-          constraint.document_blob_url = sasUrl;
-        }
-      } catch (err) {
-        this.logger.error(
-          `[CONSTRAINT] Azure upload failed — dispute=${dto.dispute_id} error=${err.message}`,
-        );
-        // Non-fatal: constraint is still created; document_blob_url stays null
+      const blobName = await this.azureBlobService.uploadToAzureBlob(
+        dto.attachment,
+        disputeCase.case_reference,
+        'site-constraints',
+        'constraint-document.pdf',
+      );
+      if (blobName) {
+        constraint.document_blob_url = await this.azureBlobService.getFileUrl(blobName);
       }
     }
 
     const saved = await this.constraintRepo.save(constraint);
 
-    // Log: constraint selection + user info + timestamp
+    // R80: db_created_at disambiguates from log aggregator wall-clock stamp
     this.logger.log(
-      `[CONSTRAINT] Created — id=${saved.id} type=${dto.constraint_type} dispute=${dto.dispute_id} user=${userId} timestamp=${saved.created_at.toISOString()}`,
+      `[CONSTRAIT] Created — id=${saved.id} type=${saved.constraints_type} dispute=${saved.dispute_id} user=${userId} db_created_at=${saved.created_at.toISOString()}`,
     );
 
-    // Validation: constraint selected → check for supporting documents
     this.runVerificationFlow(saved).catch((err) =>
+      // R84: safe whether thrown value is an Error, string, or anything else
       this.logger.error(
-        `[CONSTRAINT] Verification flow error — id=${saved.id} error=${err.message}`,
+        `[CONSTRAIT] Verification flow error — id=${saved.id} type=${saved.constraints_type} dispute=${saved.dispute_id} error=${err instanceof Error ? err.message : String(err)}`,
       ),
     );
 
-    return saved;
+    return plainToInstance(SiteConstraintResponseDto, saved);
   }
 
   // ── GET BY DISPUTE ─────────────────────────────────────────────────────────
 
-  async findByDispute(disputeId: string): Promise<SiteConstraint[]> {
+  async findByDispute(disputeId: string): Promise<SiteConstraintResponseDto[]> {
+    const exists = await this.disputeCaseRepo.existsBy({ id: disputeId });
+    if (!exists) throw new NotFoundException(`Dispute case ${disputeId} not found.`);
+
     const results = await this.constraintRepo.find({
       where: { dispute_id: disputeId },
       order: { created_at: 'ASC' },
     });
 
-    this.logger.log(
-      `[CONSTRAINT] Fetched ${results.length} constraint(s) — dispute=${disputeId}`,
-    );
-
-    return results;
+    return plainToInstance(SiteConstraintResponseDto, results);
   }
 
   // ── GET ONE ────────────────────────────────────────────────────────────────
 
-  async findOne(id: string): Promise<SiteConstraint> {
+  async findOne(id: string): Promise<SiteConstraintResponseDto> {
     const constraint = await this.constraintRepo.findOne({ where: { id } });
     if (!constraint) throw new NotFoundException(`Site constraint ${id} not found.`);
-    return constraint;
+    return plainToInstance(SiteConstraintResponseDto, constraint);
   }
 
   // ── UPDATE ─────────────────────────────────────────────────────────────────
 
-  async update(id: string, dto: UpdateSiteConstraintDto): Promise<SiteConstraint> {
-    const constraint = await this.findOne(id);
+  async update(id: string, dto: UpdateSiteConstraintDto): Promise<SiteConstraintResponseDto> {
+    const constraint = await this.constraintRepo.findOne({ where: { id } });
+    if (!constraint) throw new NotFoundException(`Site constraint ${id} not found.`);
+
     Object.assign(constraint, dto);
 
-    // Re-run document verification if blob URL was just provided
     if (dto.document_blob_url) {
       await this.runVerificationFlow(constraint);
     }
 
     const saved = await this.constraintRepo.save(constraint);
-    this.logger.log(`[CONSTRAINT] Updated — id=${id}`);
-    return saved;
+    return plainToInstance(SiteConstraintResponseDto, saved);
   }
 
   // ── REMOVE ─────────────────────────────────────────────────────────────────
 
   async remove(id: string): Promise<void> {
-    const constraint = await this.findOne(id);
+    const constraint = await this.constraintRepo.findOne({ where: { id } });
+    if (!constraint) throw new NotFoundException(`Site constraint ${id} not found.`);
     await this.constraintRepo.remove(constraint);
-    this.logger.log(`[CONSTRAINT] Removed — id=${id}`);
-  }
-
-  // ── DOCUMENT VERIFICATION FLOW ─────────────────────────────────────────────
-
-  /**
-   * KAN-8 Validation logic:
-   *  1. Constraint selected → check for supporting documents
-   *  2. Query dispute_documents for uploaded files
-   *  3. Match against required types for this constraint_type
-   */
-  async runVerificationFlow(constraint: SiteConstraint): Promise<void> {
-    const hasDocuments = await this.hasRequiredDocuments(constraint);
-
-    if (hasDocuments) {
-      this.logger.log(
-        `[CONSTRAINT] Supporting documents found — id=${constraint.id} type=${constraint.constraint_type}`,
-      );
-    } else {
-      this.logger.warn(
-        `[CONSTRAINT] Missing supporting documents — id=${constraint.id} type=${constraint.constraint_type} dispute=${constraint.dispute_id}`,
-      );
-    }
   }
 
   // ── PRIVATE ────────────────────────────────────────────────────────────────
 
+  private async assertDisputeCaseExists(disputeId: string): Promise<DisputeCase> {
+    const disputeCase = await this.disputeCaseRepo.findOne({ where: { id: disputeId } });
+    if (!disputeCase) throw new NotFoundException(`Dispute case ${disputeId} not found.`);
+    return disputeCase;
+  }
+
+  private async assertNoDuplicateConstraint(
+    disputeId: string,
+    constraintType: ConstraintType,
+  ): Promise<void> {
+    const exists = await this.constraintRepo.existsBy({
+      dispute_id:      disputeId,
+      constraints_type: constraintType,
+    });
+    if (exists) throw new DuplicateConstraintException(constraintType, disputeId);
+  }
+
+  // R148: private — internal detail, not part of the public service API
+  private async runVerificationFlow(constraint: SiteConstraint): Promise<void> {
+    const hasDocuments = await this.hasRequiredDocuments(constraint);
+
+    if (hasDocuments) {
+      // R137: includes dispute_id and constraint_type for traceability
+      this.logger.log(
+        `[CONSTRAIT] Supporting documents found — id=${constraint.id} type=${constraint.constraints_type} dispute=${constraint.dispute_id}`,
+      );
+    } else {
+      this.logger.warn(
+        `[CONSTRAIT] Missing supporting documents — id=${constraint.id} type=${constraint.constraints_type} dispute=${constraint.dispute_id}`,
+      );
+    }
+  }
+
   private async hasRequiredDocuments(constraint: SiteConstraint): Promise<boolean> {
-    // Check 1: document_blob_url set directly on the constraint
     if (constraint.document_blob_url) return true;
 
-    // Check 2: query dispute_documents for matching document types
-    const requiredTypes = REQUIRED_DOC_TYPES[constraint.constraint_type] ?? [];
+    const requiredTypes = REQUIRED_DOC_TYPES[constraint.constraints_type] ?? [];
     if (requiredTypes.length === 0) return false;
 
-    const result = await this.constraintRepo.query(
-      `SELECT COUNT(*) as count
-       FROM dispute_documents
-       WHERE dispute_id = $1
-       AND document_type = ANY($2)`,
-      [constraint.dispute_id, requiredTypes],
-    );
-
-    const count = parseInt(result[0]?.count ?? '0', 10);
+    // R172/R180: injected repository + typed .count() — no raw SQL
+    const count = await this.disputeDocumentRepo.count({
+      where: {
+        dispute_id:    constraint.dispute_id,
+        document_type: In(requiredTypes),
+      },
+    });
 
     this.logger.debug(
-      `[CONSTRAINT] Doc check — dispute=${constraint.dispute_id} type=${constraint.constraint_type} required=[${requiredTypes.join(', ')}] found=${count}`,
+      `[CONSTRAIT] Doc check — dispute=${constraint.dispute_id} type=${constraint.constraints_type} required=[${requiredTypes.join(', ')}] found=${count}`,
     );
 
     return count > 0;

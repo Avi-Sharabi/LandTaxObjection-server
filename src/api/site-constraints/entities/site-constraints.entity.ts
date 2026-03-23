@@ -31,35 +31,25 @@ export class SiteConstraint {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
-  /** FK → dispute_cases.id */
   @Column({ type: 'uuid', nullable: false, name: 'dispute_id' })
   dispute_id: string;
 
-  /** Matches schema: constraint_type constraint_type NOT NULL */
   @Column({ type: 'enum', enum: ConstraintType, nullable: false, name: 'constraint_type' })
-  constraint_type: ConstraintType;
+  constraints_type: ConstraintType;
 
-  /** Matches schema: description TEXT */
   @Column({ type: 'text', nullable: true })
   description: string | null;
 
-  /** Matches schema: legal_argument TEXT */
   @Column({ type: 'text', nullable: true })
   legal_argument: string | null;
 
-  /** Matches schema: document_blob_url TEXT */
   @Column({ type: 'text', nullable: true })
   document_blob_url: string | null;
 
   @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
   created_at: Date;
 
-  // ── Relations ─────────────────────────────────────────────────────────────
-
-  @ManyToOne(() => DisputeCase, (d) => d.site_constraints, {
-    nullable: false,
-    onDelete: 'CASCADE',
-  })
+  @ManyToOne(() => DisputeCase, { nullable: false, onDelete: 'CASCADE' })
   @JoinColumn({ name: 'dispute_id' })
   dispute: DisputeCase;
 }
