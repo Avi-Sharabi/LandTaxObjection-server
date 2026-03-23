@@ -15,12 +15,10 @@ export class ValuationNoticesService {
   ) { }
 
   private mapWithFileUrl(notice: ValuationNotice) {
+    const filePath = notice.source_document?.file_path ?? null;
     return {
       ...notice,
-      file_url: notice.file_path
-        ? this.azureBlobService.getFileUrl(notice.file_path)
-        : null,
-      file_path: undefined,
+      file_url: this.azureBlobService.getFileUrl(filePath),
     };
   }
 
@@ -36,7 +34,7 @@ export class ValuationNoticesService {
   async findOne(id: string) {
     const notice = await this.valuationNoticesRepository.findOne({
       where: { id },
-      relations: ['property', 'dispute_cases'],
+      relations: ['property', 'dispute_cases', 'source_document'],
     });
     if (!notice) throw new NotFoundException(`Valuation notice #${id} not found`);
     return this.mapWithFileUrl(notice);
