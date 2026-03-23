@@ -34,21 +34,25 @@ export class SiteConstraintsService {
 
     const constraint = this.constraintRepo.create({
       dispute_id:        dto.dispute_id,
-      constraints_type:   dto.constraint_type,
+      constraint_type:   dto.constraint_type,
       description:       dto.description      ?? null,
       legal_argument:    dto.legal_argument    ?? null,
       document_blob_url: dto.document_blob_url ?? null,
     });
 
     if (dto.attachment) {
+      // Build unique filename: constraint_type__YYYYMMDD_HHmmssSSS.pdf
+      // Prevents overwriting existing blobs for the same constraint on the same case.
+      const timestamp = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 15);
+      const fileName  = `${dto.constraint_type}__${timestamp}.pdf`;
       const blobName = await this.azureBlobService.uploadToAzureBlob(
         dto.attachment,
         disputeCase.case_reference,
         'site-constraints',
-        'constraint-document.pdf',
+        fileName,
       );
       if (blobName) {
-        constraint.document_blob_url = await this.azureBlobService.getFileUrl(blobName);
+        constraint.document_blob_url = blobName; // uploadToAzureBlob already returns the full SAS URL
       }
     }
 
@@ -56,13 +60,13 @@ export class SiteConstraintsService {
 
     // R80: db_created_at disambiguates from log aggregator wall-clock stamp
     this.logger.log(
-      `[CONSTRAIT] Created — id=${saved.id} type=${saved.constraints_type} dispute=${saved.dispute_id} user=${userId} db_created_at=${saved.created_at.toISOString()}`,
+      `[CONSTRAINT] Created — id=${saved.id} type=${saved.constraint_type} dispute=${saved.dispute_id} user=${userId} db_created_at=${saved.created_at.toISOString()}`,
     );
 
     this.runVerificationFlow(saved).catch((err) =>
       // R84: safe whether thrown value is an Error, string, or anything else
       this.logger.error(
-        `[CONSTRAIT] Verification flow error — id=${saved.id} type=${saved.constraints_type} dispute=${saved.dispute_id} error=${err instanceof Error ? err.message : String(err)}`,
+        `[CONSTRAINT] Verification flow error — id=${saved.id} type=${saved.constraint_type} dispute=${saved.dispute_id} error=${err instanceof Error ? err.message : String(err)}`,
       ),
     );
 
@@ -97,9 +101,29 @@ export class SiteConstraintsService {
     const constraint = await this.constraintRepo.findOne({ where: { id } });
     if (!constraint) throw new NotFoundException(`Site constraint ${id} not found.`);
 
-    Object.assign(constraint, dto);
+    // Apply scalar fields (description, legal_argument, document_blob_url)
+    // Exclude attachment — it's handled separately below and must not be persisted as-is.
+    const { attachment, ...scalarFields } = dto;
+    Object.assign(constraint, scalarFields);
 
-    if (dto.document_blob_url) {
+    // Upload new file if attachment provided (base64 → Azure Blob → SAS URL)
+    if (attachment) {
+      const disputeCase = await this.assertDisputeCaseExists(constraint.dispute_id);
+      const timestamp   = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 15);
+      const fileName    = `${constraint.constraint_type}__${timestamp}.pdf`;
+
+      const blobUrl = await this.azureBlobService.uploadToAzureBlob(
+        attachment,
+        disputeCase.case_reference,
+        'site-constraints',
+        fileName,
+      );
+      if (blobUrl) {
+        constraint.document_blob_url = blobUrl;
+      }
+    }
+
+    if (constraint.document_blob_url) {
       await this.runVerificationFlow(constraint);
     }
 
@@ -129,7 +153,7 @@ export class SiteConstraintsService {
   ): Promise<void> {
     const exists = await this.constraintRepo.existsBy({
       dispute_id:      disputeId,
-      constraints_type: constraintType,
+      constraint_type: constraintType,
     });
     if (exists) throw new DuplicateConstraintException(constraintType, disputeId);
   }
@@ -141,11 +165,11 @@ export class SiteConstraintsService {
     if (hasDocuments) {
       // R137: includes dispute_id and constraint_type for traceability
       this.logger.log(
-        `[CONSTRAIT] Supporting documents found — id=${constraint.id} type=${constraint.constraints_type} dispute=${constraint.dispute_id}`,
+        `[CONSTRAINT] Supporting documents found — id=${constraint.id} type=${constraint.constraint_type} dispute=${constraint.dispute_id}`,
       );
     } else {
       this.logger.warn(
-        `[CONSTRAIT] Missing supporting documents — id=${constraint.id} type=${constraint.constraints_type} dispute=${constraint.dispute_id}`,
+        `[CONSTRAINT] Missing supporting documents — id=${constraint.id} type=${constraint.constraint_type} dispute=${constraint.dispute_id}`,
       );
     }
   }
@@ -153,7 +177,7 @@ export class SiteConstraintsService {
   private async hasRequiredDocuments(constraint: SiteConstraint): Promise<boolean> {
     if (constraint.document_blob_url) return true;
 
-    const requiredTypes = REQUIRED_DOC_TYPES[constraint.constraints_type] ?? [];
+    const requiredTypes = REQUIRED_DOC_TYPES[constraint.constraint_type] ?? [];
     if (requiredTypes.length === 0) return false;
 
     // R172/R180: injected repository + typed .count() — no raw SQL
@@ -165,7 +189,7 @@ export class SiteConstraintsService {
     });
 
     this.logger.debug(
-      `[CONSTRAIT] Doc check — dispute=${constraint.dispute_id} type=${constraint.constraints_type} required=[${requiredTypes.join(', ')}] found=${count}`,
+      `[CONSTRAINT] Doc check — dispute=${constraint.dispute_id} type=${constraint.constraint_type} required=[${requiredTypes.join(', ')}] found=${count}`,
     );
 
     return count > 0;

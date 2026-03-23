@@ -35,7 +35,7 @@ export class SiteConstraint {
   dispute_id: string;
 
   @Column({ type: 'enum', enum: ConstraintType, nullable: false, name: 'constraint_type' })
-  constraints_type: ConstraintType;
+  constraint_type: ConstraintType;
 
   @Column({ type: 'text', nullable: true })
   description: string | null;
