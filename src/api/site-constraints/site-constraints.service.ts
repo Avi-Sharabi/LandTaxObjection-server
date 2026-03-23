@@ -44,11 +44,11 @@ export class SiteConstraintsService {
       // Build unique filename: constraint_type__YYYYMMDD_HHmmssSSS.pdf
       // Prevents overwriting existing blobs for the same constraint on the same case.
       const timestamp = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 15);
-      const fileName  = `${dto.constraint_type}__${timestamp}.pdf`;
+      const fileName  = `constraints/${dto.constraint_type}__${timestamp}.pdf`;
       const blobName = await this.azureBlobService.uploadToAzureBlob(
         dto.attachment,
         disputeCase.case_reference,
-        'site-constraints',
+        'dispute-cases',
         fileName,
       );
       if (blobName) {
@@ -110,12 +110,12 @@ export class SiteConstraintsService {
     if (attachment) {
       const disputeCase = await this.assertDisputeCaseExists(constraint.dispute_id);
       const timestamp   = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 15);
-      const fileName    = `${constraint.constraint_type}__${timestamp}.pdf`;
+      const fileName    = `constraints/${constraint.constraint_type}__${timestamp}.pdf`;
 
       const blobUrl = await this.azureBlobService.uploadToAzureBlob(
         attachment,
         disputeCase.case_reference,
-        'site-constraints',
+        'dispute-cases',
         fileName,
       );
       if (blobUrl) {
