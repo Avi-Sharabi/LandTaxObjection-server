@@ -1,12 +1,11 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Repository } from 'typeorm';
-import { plainToInstance } from 'class-transformer';
 
 import { SiteConstraint, ConstraintType } from './entities/site-constraints.entity';
 import { DisputeCase } from '../dispute-cases/entities/dispute-case.entity';
 import { DisputeDocument } from '../dispute-documents/entities/dispute-document.entity';
-import { CreateSiteConstraintDto, UpdateSiteConstraintDto } from './dto/site-constraints.dto';
+import { CreateSiteConstraintDto, UpdateSiteConstraintDto } from './dto/create-site-constraints.dto';
 import { SiteConstraintResponseDto } from './dto/site-constraints-response.dto';
 import { AzureBlobService } from '../../common/azure-blob/azure-blob.service';
 import { REQUIRED_DOC_TYPES } from './constants/required-doc-types.constant';
@@ -15,6 +14,8 @@ import { DuplicateConstraintException } from './exceptions/duplicate-constraint.
 @Injectable()
 export class SiteConstraintsService {
   private readonly logger = new Logger(SiteConstraintsService.name);
+
+  private static readonly BLOB_FOLDER = 'dispute-cases';
 
   constructor(
     @InjectRepository(SiteConstraint)
@@ -33,43 +34,33 @@ export class SiteConstraintsService {
     await this.assertNoDuplicateConstraint(dto.dispute_id, dto.constraint_type);
 
     const constraint = this.constraintRepo.create({
-      dispute_id:        dto.dispute_id,
-      constraint_type:   dto.constraint_type,
-      description:       dto.description      ?? null,
-      legal_argument:    dto.legal_argument    ?? null,
+      dispute_id:      dto.dispute_id,
+      constraint_type: dto.constraint_type,
+      description:     dto.description   ?? null,
+      legal_argument:  dto.legal_argument ?? null,
     });
 
     if (dto.attachment) {
-      // Build unique filename: constraint_type__YYYYMMDD_HHmmssSSS.pdf
-      // Prevents overwriting existing blobs for the same constraint on the same case.
-      const timestamp = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 15);
-      const fileName  = `constraints/${dto.constraint_type}__${timestamp}.pdf`;
-      const blobName = await this.azureBlobService.uploadToAzureBlob(
+      constraint.document_blob_url = await this.uploadAttachment(
         dto.attachment,
+        dto.constraint_type,
         disputeCase.case_reference,
-        'dispute-cases',
-        fileName,
       );
-      if (blobName) {
-        constraint.document_blob_url = blobName; // uploadToAzureBlob already returns the full SAS URL
-      }
     }
 
     const saved = await this.constraintRepo.save(constraint);
 
-    // R80: db_created_at disambiguates from log aggregator wall-clock stamp
     this.logger.log(
       `[CONSTRAINT] Created — id=${saved.id} type=${saved.constraint_type} dispute=${saved.dispute_id} user=${userId} db_created_at=${saved.created_at.toISOString()}`,
     );
 
-    this.runVerificationFlow(saved).catch((err: string) =>
-  // ⚠️ unsafe — crashes if err is an Error instance or non-string
-  this.logger.error(
-    `[CONSTRAINT] Verification flow error — id=${saved.id} type=${saved.constraint_type} dispute=${saved.dispute_id} error=${err}`,
-  ),
-);
+    this.runVerificationFlow(saved).catch((err: unknown) =>
+      this.logger.error(
+        `[CONSTRAINT] Verification flow error — id=${saved.id} type=${saved.constraint_type} dispute=${saved.dispute_id} error=${err instanceof Error ? err.message : String(err)}`,
+      ),
+    );
 
-    return plainToInstance(SiteConstraintResponseDto, saved);
+    return this.toDto(saved);
   }
 
   // ── GET BY DISPUTE ─────────────────────────────────────────────────────────
@@ -83,7 +74,7 @@ export class SiteConstraintsService {
       order: { created_at: 'ASC' },
     });
 
-    return plainToInstance(SiteConstraintResponseDto, results);
+    return results.map((c) => this.toDto(c));
   }
 
   // ── GET ONE ────────────────────────────────────────────────────────────────
@@ -91,7 +82,23 @@ export class SiteConstraintsService {
   async findOne(id: string): Promise<SiteConstraintResponseDto> {
     const constraint = await this.constraintRepo.findOne({ where: { id } });
     if (!constraint) throw new NotFoundException(`Site constraint ${id} not found.`);
-    return plainToInstance(SiteConstraintResponseDto, constraint);
+    return this.toDto(constraint);
+  }
+
+  // ── GET DOCUMENT URL ───────────────────────────────────────────────────────
+
+  /**
+   * Generates a short-lived SAS URL for the constraint's supporting document.
+   * The URL is produced fresh on every request and is never stored.
+   * The raw blob path in the DB is never forwarded to the client.
+   * Returns null when no document has been uploaded yet.
+   */
+  async getDocumentUrl(id: string): Promise<string | null> {
+    const constraint = await this.constraintRepo.findOne({ where: { id } });
+    if (!constraint) throw new NotFoundException(`Site constraint ${id} not found.`);
+    if (!constraint.document_blob_url) return null;
+
+    return this.azureBlobService.getFileUrl(constraint.document_blob_url);
   }
 
   // ── UPDATE ─────────────────────────────────────────────────────────────────
@@ -100,26 +107,16 @@ export class SiteConstraintsService {
     const constraint = await this.constraintRepo.findOne({ where: { id } });
     if (!constraint) throw new NotFoundException(`Site constraint ${id} not found.`);
 
-    // Apply scalar fields (description, legal_argument, document_blob_url)
-    // Exclude attachment — it's handled separately below and must not be persisted as-is.
     const { attachment, ...scalarFields } = dto;
     Object.assign(constraint, scalarFields);
 
-    // Upload new file if attachment provided (base64 → Azure Blob → SAS URL)
     if (attachment) {
       const disputeCase = await this.assertDisputeCaseExists(constraint.dispute_id);
-      const timestamp   = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 15);
-      const fileName    = `constraints/${constraint.constraint_type}__${timestamp}.pdf`;
-
-      const blobUrl = await this.azureBlobService.uploadToAzureBlob(
+      constraint.document_blob_url = await this.uploadAttachment(
         attachment,
+        constraint.constraint_type,
         disputeCase.case_reference,
-        'dispute-cases',
-        fileName,
       );
-      if (blobUrl) {
-        constraint.document_blob_url = blobUrl;
-      }
     }
 
     if (constraint.document_blob_url) {
@@ -127,7 +124,7 @@ export class SiteConstraintsService {
     }
 
     const saved = await this.constraintRepo.save(constraint);
-    return plainToInstance(SiteConstraintResponseDto, saved);
+    return this.toDto(saved);
   }
 
   // ── REMOVE ─────────────────────────────────────────────────────────────────
@@ -139,6 +136,49 @@ export class SiteConstraintsService {
   }
 
   // ── PRIVATE ────────────────────────────────────────────────────────────────
+
+  /**
+   * Maps a SiteConstraint entity to the response DTO explicitly.
+   * has_document is set as a real boolean here — no @Transform decorator magic,
+   * no dependency on class-transformer options or NestJS global interceptors.
+   */
+  private toDto(entity: SiteConstraint): SiteConstraintResponseDto {
+    const dto = new SiteConstraintResponseDto();
+    dto.id              = entity.id;
+    dto.dispute_id      = entity.dispute_id;
+    dto.constraint_type = entity.constraint_type;
+    dto.description     = entity.description;
+    dto.legal_argument  = entity.legal_argument;
+    dto.has_document    = !!entity.document_blob_url;   // ← always a real boolean
+    dto.created_at      = entity.created_at;
+    return dto;
+  }
+
+  /**
+   * Uploads an attachment and returns the raw blob path for DB storage.
+   * AzureBlobService.uploadToAzureBlob is called unchanged — the SAS URL it
+   * returns is intentionally discarded. We reconstruct the same blobName
+   * (`${folderName}/${caseReference}/${fileName}`) locally and store that.
+   */
+  private async uploadAttachment(
+    base64: string,
+    constraintType: ConstraintType,
+    caseReference: string,
+  ): Promise<string | null> {
+    const timestamp = new Date().toISOString().replace(/[^0-9]/g, '').slice(0, 15);
+    const fileName  = `constraints/${constraintType}__${timestamp}.pdf`;
+    const blobName  = `${SiteConstraintsService.BLOB_FOLDER}/${caseReference}/${fileName}`;
+
+    // Upload the file — the returned SAS URL is intentionally discarded.
+    await this.azureBlobService.uploadToAzureBlob(
+      base64,
+      caseReference,
+      SiteConstraintsService.BLOB_FOLDER,
+      fileName,
+    );
+
+    return blobName;
+  }
 
   private async assertDisputeCaseExists(disputeId: string): Promise<DisputeCase> {
     const disputeCase = await this.disputeCaseRepo.findOne({ where: { id: disputeId } });
@@ -157,12 +197,9 @@ export class SiteConstraintsService {
     if (exists) throw new DuplicateConstraintException(constraintType, disputeId);
   }
 
-  // R148: private — internal detail, not part of the public service API
   private async runVerificationFlow(constraint: SiteConstraint): Promise<void> {
     const hasDocuments = await this.hasRequiredDocuments(constraint);
-
     if (hasDocuments) {
-      // R137: includes dispute_id and constraint_type for traceability
       this.logger.log(
         `[CONSTRAINT] Supporting documents found — id=${constraint.id} type=${constraint.constraint_type} dispute=${constraint.dispute_id}`,
       );
@@ -179,7 +216,6 @@ export class SiteConstraintsService {
     const requiredTypes = REQUIRED_DOC_TYPES[constraint.constraint_type] ?? [];
     if (requiredTypes.length === 0) return false;
 
-    // R172/R180: injected repository + typed .count() — no raw SQL
     const count = await this.disputeDocumentRepo.count({
       where: {
         dispute_id:    constraint.dispute_id,

@@ -32,13 +32,12 @@ export class CreateSiteConstraintDto {
   @IsString()
   legal_argument?: string;
 
-
   @ApiPropertyOptional({
     description:
       'Raw base64 string of the supporting document. ' +
       'Data URI prefix (e.g. data:application/pdf;base64,) is stripped automatically. ' +
       'When provided the service uploads the file to Azure Blob Storage and ' +
-      'stores the resulting SAS URL in document_blob_url automatically.',
+      'stores the resulting blob path in document_blob_url automatically.',
     example: 'JVBERi0x...',
   })
   @Transform(({ value }) => {
@@ -52,14 +51,9 @@ export class CreateSiteConstraintDto {
 
 // ── UPDATE ────────────────────────────────────────────────────────────────────
 
+// PartialType(OmitType(...)) makes every remaining field optional.
+// dispute_id and constraint_type are excluded — the route param (:id) identifies
+// the record, so neither should be changeable via PATCH.
 export class UpdateSiteConstraintDto extends PartialType(
   OmitType(CreateSiteConstraintDto, ['dispute_id', 'constraint_type'] as const),
-) {
-  @ApiProperty({
-    description: 'Constraint type — must match the constraint_type DB enum',
-    enum: ConstraintType,
-    example: ConstraintType.FLOOD_ZONE_100YR,
-  })
-  @IsEnum(ConstraintType)
-  constraint_type: ConstraintType;
-}
+) {}

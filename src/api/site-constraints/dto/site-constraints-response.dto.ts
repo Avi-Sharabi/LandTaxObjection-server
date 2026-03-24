@@ -23,29 +23,32 @@ export class SiteConstraintResponseDto {
 
   @ApiPropertyOptional({
     description: 'Optional free-text description of the constraint',
-    example: 'Property lies within a designated flood zone',
     nullable: true,
   })
   description: string | null;
 
   @ApiPropertyOptional({
     description: 'Optional legal argument supporting the constraint',
-    example: 'Based on environmental protection regulations',
     nullable: true,
   })
   legal_argument: string | null;
 
-  @ApiPropertyOptional({
-    description: 'Azure Blob Storage SAS URL of the supporting document',
-    example: 'https://storageaccount.blob.core.windows.net/dispute-cases/constraints/file.pdf?...',
-    nullable: true,
+  /**
+   * True when a supporting document has been uploaded for this constraint.
+   * The raw blob path and SAS URL are never exposed in the API response.
+   * To open the document call GET /constraints/detail/:id/document — the
+   * backend generates a fresh short-lived SAS URL on demand.
+   */
+  @ApiProperty({
+    description: 'Whether a supporting document has been uploaded',
+    example: true,
   })
-  document_blob_url: string | null;
+  has_document: boolean;
 
   @ApiProperty({
     description: 'Timestamp when the constraint was created (UTC)',
     example: '2026-03-23T10:15:30.000Z',
-    type: String, // Swagger displays Date properly
+    type: String,
     format: 'date-time',
   })
   created_at: Date;

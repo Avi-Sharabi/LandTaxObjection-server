@@ -21,7 +21,7 @@ import {
 } from '@nestjs/swagger';
 
 import { SiteConstraintsService } from './site-constraints.service';
-import { CreateSiteConstraintDto, UpdateSiteConstraintDto } from './dto/site-constraints.dto';
+import { CreateSiteConstraintDto, UpdateSiteConstraintDto } from './dto/create-site-constraints.dto';
 import { SiteConstraintResponseDto } from './dto/site-constraints-response.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AuthResponseDto } from '../auth/dto/auth-response.dto';
@@ -38,12 +38,7 @@ export class SiteConstraintsController {
 
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({
-    summary: 'Add a site constraint to a dispute case',
-    description:
-      'Creates a SiteConstraint record and automatically checks for ' +
-      'supporting documents in dispute_documents.',
-  })
+  @ApiOperation({ summary: 'Add a site constraint to a dispute case' })
   @ApiResponse({ status: 201, type: SiteConstraintResponseDto })
   @ApiResponse({ status: 400, description: 'Duplicate constraint type or invalid payload.' })
   async create(
@@ -54,7 +49,7 @@ export class SiteConstraintsController {
   }
 
   @Get(':disputeId')
-  @ApiOperation({ summary: 'Get all site Constraints for a dispute case' })
+  @ApiOperation({ summary: 'Get all site constraints for a dispute case' })
   @ApiParam({ name: 'disputeId', description: 'UUID of the dispute case' })
   @ApiResponse({ status: 200, type: [SiteConstraintResponseDto] })
   async findByDispute(
@@ -70,6 +65,29 @@ export class SiteConstraintsController {
   @ApiResponse({ status: 404, description: 'Not found.' })
   async findOne(@Param('id', ParseUUIDPipe) id: string): Promise<SiteConstraintResponseDto> {
     return this.service.findOne(id);
+  }
+
+  /**
+   * GET /constraints/detail/:id/document
+   *
+   * Returns a short-lived SAS URL ({ url: string | null }) for the constraint's
+   * supporting document. The URL expires after 60 minutes.
+   * The raw blob path stored in the DB is never included in the response.
+   */
+  @Get('detail/:id/document')
+  @ApiOperation({ summary: 'Get a time-limited document URL for a site constraint' })
+  @ApiParam({ name: 'id', description: 'Constraint UUID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Short-lived SAS URL (60 min expiry), or null if no document uploaded.',
+    schema: { type: 'object', properties: { url: { type: 'string', nullable: true } } },
+  })
+  @ApiResponse({ status: 404, description: 'Constraint not found.' })
+  async getDocumentUrl(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<{ url: string | null }> {
+    const url = await this.service.getDocumentUrl(id);
+    return { url };
   }
 
   @Patch('detail/:id')
