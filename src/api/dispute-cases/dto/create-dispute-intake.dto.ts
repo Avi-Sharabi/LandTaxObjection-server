@@ -18,9 +18,15 @@ import { LegalGround } from '../../dispute-legal-grounds/entities/dispute-legal-
 import { Jurisdiction } from '../../properties/entities/property.entity';
 
 export class IntakeValuationNoticeDto {
-  @ApiProperty({ example: 280798, description: 'Assessed land value from the notice' })
+  @ApiProperty({ example: 280798, description: 'Assessed land value from the notice', nullable: true, required: false })
+  @IsOptional()
   @IsNumber()
-  assessed_land_value: number;
+  assessed_land_value: number | null;
+
+  @ApiProperty({ example: false, description: 'Whether this valuation notice is exempt', required: false })
+  @IsOptional()
+  @IsBoolean()
+  is_exempt?: boolean;
 
   @ApiProperty({ example: '2024-07-01', description: 'Valuation date on the notice' })
   @IsDateString()
@@ -36,6 +42,11 @@ export class IntakePropertyDto {
   @ApiProperty({ enum: Jurisdiction, example: 'NSW', description: 'State/jurisdiction' })
   @IsEnum(Jurisdiction)
   state: Jurisdiction;
+
+  @ApiProperty({ example: '123-456-789', description: 'Property Identifier (PID)', required: false })
+  @IsOptional()
+  @IsString()
+  pid?: string;
 
   @ApiProperty({ example: 100, description: 'Ownership percentage (0–100)' })
   @IsNumber()

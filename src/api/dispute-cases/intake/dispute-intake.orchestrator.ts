@@ -125,6 +125,7 @@ export class DisputeIntakeOrchestrator {
       suburb: prop.address.split(',')[1]?.trim() || '',
       state: prop.state,
       postcode: '',
+      pid: prop.pid,
       ownership_pct: prop.ownership_pct,
     });
     return this.propertiesRepository.save(property);
@@ -139,7 +140,8 @@ export class DisputeIntakeOrchestrator {
     const notice = this.valuationNoticesRepository.create({
       property_id: propertyId,
       valuation_date: new Date(valuationNotice.valuation_date),
-      assessed_land_value: valuationNotice.assessed_land_value,
+      assessed_land_value: valuationNotice.assessed_land_value ?? null,
+      is_exempt: valuationNotice.is_exempt ?? false,
       notice_reference: `INTAKE-${valuationYear}-${Date.now()}`,
       source_document_id: sourceDocumentId,
     });
@@ -152,7 +154,7 @@ export class DisputeIntakeOrchestrator {
     valuationNoticeId: string,
     caseReference: string,
     jurisdiction: Jurisdiction,
-    assessedLandValue: number,
+    assessedLandValue: number | null,
     intakeDto: CreateDisputeIntakeDto,
     flags: PropertyFlags,
   ): Promise<DisputeCase> {
