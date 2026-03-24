@@ -30,8 +30,6 @@ export class AzureBlobService {
         fileName: string,
     ): Promise<string | null> {
         const blobName = `${folderName}/${caseReference}/${fileName}`;
-        // Bug 2 fix: was returning blobName (raw path) instead of the SAS URL.
-        // uploadFile already uploads the blob AND returns the SAS URL — return that directly.
         return this.uploadFile(blobName, base64);
     }
 
@@ -49,7 +47,7 @@ export class AzureBlobService {
         const blockBlobClient = containerClient.getBlockBlobClient(blobName);
         await blockBlobClient.upload(buffer, buffer.length);
 
-        return this.getFileUrl(blobName);
+        return blobName;
     }
 
     getFileUrl(blobName: string | null, expiresInMinutes = 60): string | null {
