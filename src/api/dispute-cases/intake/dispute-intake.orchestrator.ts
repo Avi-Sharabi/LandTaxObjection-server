@@ -141,7 +141,7 @@ export class DisputeIntakeOrchestrator {
       property_id: propertyId,
       valuation_date: new Date(valuationNotice.valuation_date),
       assessed_land_value: valuationNotice.assessed_land_value ?? null,
-      is_exempt: valuationNotice.is_exempt ?? false,
+      is_exempt: valuationNotice.assessed_land_value === null ? true : false,
       notice_reference: `INTAKE-${valuationYear}-${Date.now()}`,
       source_document_id: sourceDocumentId,
     });

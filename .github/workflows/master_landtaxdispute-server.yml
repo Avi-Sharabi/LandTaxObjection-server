@@ -28,12 +28,12 @@ jobs:
       - name: Run database migrations
         env:
           NODE_ENV: production
-          DB_HOST:  ${{ github.ref == 'refs/heads/main' && vars.DB_HOST_PROD || github.ref == 'refs/heads/qa' && vars.DB_HOST_QA || vars.DB_HOST_DEV }}
-          DB_PORT: ${{ github.ref == 'refs/heads/main' && vars.DB_PORT_PROD || github.ref == 'refs/heads/qa' && vars.DB_PORT_QA || vars.DB_PORT_DEV }}
-          DB_USERNAME: ${{ github.ref == 'refs/heads/main' && vars.DB_USERNAME_PROD || github.ref == 'refs/heads/qa' && vars.DB_USERNAME_QA || vars.DB_USERNAME_DEV }}
-          DB_PASSWORD: ${{ github.ref == 'refs/heads/main' && vars.DB_PASSWORD_PROD || github.ref == 'refs/heads/qa' && vars.DB_PASSWORD_QA || vars.DB_PASSWORD_DEV }}
-          DB_NAME: ${{ github.ref == 'refs/heads/main' && vars.DB_NAME_PROD || github.ref == 'refs/heads/qa' && vars.DB_NAME_QA || vars.DB_NAME_DEV }}
-          DB_SSL: ${{ github.ref == 'refs/heads/main' && vars.DB_SSL_PROD || github.ref == 'refs/heads/qa' && vars.DB_SSL_QA || vars.DB_SSL_DEV }}
+          DB_HOST:  ${{ github.ref == 'refs/heads/main' && secrets.DB_HOST_PROD || github.ref == 'refs/heads/qa' && secrets.DB_HOST_QA || secrets.DB_HOST_DEV }}
+          DB_PORT: ${{ github.ref == 'refs/heads/main' && secrets.DB_PORT_PROD || github.ref == 'refs/heads/qa' && secrets.DB_PORT_QA || secrets.DB_PORT_DEV }}
+          DB_USERNAME: ${{ github.ref == 'refs/heads/main' && secrets.DB_USERNAME_PROD || github.ref == 'refs/heads/qa' && secrets.DB_USERNAME_QA || secrets.DB_USERNAME_DEV }}
+          DB_PASSWORD: ${{ github.ref == 'refs/heads/main' && secrets.DB_PASSWORD_PROD || github.ref == 'refs/heads/qa' && secrets.DB_PASSWORD_QA || secrets.DB_PASSWORD_DEV }}
+          DB_NAME: ${{ github.ref == 'refs/heads/main' && secrets.DB_NAME_PROD || github.ref == 'refs/heads/qa' && secrets.DB_NAME_QA || secrets.DB_NAME_DEV }}
+          DB_SSL: ${{ github.ref == 'refs/heads/main' && secrets.DB_SSL_PROD || github.ref == 'refs/heads/qa' && secrets.DB_SSL_QA || secrets.DB_SSL_DEV }}
         run: npm run migration:run
 
       - name: Prune dev dependencies
