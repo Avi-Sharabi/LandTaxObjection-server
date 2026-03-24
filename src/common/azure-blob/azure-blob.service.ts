@@ -1,7 +1,8 @@
 import { BlobSASPermissions, BlobServiceClient, generateBlobSASQueryParameters, StorageSharedKeyCredential } from "@azure/storage-blob";
 import { Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-// Bug 1 fix: removed unused `import { blob } from "stream/consumers"`
+import { InvalidConfigurationException } from "../exceptions/invalid-configuration.exception";
+
 
 @Injectable()
 export class AzureBlobService {
@@ -36,7 +37,7 @@ export class AzureBlobService {
 
     private extractFromConnectionString(connectionString: string, key: string): string {
         const match = connectionString.match(new RegExp(`${key}=([^;]+)`));
-        if (!match) throw new Error(`Unable to extract ${key} from connection string`);
+        if (!match) throw new InvalidConfigurationException(`Unable to extract ${key} from connection string`);
         return match[1];
     }
 
