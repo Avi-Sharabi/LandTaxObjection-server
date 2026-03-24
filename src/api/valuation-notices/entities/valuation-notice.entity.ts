@@ -19,8 +19,11 @@ export class ValuationNotice {
   @Column({ type: 'date', nullable: false })
   valuation_date: Date;
 
-  @Column({ type: 'numeric', precision: 15, scale: 2, nullable: false })
-  assessed_land_value: number;
+  @Column({ type: 'numeric', precision: 15, scale: 2, nullable: true })
+  assessed_land_value: number | null;
+
+  @Column({ type: 'boolean', nullable: false, default: false })
+  is_exempt: boolean;
 
   @Column({ type: 'numeric', precision: 6, scale: 3, nullable: true })
   benchmark_uplift_pct: number;
