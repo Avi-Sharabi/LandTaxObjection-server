@@ -24,7 +24,20 @@ jobs:
         run: |
           npm ci
           npm run build
-          npm prune --omit=dev
+
+      - name: Run database migrations
+        env:
+          NODE_ENV: production
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_PORT: ${{ secrets.DB_PORT }}
+          DB_USERNAME: ${{ secrets.DB_USERNAME }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DB_NAME: ${{ secrets.DB_NAME }}
+          DB_SSL: ${{ secrets.DB_SSL }}
+        run: npm run migration:run:prod
+
+      - name: Prune dev dependencies
+        run: npm prune --omit=dev
 
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
