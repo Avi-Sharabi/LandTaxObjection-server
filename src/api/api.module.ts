@@ -8,6 +8,7 @@ import { UsersModule } from './users/users.module';
 import { ValuationNoticesModule } from './valuation-notices/valuation-notices.module';
 import { ValuationModule } from './valuation/valuation.module';
 import { AuthModule } from './auth/auth.module';
+import { SiteConstraintsModule } from './site-constraints/site-constraints.module';
 
 @Module({
   imports: [
@@ -20,6 +21,7 @@ import { AuthModule } from './auth/auth.module';
     ValuationModule,
     UsersModule,
     DisputeLegalGroundsModule,
+    SiteConstraintsModule,
   ],
 })
 export class APIModule {}

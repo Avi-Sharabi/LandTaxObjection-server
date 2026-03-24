@@ -3,6 +3,7 @@ import { Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { InvalidConfigurationException } from "../exceptions/invalid-configuration.exception";
 
+
 @Injectable()
 export class AzureBlobService {
     private client: BlobServiceClient;
@@ -18,18 +19,18 @@ export class AzureBlobService {
         this.accountKey = this.extractFromConnectionString(connectionString, 'AccountKey');
     }
 
-    uploadToFyiDev(base64: string, documentId: string): Promise<string | null> {
-        return this.uploadToAzureBlob(base64, documentId, 'assessment-documents-fyi-dev');
+    uploadToFyiDev(base64: string, caseReference: string) {
+        return this.uploadToAzureBlob(base64, caseReference, 'dispute-cases-fyi-dev', 'valuation-notice.pdf');
     }
 
     public async uploadToAzureBlob(
         base64: string,
-        documentId: string,
-        folderName = 'assessment-documents',
+        caseReference: string,
+        folderName: string,
+        fileName: string,
     ): Promise<string | null> {
-        const blobName = `${folderName}/${documentId}/valuation-notice.pdf`;
-        await this.uploadFile(blobName, base64);
-        return blobName;
+        const blobName = `${folderName}/${caseReference}/${fileName}`;
+        return this.uploadFile(blobName, base64);
     }
 
     private extractFromConnectionString(connectionString: string, key: string): string {
@@ -46,12 +47,11 @@ export class AzureBlobService {
         const blockBlobClient = containerClient.getBlockBlobClient(blobName);
         await blockBlobClient.upload(buffer, buffer.length);
 
-        return this.getFileUrl(blobName);
+        return blobName;
     }
 
     getFileUrl(blobName: string | null, expiresInMinutes = 60): string | null {
-
-        if (!blobName) return null
+        if (!blobName) return null;
         const sharedKeyCredential = new StorageSharedKeyCredential(this.accountName, this.accountKey);
 
         const sasToken = generateBlobSASQueryParameters({
@@ -70,7 +70,7 @@ export class AzureBlobService {
     }
 
     async getFileContent(blobName: string | null): Promise<Buffer> {
-        if (!blobName) return Buffer.alloc(0); // Return empty buffer if blobName is null
+        if (!blobName) return Buffer.alloc(0);
         const containerClient = this.client.getContainerClient(this.containerName);
         const blockBlobClient = containerClient.getBlockBlobClient(blobName);
 
@@ -83,6 +83,4 @@ export class AzureBlobService {
 
         return Buffer.concat(chunks);
     }
-
-
 }
