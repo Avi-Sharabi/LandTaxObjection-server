@@ -34,7 +34,7 @@ jobs:
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
           DB_NAME: ${{ secrets.DB_NAME }}
           DB_SSL: ${{ secrets.DB_SSL }}
-        run: npm run migration:run:prod
+        run: npm run migration:run
 
       - name: Prune dev dependencies
         run: npm prune --omit=dev
