@@ -59,6 +59,7 @@ export class DisputeIntakeOrchestrator {
       intakeDto.attachment,
       assessmentDocument.id,
       !!fyiClient,
+      assessmentDocument.id,  // folder identifier — caseReference not yet available at this stage
     );
     if (filePath) {
       await this.assessmentDocumentsRepository.update(assessmentDocument.id, { file_path: filePath });
