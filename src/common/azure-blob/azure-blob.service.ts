@@ -1,7 +1,7 @@
 import { BlobSASPermissions, BlobServiceClient, generateBlobSASQueryParameters, StorageSharedKeyCredential } from "@azure/storage-blob";
 import { Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
-import { blob } from "stream/consumers";
+import { InvalidConfigurationException } from "../exceptions/invalid-configuration.exception";
 
 @Injectable()
 export class AzureBlobService {
@@ -18,23 +18,23 @@ export class AzureBlobService {
         this.accountKey = this.extractFromConnectionString(connectionString, 'AccountKey');
     }
 
-    uploadToFyiDev(base64: string, documentId: string) {
+    uploadToFyiDev(base64: string, documentId: string): Promise<string | null> {
         return this.uploadToAzureBlob(base64, documentId, 'assessment-documents-fyi-dev');
     }
 
-    public uploadToAzureBlob(
+    public async uploadToAzureBlob(
         base64: string,
         documentId: string,
         folderName = 'assessment-documents',
-    ): string | null {
+    ): Promise<string | null> {
         const blobName = `${folderName}/${documentId}/valuation-notice.pdf`;
-        // const blobName = `${folderName}/${caseReference}/valuation-notice-${Date.now()}.pdf`;
-        this.uploadFile(blobName, base64);
+        await this.uploadFile(blobName, base64);
         return blobName;
     }
+
     private extractFromConnectionString(connectionString: string, key: string): string {
         const match = connectionString.match(new RegExp(`${key}=([^;]+)`));
-        if (!match) throw new Error(`Unable to extract ${key} from connection string`);
+        if (!match) throw new InvalidConfigurationException(`Unable to extract ${key} from connection string`);
         return match[1];
     }
 

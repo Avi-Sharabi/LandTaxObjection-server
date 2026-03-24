@@ -23,7 +23,7 @@ export class TypeOrmConfigService implements TypeOrmOptionsFactory {
       migrationsTableName: 'typeorm_migrations',
       logger: 'file',
       logging: true,
-      synchronize: true,
+      synchronize: false,
       ...(isProduction && {
         ssl: {
           rejectUnauthorized: false,

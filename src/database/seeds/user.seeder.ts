@@ -1,8 +1,10 @@
+import { Logger } from '@nestjs/common';
 import { User, UserRole } from 'src/api/users/entities/user.entity';
 import { DataSource } from 'typeorm';
 import * as bcrypt from 'bcrypt';
 
-const DEFAULT_PASSWORD = 'Admin@123';
+const DEFAULT_PASSWORD = process.env.SEED_DEFAULT_PASSWORD ?? 'Admin@123';
+const logger = new Logger('UserSeeder');
 
 export async function seedUsers(dataSource: DataSource): Promise<void> {
     const userRepository = dataSource.getRepository(User);
@@ -49,20 +51,28 @@ export async function seedUsers(dataSource: DataSource): Promise<void> {
             isActive: true,
             password: hashedPassword,
         },
+        {
+            email: 'yoav.lewis@ymlgroup.com.au',
+            fullName: 'Yoav Lewis',
+            role: UserRole.ACCOUNTANT,
+            phone: '+61 2 1234 5678',
+            isActive: true,
+            password: hashedPassword,
+        },
     ];
 
     for (const userData of users) {
         const exists = await userRepository.findOneBy({ email: userData.email });
         if (!exists) {
             await userRepository.save(userRepository.create(userData));
-            console.log(`✅ Seeded user: ${userData.email}`);
+            logger.log(`Seeded user: ${userData.email}`);
         } else {
             // Update password if not set
             if (!exists.password) {
                 await userRepository.update(exists.id, { password: hashedPassword });
-                console.log(`🔑 Updated password for: ${userData.email}`);
+                logger.log(`Updated password for: ${userData.email}`);
             } else {
-                console.log(`⚠️  Skipped (already exists): ${userData.email}`);
+                logger.log(`Skipped (already exists): ${userData.email}`);
             }
         }
     }
