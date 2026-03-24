@@ -27,6 +27,9 @@ export class Property {
   @Column({ type: 'enum', enum: Jurisdiction, nullable: false })
   state: Jurisdiction;
 
+  @Column({ type: 'text', nullable: true })
+  pid: string;
+
   @Column({ type: 'text', nullable: false })
   postcode: string;
 
