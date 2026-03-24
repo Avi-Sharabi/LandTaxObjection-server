@@ -34,7 +34,7 @@ jobs:
           DB_PASSWORD: ${{ github.ref == 'refs/heads/main' && vars.DB_PASSWORD_PROD || github.ref == 'refs/heads/qa' && vars.DB_PASSWORD_QA || vars.DB_PASSWORD_DEV }}
           DB_NAME: ${{ github.ref == 'refs/heads/main' && vars.DB_NAME_PROD || github.ref == 'refs/heads/qa' && vars.DB_NAME_QA || vars.DB_NAME_DEV }}
           DB_SSL: ${{ github.ref == 'refs/heads/main' && vars.DB_SSL_PROD || github.ref == 'refs/heads/qa' && vars.DB_SSL_QA || vars.DB_SSL_DEV }}
-        run: npm run migration:run:prod
+        run: npm run migration:run
 
       - name: Prune dev dependencies
         run: npm prune --omit=dev
