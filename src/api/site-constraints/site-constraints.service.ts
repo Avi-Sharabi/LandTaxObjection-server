@@ -37,7 +37,6 @@ export class SiteConstraintsService {
       constraint_type:   dto.constraint_type,
       description:       dto.description      ?? null,
       legal_argument:    dto.legal_argument    ?? null,
-      document_blob_url: dto.document_blob_url ?? null,
     });
 
     if (dto.attachment) {
@@ -63,12 +62,12 @@ export class SiteConstraintsService {
       `[CONSTRAINT] Created — id=${saved.id} type=${saved.constraint_type} dispute=${saved.dispute_id} user=${userId} db_created_at=${saved.created_at.toISOString()}`,
     );
 
-    this.runVerificationFlow(saved).catch((err) =>
-      // R84: safe whether thrown value is an Error, string, or anything else
-      this.logger.error(
-        `[CONSTRAINT] Verification flow error — id=${saved.id} type=${saved.constraint_type} dispute=${saved.dispute_id} error=${err instanceof Error ? err.message : String(err)}`,
-      ),
-    );
+    this.runVerificationFlow(saved).catch((err: string) =>
+  // ⚠️ unsafe — crashes if err is an Error instance or non-string
+  this.logger.error(
+    `[CONSTRAINT] Verification flow error — id=${saved.id} type=${saved.constraint_type} dispute=${saved.dispute_id} error=${err}`,
+  ),
+);
 
     return plainToInstance(SiteConstraintResponseDto, saved);
   }

@@ -32,10 +32,6 @@ export class CreateSiteConstraintDto {
   @IsString()
   legal_argument?: string;
 
-  @ApiPropertyOptional({ description: 'Azure Blob Storage URL of the supporting document' })
-  @IsOptional()
-  @IsString()
-  document_blob_url?: string;
 
   @ApiPropertyOptional({
     description:

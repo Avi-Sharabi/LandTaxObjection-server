@@ -5,7 +5,7 @@ import { CreateSiteConstraintDto } from './site-constraints.dto';
 
 export class UpdateSiteConstraintDto extends PartialType(
 OmitType(CreateSiteConstraintDto, ['dispute_id', 'constraint_type','description', 
-  'legal_argument', 'document_blob_url'] as const),
+  'legal_argument'] as const),
 ) {}
 
   
