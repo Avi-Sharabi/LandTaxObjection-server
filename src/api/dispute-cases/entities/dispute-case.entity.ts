@@ -5,6 +5,7 @@ import { ValuationNotice } from '../../valuation-notices/entities/valuation-noti
 import { User } from '../../users/entities/user.entity';
 import { DisputeLegalGround } from '../../dispute-legal-grounds/entities/dispute-legal-ground.entity';
 import { ComparableSale } from '../../comparables/entities/comparable-sale.entity';
+import { DisputeConstraint } from '../../dispute-constraints/entities/dispute-constraint.entity';
 
 export enum DisputeStatus {
   DRAFT = 'draft',
@@ -149,4 +150,7 @@ export class DisputeCase {
 
   @OneToMany(() => ComparableSale, (comparable) => comparable.dispute_case)
   comparables: ComparableSale[];
+
+  @OneToMany(() => DisputeConstraint, (constraint) => constraint.dispute)
+  dispute_constraints: DisputeConstraint[];
 }
