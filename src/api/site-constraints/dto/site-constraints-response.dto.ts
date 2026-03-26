@@ -34,16 +34,22 @@ export class SiteConstraintResponseDto {
   legal_argument: string | null;
 
   /**
-   * True when a supporting document has been uploaded for this constraint.
-   * The raw blob path and SAS URL are never exposed in the API response.
-   * To open the document call GET /constraints/detail/:id/document — the
-   * backend generates a fresh short-lived SAS URL on demand.
+   * True when at least one supporting document has been uploaded.
+   * The raw blob paths and SAS URLs are never exposed in the API response.
+   * To get document URLs call GET /constraints/detail/:id/documents — the
+   * backend generates fresh short-lived SAS URLs on demand.
    */
   @ApiProperty({
-    description: 'Whether a supporting document has been uploaded',
+    description: 'Whether at least one supporting document has been uploaded',
     example: true,
   })
   has_document: boolean;
+
+  @ApiProperty({
+    description: 'Number of supporting documents uploaded for this constraint',
+    example: 2,
+  })
+  document_count: number;
 
   @ApiProperty({
     description: 'Timestamp when the constraint was created (UTC)',

@@ -4,9 +4,11 @@ import {
   Column,
   CreateDateColumn,
   ManyToOne,
+  OneToMany,
   JoinColumn,
 } from 'typeorm';
 import { DisputeCase } from '../../dispute-cases/entities/dispute-case.entity';
+import { SiteConstraintDocument } from './site-constraint-document.entity';
 
 export enum ConstraintType {
   HERITAGE_LISTING                   = 'heritage_listing',
@@ -43,13 +45,13 @@ export class SiteConstraint {
   @Column({ type: 'text', nullable: true })
   legal_argument: string | null;
 
-  @Column({ type: 'text', nullable: true })
-  document_blob_url: string | null;
-
   @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
   created_at: Date;
 
   @ManyToOne(() => DisputeCase, { nullable: false, onDelete: 'CASCADE' })
   @JoinColumn({ name: 'dispute_id' })
   dispute: DisputeCase;
+
+  @OneToMany(() => SiteConstraintDocument, (doc) => doc.constraint, { cascade: true })
+  documents: SiteConstraintDocument[];
 }

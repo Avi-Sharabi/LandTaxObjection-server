@@ -68,30 +68,43 @@ export class SiteConstraintsController {
   }
 
   /**
-   * GET /constraints/detail/:id/document
+   * GET /constraints/detail/:id/documents
    *
-   * Returns a short-lived SAS URL ({ url: string | null }) for the constraint's
-   * supporting document. The URL expires after 60 minutes.
-   * The raw blob path stored in the DB is never included in the response.
+   * Returns short-lived SAS URLs (60 min expiry) for all documents attached
+   * to the constraint. Raw blob paths are never included in the response.
    */
-  @Get('detail/:id/document')
-  @ApiOperation({ summary: 'Get a time-limited document URL for a site constraint' })
+  @Get('detail/:id/documents')
+  @ApiOperation({ summary: 'Get time-limited URLs for all documents on a site constraint' })
   @ApiParam({ name: 'id', description: 'Constraint UUID' })
   @ApiResponse({
     status: 200,
-    description: 'Short-lived SAS URL (60 min expiry), or null if no document uploaded.',
-    schema: { type: 'object', properties: { url: { type: 'string', nullable: true } } },
+    description: 'Array of { id, url } pairs — one per uploaded document. Empty array if none.',
+    schema: {
+      type: 'object',
+      properties: {
+        documents: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              id:  { type: 'string', format: 'uuid' },
+              url: { type: 'string' },
+            },
+          },
+        },
+      },
+    },
   })
   @ApiResponse({ status: 404, description: 'Constraint not found.' })
-  async getDocumentUrl(
+  async getDocumentUrls(
     @Param('id', ParseUUIDPipe) id: string,
-  ): Promise<{ url: string | null }> {
-    const url = await this.service.getDocumentUrl(id);
-    return { url };
+  ): Promise<{ documents: Array<{ id: string; url: string }> }> {
+    const documents = await this.service.getDocumentUrls(id);
+    return { documents };
   }
 
   @Patch('detail/:id')
-  @ApiOperation({ summary: 'Update a site constraint' })
+  @ApiOperation({ summary: 'Update a site constraint (appends new attachments)' })
   @ApiParam({ name: 'id', description: 'Constraint UUID' })
   @ApiResponse({ status: 200, type: SiteConstraintResponseDto })
   @ApiResponse({ status: 404, description: 'Not found.' })
@@ -104,11 +117,25 @@ export class SiteConstraintsController {
 
   @Delete('detail/:id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiOperation({ summary: 'Remove a site constraint' })
+  @ApiOperation({ summary: 'Remove a site constraint and all its documents' })
   @ApiParam({ name: 'id', description: 'Constraint UUID' })
   @ApiResponse({ status: 204 })
   @ApiResponse({ status: 404, description: 'Not found.' })
   async remove(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
     return this.service.remove(id);
+  }
+
+  @Delete('detail/:id/documents/:docId')
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({ summary: 'Remove a single document from a site constraint' })
+  @ApiParam({ name: 'id', description: 'Constraint UUID' })
+  @ApiParam({ name: 'docId', description: 'Document UUID' })
+  @ApiResponse({ status: 204 })
+  @ApiResponse({ status: 404, description: 'Constraint or document not found.' })
+  async removeDocument(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('docId', ParseUUIDPipe) docId: string,
+  ): Promise<void> {
+    return this.service.removeDocument(id, docId);
   }
 }

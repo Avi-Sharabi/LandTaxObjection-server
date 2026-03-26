@@ -1,7 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { OmitType, PartialType } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
+import { IsArray, IsEnum, IsOptional, IsString, IsUUID } from 'class-validator';
 import { ConstraintType } from '../entities/site-constraints.entity';
 
 // ── CREATE ────────────────────────────────────────────────────────────────────
@@ -32,21 +32,48 @@ export class CreateSiteConstraintDto {
   @IsString()
   legal_argument?: string;
 
+  /**
+   * @deprecated Use `attachments` instead.
+   * Kept for backward compatibility — merged into `attachments` automatically.
+   */
   @ApiPropertyOptional({
-    description:
-      'Raw base64 string of the supporting document. ' +
-      'Data URI prefix (e.g. data:application/pdf;base64,) is stripped automatically. ' +
-      'When provided the service uploads the file to Azure Blob Storage and ' +
-      'stores the resulting blob path in document_blob_url automatically.',
+    description: 'Deprecated — use `attachments`. Single base64 document string.',
     example: 'JVBERi0x...',
+    deprecated: true,
   })
-  @Transform(({ value }) => {
-    if (!value || typeof value !== 'string') return value;
-    return value.includes(',') ? value.split(',')[1] : value;
-  })
+  @Transform(({ value }) =>
+    typeof value === 'string' && value.includes(',') ? value.split(',')[1] : value,
+  )
   @IsOptional()
   @IsString()
   attachment?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'One or more supporting documents as raw base64 strings. ' +
+      'Accepts a single string OR an array of strings — both are treated identically. ' +
+      'Data URI prefixes (e.g. data:application/pdf;base64,) are stripped automatically. ' +
+      'Each file is uploaded to Azure Blob Storage and recorded as a separate document row.',
+    oneOf: [
+      { type: 'string',  example: 'JVBERi0x...' },
+      { type: 'array', items: { type: 'string' }, example: ['JVBERi0x...', 'JVBERi0y...'] },
+    ],
+  })
+  @Transform(({ value, obj }: { value: unknown; obj: Record<string, unknown> }) => {
+    // Merge legacy `attachment` (single) + `attachments` (single or array) into one list.
+    const fromLegacy  = obj['attachment'] as string | undefined;
+    const fromNew: unknown[] = Array.isArray(value) ? value : (value != null ? [value] : []);
+    const merged = [...fromNew, ...(fromLegacy ? [fromLegacy] : [])];
+    if (merged.length === 0) return undefined;
+    // Strip data URI prefixes
+    return merged.map((v) =>
+      typeof v === 'string' && v.includes(',') ? v.split(',')[1] : v,
+    );
+  })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  attachments?: string[];
 }
 
 // ── UPDATE ────────────────────────────────────────────────────────────────────

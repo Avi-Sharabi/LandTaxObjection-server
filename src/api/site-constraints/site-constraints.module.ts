@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { SiteConstraint } from './entities/site-constraints.entity';
+import { SiteConstraintDocument } from './entities/site-constraint-document.entity';
 import { DisputeDocument } from '../dispute-documents/entities/dispute-document.entity';
 import { DisputeCase } from '../dispute-cases/entities/dispute-case.entity';
 import { SiteConstraintsController } from './site-constraints.controller';
@@ -10,7 +11,7 @@ import { AzureBlobService } from '../../common/azure-blob/azure-blob.service';
 
 @Module({
   imports: [
-    TypeOrmModule.forFeature([SiteConstraint, DisputeCase, DisputeDocument]),
+    TypeOrmModule.forFeature([SiteConstraint, SiteConstraintDocument, DisputeCase, DisputeDocument]),
   ],
   controllers: [SiteConstraintsController],
   providers: [SiteConstraintsService, AzureBlobService],
