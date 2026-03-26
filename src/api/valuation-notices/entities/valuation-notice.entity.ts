@@ -2,6 +2,7 @@ import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, ManyToOne, On
 import { Property } from '../../properties/entities/property.entity';
 import { DisputeCase } from '../../dispute-cases/entities/dispute-case.entity';
 import { AssessmentDocument } from '../../dispute-cases/entities/assessment-document.entity';
+import { ValuationNoticeFile } from './valuation-notice-file.entity';
 
 export enum DecisionOutcome {
   OBJECTION = 'OBJECTION',
@@ -66,4 +67,7 @@ export class ValuationNotice {
 
   @OneToMany(() => DisputeCase, (disputeCase) => disputeCase.valuation_notice)
   dispute_cases: DisputeCase[];
+
+  @OneToMany(() => ValuationNoticeFile, (file) => file.valuation_notice)
+  files: ValuationNoticeFile[];
 }

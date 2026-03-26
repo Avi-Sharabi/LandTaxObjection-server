@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, BadRequestException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import {
@@ -45,6 +45,11 @@ export class DisputeIntakeOrchestrator {
   ) { }
 
   async submitIntakeApplication(intakeDto: CreateDisputeIntakeDto): Promise<{ case_references: string[] }> {
+    const accountant = await this.usersRepository.findOne({ where: { id: intakeDto.accountantId } });
+    if (!accountant) {
+      throw new BadRequestException(`Accountant with ID ${intakeDto.accountantId} does not exist`);
+    }
+
     const fyiClient = await this.fyiClientHandler.findClientInFyi(intakeDto.email);
 
     const client = fyiClient
