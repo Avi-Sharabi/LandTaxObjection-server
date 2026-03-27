@@ -25,20 +25,20 @@ export class DisputeConstraint {
   @Column({ type: 'text', nullable: true })
   description: string | null;
 
-  @Column({ type: 'numeric', precision: 15, scale: 2, nullable: true })
-  disputed_value: number | null;
+  @Column({ type: 'numeric', precision: 15, scale: 2, nullable: true, name: 'disputed_value' })
+  disputed_value: string | null;
 
-  @Column({ type: 'int', nullable: false, default: 0 })
+  @Column({ type: 'int', nullable: false, default: 0, name: 'sort_order' })
   sort_order: number;
 
   @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
   created_at: Date;
 
   // Relations
-  @ManyToOne(() => DisputeCase, (disputeCase) => disputeCase.dispute_constraints, { nullable: false, onDelete: 'CASCADE' })
+  @ManyToOne(() => DisputeCase, { nullable: false, onDelete: 'CASCADE' })
   @JoinColumn({ name: 'dispute_id' })
   dispute: DisputeCase;
 
-  @OneToMany(() => ConstraintFile, (file) => file.dispute_constraint)
+  @OneToMany(() => ConstraintFile, (file) => file.dispute_constraint, { cascade: false })
   files: ConstraintFile[];
 }

@@ -13,5 +13,8 @@ export const REQUIRED_DOC_TYPES: Record<ConstraintType, string[]> = {
   [ConstraintType.ZONING_PLANNING_RESTRICTION]:        ['property_report', 'legal_document'],
   [ConstraintType.ACCESS_RESTRICTION_LANDLOCKED]:      ['land_title_search', 'property_report'],
   [ConstraintType.CONTAMINATION_REMEDIATION]:          ['property_report', 'independent_valuation'],
+  [ConstraintType.COMPARABLE_SALES]:                   ['other'],
+  [ConstraintType.MARKET_VALUE]:                       ['independent_valuation', 'other'],
+  [ConstraintType.LAND_USE]:                           ['property_report', 'other'],
   [ConstraintType.OTHER]:                              ['other'],
 };
