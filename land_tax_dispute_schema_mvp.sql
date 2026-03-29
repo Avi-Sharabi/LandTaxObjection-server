@@ -1,6 +1,6 @@
 -- ============================================================
 -- YML Land Tax Valuation Dispute Module
--- PostgreSQL Schema — MVP v3 (9 tables)
+-- PostgreSQL Schema — MVP v4 (12 tables)
 -- ============================================================
 
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
@@ -43,6 +43,7 @@ CREATE TYPE legal_ground AS ENUM (
 CREATE TYPE jurisdiction AS ENUM ('NSW', 'VIC', 'QLD', 'WA');
 
 CREATE TYPE constraint_type AS ENUM (
+  -- Physical/legal property constraints (UC-06, site_constraints)
   'heritage_listing',
   'flood_zone_100yr',
   'bushfire_bal_restriction',
@@ -51,6 +52,10 @@ CREATE TYPE constraint_type AS ENUM (
   'zoning_planning_restriction',
   'access_restriction_landlocked',
   'contamination_remediation',
+  -- Evidence folder categories (dispute_constraints / constraint_files)
+  'comparable_sales',
+  'market_value',
+  'land_use',
   'other'
 );
 
@@ -72,6 +77,20 @@ CREATE TYPE document_type AS ENUM (
   'generated_objection',
   'advisory_letter',
   'other'
+);
+
+CREATE TYPE upload_status AS ENUM (
+  'pending',
+  'scanning',
+  'complete',
+  'failed',
+  'rejected'
+);
+
+CREATE TYPE uploaded_by_role AS ENUM (
+  'client',
+  'staff',
+  'staff_on_behalf_of_client'
 );
 
 -- ═══════════════════════════════════════════════════════════
@@ -96,7 +115,7 @@ CREATE TABLE users (
 CREATE TABLE clients (
   -- Core
   id                     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  status                 client_status_enum NOT NULL DEFAULT 'prospect',
+  status                 client_status NOT NULL DEFAULT 'prospect',
 
   -- Identity
   name                   TEXT NOT NULL,
@@ -162,6 +181,25 @@ CREATE TABLE valuation_notices (
   notice_reference      TEXT,
   blob_storage_url      TEXT,
   created_at            TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+
+-- ═══════════════════════════════════════════════════════════
+-- 4b. VALUATION NOTICE FILES  (multi-file upload with scan status)
+-- ═══════════════════════════════════════════════════════════
+
+CREATE TABLE valuation_notice_files (
+  id                  UUID             PRIMARY KEY DEFAULT uuid_generate_v4(),
+  valuation_notice_id UUID             NOT NULL REFERENCES valuation_notices(id) ON DELETE CASCADE,
+  blob_path           TEXT             NOT NULL,
+  original_name       TEXT             NOT NULL,
+  mime_type           TEXT             NOT NULL,
+  file_size_bytes     INT              NOT NULL,
+  upload_status       upload_status    NOT NULL DEFAULT 'pending',
+  uploaded_by         UUID             NOT NULL REFERENCES users(id),
+  uploaded_by_role    uploaded_by_role NOT NULL,
+  confirmed_by        UUID             REFERENCES users(id),
+  confirmed_at        TIMESTAMPTZ,
+  uploaded_at         TIMESTAMPTZ      NOT NULL DEFAULT NOW()
 );
 
 -- ═══════════════════════════════════════════════════════════
@@ -264,14 +302,52 @@ CREATE TABLE dispute_documents (
   uploaded_at       TIMESTAMPTZ   NOT NULL DEFAULT NOW()
 );
 
+-- ═══════════════════════════════════════════════════════════
+-- 10. DISPUTE CONSTRAINTS  (evidence folders per dispute — UC-06)
+-- ═══════════════════════════════════════════════════════════
+
+CREATE TABLE dispute_constraints (
+  id              UUID            PRIMARY KEY DEFAULT uuid_generate_v4(),
+  dispute_id      UUID            NOT NULL REFERENCES dispute_cases(id) ON DELETE CASCADE,
+  constraint_type constraint_type NOT NULL,
+  description     TEXT,
+  disputed_value  NUMERIC(15,2),
+  sort_order      INT             NOT NULL DEFAULT 0,
+  created_at      TIMESTAMPTZ     NOT NULL DEFAULT NOW()
+);
+
+-- ═══════════════════════════════════════════════════════════
+-- 11. CONSTRAINT FILES  (files within each evidence folder)
+-- ═══════════════════════════════════════════════════════════
+
+CREATE TABLE constraint_files (
+  id                    UUID             PRIMARY KEY DEFAULT uuid_generate_v4(),
+  dispute_constraint_id UUID             NOT NULL REFERENCES dispute_constraints(id) ON DELETE CASCADE,
+  document_category     constraint_type  NOT NULL,
+  blob_path             TEXT             NOT NULL,
+  original_name         TEXT             NOT NULL,
+  mime_type             TEXT             NOT NULL,
+  file_size_bytes       INT              NOT NULL,
+  upload_status         upload_status    NOT NULL DEFAULT 'pending',
+  uploaded_by           UUID             NOT NULL REFERENCES users(id),
+  uploaded_by_role      uploaded_by_role NOT NULL,
+  confirmed_by          UUID             REFERENCES users(id),
+  confirmed_at          TIMESTAMPTZ,
+  uploaded_at           TIMESTAMPTZ      NOT NULL DEFAULT NOW()
+);
+
 -- ── INDEXES ─────────────────────────────────────────────────
 
-CREATE INDEX idx_clients_status            ON clients(status);
-CREATE INDEX idx_clients_email             ON clients(email);
-CREATE INDEX idx_clients_status            ON clients(status);
-CREATE INDEX idx_clients_accountant        ON clients(assigned_accountant_id);
-CREATE INDEX idx_dispute_cases_client      ON dispute_cases(client_id);
-CREATE INDEX idx_dispute_cases_status      ON dispute_cases(status);
-CREATE INDEX idx_dispute_cases_deadline    ON dispute_cases(statutory_deadline);
-CREATE INDEX idx_comparable_sales_dispute  ON comparable_sales(dispute_id);
-CREATE INDEX idx_documents_dispute         ON dispute_documents(dispute_id);
+CREATE INDEX idx_clients_status                 ON clients(status);
+CREATE INDEX idx_clients_email                  ON clients(email);
+CREATE INDEX idx_clients_accountant             ON clients(assigned_accountant_id);
+CREATE INDEX idx_dispute_cases_client           ON dispute_cases(client_id);
+CREATE INDEX idx_dispute_cases_status           ON dispute_cases(status);
+CREATE INDEX idx_dispute_cases_deadline         ON dispute_cases(statutory_deadline);
+CREATE INDEX idx_comparable_sales_dispute       ON comparable_sales(dispute_id);
+CREATE INDEX idx_documents_dispute              ON dispute_documents(dispute_id);
+CREATE INDEX idx_valuation_notice_files_notice  ON valuation_notice_files(valuation_notice_id);
+CREATE INDEX idx_valuation_notice_files_status  ON valuation_notice_files(upload_status);
+CREATE INDEX idx_dispute_constraints_dispute    ON dispute_constraints(dispute_id);
+CREATE INDEX idx_constraint_files_constraint    ON constraint_files(dispute_constraint_id);
+CREATE INDEX idx_constraint_files_status        ON constraint_files(upload_status);
