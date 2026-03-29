@@ -1,6 +1,7 @@
 import { BlobSASPermissions, BlobServiceClient, generateBlobSASQueryParameters, StorageSharedKeyCredential } from "@azure/storage-blob";
 import { Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
+import { lookup as mimeLookup } from 'mime-types';
 import { InvalidConfigurationException } from "../exceptions/invalid-configuration.exception";
 
 
@@ -45,12 +46,15 @@ export class AzureBlobService {
 
         const containerClient = this.client.getContainerClient(this.containerName);
         const blockBlobClient = containerClient.getBlockBlobClient(blobName);
-        await blockBlobClient.upload(buffer, buffer.length);
+        const contentType = mimeLookup(blobName) || 'application/octet-stream';
+        await blockBlobClient.upload(buffer, buffer.length, {
+            blobHTTPHeaders: { blobContentType: contentType },
+        });
 
         return blobName;
     }
 
-    getFileUrl(blobName: string | null, expiresInMinutes = 60): string | null {
+    getFileUrl(blobName: string | null, expiresInMinutes = 60, contentDisposition?: string): string | null {
         if (!blobName) return null;
         const sharedKeyCredential = new StorageSharedKeyCredential(this.accountName, this.accountKey);
 
@@ -59,6 +63,7 @@ export class AzureBlobService {
             blobName,
             permissions: BlobSASPermissions.parse('r'),
             expiresOn: new Date(Date.now() + expiresInMinutes * 60 * 1000),
+            ...(contentDisposition && { contentDisposition }),
         }, sharedKeyCredential).toString();
 
         return `https://${this.accountName}.blob.core.windows.net/${this.containerName}/${blobName}?${sasToken}`;
