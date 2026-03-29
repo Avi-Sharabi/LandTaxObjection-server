@@ -8,8 +8,10 @@ import {
   JoinColumn,
 } from 'typeorm';
 import { DisputeCase } from '../../dispute-cases/entities/dispute-case.entity';
-import { ConstraintType } from '../../site-constraints/entities/site-constraints.entity';
 import { ConstraintFile } from '../../constraint-files/entities/constraint-file.entity';
+import { ConstraintType } from './constraint-type.enum';
+
+export { ConstraintType };
 
 @Entity('dispute_constraints')
 export class DisputeConstraint {
@@ -24,12 +26,6 @@ export class DisputeConstraint {
 
   @Column({ type: 'text', nullable: true })
   description: string | null;
-
-  @Column({ type: 'numeric', precision: 15, scale: 2, nullable: true, name: 'disputed_value' })
-  disputed_value: string | null;
-
-  @Column({ type: 'int', nullable: false, default: 0, name: 'sort_order' })
-  sort_order: number;
 
   @CreateDateColumn({ type: 'timestamptz', name: 'created_at' })
   created_at: Date;

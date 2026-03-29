@@ -6,6 +6,7 @@ import {
   Delete,
   Body,
   Param,
+  Query,
   ParseUUIDPipe,
   HttpCode,
   HttpStatus,
@@ -17,13 +18,14 @@ import {
   ApiOperation,
   ApiResponse,
   ApiParam,
+  ApiQuery,
   ApiBearerAuth,
 } from '@nestjs/swagger';
 
 import { DisputeConstraintsService } from './dispute-constraints.service';
-import { CreateDisputeConstraintDto, UpdateDisputeConstraintDto } from './dto/create-dispute-constraint.dto';
-import { UploadConstraintFilesDto } from './dto/upload-constraint-files.dto';
-import { DisputeConstraintResponseDto, ConstraintFileUrlDto } from './dto/dispute-constraint-response.dto';
+import { CreateDisputeConstraintDto } from './dto/create-dispute-constraint.dto';
+import { UpdateDisputeConstraintDto } from './dto/update-dispute-constraint.dto';
+import { DisputeConstraintResponseDto } from './dto/dispute-constraint-response.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AuthResponseDto } from '../auth/dto/auth-response.dto';
 
@@ -36,12 +38,13 @@ export class DisputeConstraintsController {
 
   /**
    * POST /api/v1/dispute-constraints
-   * Create a constraint and optionally upload all supporting files in one call.
    */
   @Post()
   @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: 'Create a dispute constraint (optionally with files in the same call)' })
+  @ApiOperation({ summary: 'Create a dispute constraint (optionally with files)' })
   @ApiResponse({ status: 201, type: DisputeConstraintResponseDto })
+  @ApiResponse({ status: 400, description: 'Validation error.' })
+  @ApiResponse({ status: 404, description: 'Dispute case not found.' })
   async create(
     @Body() dto: CreateDisputeConstraintDto,
     @Request() req: { user: AuthResponseDto },
@@ -50,135 +53,47 @@ export class DisputeConstraintsController {
   }
 
   /**
-   * GET /api/v1/dispute-constraints/:disputeId
-   * List all constraints for a dispute case.
+   * GET /api/v1/dispute-constraints?dispute_id=
    */
-  @Get(':disputeId')
+  @Get()
   @ApiOperation({ summary: 'List all constraints for a dispute case' })
-  @ApiParam({ name: 'disputeId', description: 'UUID of the dispute case' })
+  @ApiQuery({ name: 'dispute_id', description: 'UUID of the dispute case', type: String })
   @ApiResponse({ status: 200, type: [DisputeConstraintResponseDto] })
+  @ApiResponse({ status: 400, description: 'Validation error.' })
+  @ApiResponse({ status: 404, description: 'Dispute case not found.' })
   async findByDispute(
-    @Param('disputeId', ParseUUIDPipe) disputeId: string,
+    @Query('dispute_id', ParseUUIDPipe) disputeId: string,
   ): Promise<DisputeConstraintResponseDto[]> {
     return this.service.findByDispute(disputeId);
   }
 
   /**
-   * PATCH /api/v1/dispute-constraints/detail/:id
-   * Update scalar fields (description, disputed_value, sort_order).
-   * constraint_type and dispute_id are immutable.
+   * PATCH /api/v1/dispute-constraints/:id
    */
-  @Patch('detail/:id')
-  @ApiOperation({ summary: 'Update a dispute constraint (description, disputed_value, sort_order)' })
+  @Patch(':id')
+  @ApiOperation({ summary: 'Update a dispute constraint (description, files). Pass keep_file_ids to manage existing files.' })
   @ApiParam({ name: 'id', description: 'Constraint UUID' })
   @ApiResponse({ status: 200, type: DisputeConstraintResponseDto })
-  @ApiResponse({ status: 404, description: 'Not found.' })
+  @ApiResponse({ status: 400, description: 'Validation error.' })
+  @ApiResponse({ status: 404, description: 'Dispute constraint not found.' })
   async update(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateDisputeConstraintDto,
-  ): Promise<DisputeConstraintResponseDto> {
-    return this.service.update(id, dto);
-  }
-
-  /**
-   * GET /api/v1/dispute-constraints/detail/:id/files
-   * Get short-lived SAS URLs for all files on a constraint.
-   */
-  @Get('detail/:id/files')
-  @ApiOperation({ summary: 'Get time-limited SAS URLs for all files on a constraint' })
-  @ApiParam({ name: 'id', description: 'Constraint UUID' })
-  @ApiResponse({
-    status: 200,
-    schema: {
-      type: 'object',
-      properties: {
-        files: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              id:            { type: 'string', format: 'uuid' },
-              url:           { type: 'string' },
-              original_name: { type: 'string' },
-              mime_type:     { type: 'string' },
-            },
-          },
-        },
-      },
-    },
-  })
-  async getFileUrls(
-    @Param('id', ParseUUIDPipe) id: string,
-  ): Promise<{ files: ConstraintFileUrlDto[] }> {
-    const files = await this.service.getFileUrls(id);
-    return { files };
-  }
-
-  /**
-   * POST /api/v1/dispute-constraints/detail/:id/files
-   * Upload one or more files to an existing constraint in a single call.
-   */
-  @Post('detail/:id/files')
-  @HttpCode(HttpStatus.CREATED)
-  @ApiOperation({ summary: 'Upload multiple files to an existing constraint (single API call)' })
-  @ApiParam({ name: 'id', description: 'Constraint UUID' })
-  @ApiResponse({
-    status: 201,
-    description: 'All files uploaded. Returns updated SAS URL list.',
-    schema: {
-      type: 'object',
-      properties: {
-        files: {
-          type: 'array',
-          items: {
-            type: 'object',
-            properties: {
-              id:            { type: 'string', format: 'uuid' },
-              url:           { type: 'string' },
-              original_name: { type: 'string' },
-              mime_type:     { type: 'string' },
-            },
-          },
-        },
-      },
-    },
-  })
-  async addFiles(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Body() dto: UploadConstraintFilesDto,
     @Request() req: { user: AuthResponseDto },
-  ): Promise<{ files: ConstraintFileUrlDto[] }> {
-    const files = await this.service.addFiles(id, dto, req.user.id);
-    return { files };
+  ): Promise<DisputeConstraintResponseDto> {
+    return this.service.update(id, dto, req.user.id);
   }
 
   /**
-   * DELETE /api/v1/dispute-constraints/detail/:id
-   * Remove a constraint and all its files.
+   * DELETE /api/v1/dispute-constraints/:id
    */
-  @Delete('detail/:id')
+  @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Remove a dispute constraint and all its files' })
   @ApiParam({ name: 'id', description: 'Constraint UUID' })
   @ApiResponse({ status: 204 })
+  @ApiResponse({ status: 404, description: 'Dispute constraint not found.' })
   async remove(@Param('id', ParseUUIDPipe) id: string): Promise<void> {
     return this.service.remove(id);
-  }
-
-  /**
-   * DELETE /api/v1/dispute-constraints/detail/:id/files/:fileId
-   * Remove a single file from a constraint.
-   */
-  @Delete('detail/:id/files/:fileId')
-  @HttpCode(HttpStatus.NO_CONTENT)
-  @ApiOperation({ summary: 'Remove a single file from a constraint' })
-  @ApiParam({ name: 'id', description: 'Constraint UUID' })
-  @ApiParam({ name: 'fileId', description: 'File UUID' })
-  @ApiResponse({ status: 204 })
-  async removeFile(
-    @Param('id', ParseUUIDPipe) id: string,
-    @Param('fileId', ParseUUIDPipe) fileId: string,
-  ): Promise<void> {
-    return this.service.removeFile(id, fileId);
   }
 }

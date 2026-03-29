@@ -5,6 +5,7 @@ import { DisputeConstraint } from './entities/dispute-constraint.entity';
 import { ConstraintFile } from '../constraint-files/entities/constraint-file.entity';
 import { DisputeCase } from '../dispute-cases/entities/dispute-case.entity';
 import { AzureBlobModule } from '../../common/azure-blob/azure-blob.module';
+import { DisputeConstraintsRepository } from './dispute-constraints.repository';
 import { DisputeConstraintsService } from './dispute-constraints.service';
 import { DisputeConstraintsController } from './dispute-constraints.controller';
 
@@ -14,7 +15,7 @@ import { DisputeConstraintsController } from './dispute-constraints.controller';
     AzureBlobModule,
   ],
   controllers: [DisputeConstraintsController],
-  providers:   [DisputeConstraintsService],
+  providers:   [DisputeConstraintsRepository, DisputeConstraintsService],
   exports:     [DisputeConstraintsService],
 })
 export class DisputeConstraintsModule {}

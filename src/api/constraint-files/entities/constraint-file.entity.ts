@@ -7,7 +7,7 @@ import {
   JoinColumn,
 } from 'typeorm';
 import { DisputeConstraint } from '../../dispute-constraints/entities/dispute-constraint.entity';
-import { ConstraintType } from '../../site-constraints/entities/site-constraints.entity';
+import { ConstraintType } from '../../dispute-constraints/entities/constraint-type.enum';
 import { UploadStatus, UploadedByRole } from '../../valuation-notices/entities/valuation-notice-file.entity';
 import { User } from '../../users/entities/user.entity';
 
@@ -27,9 +27,6 @@ export class ConstraintFile {
 
   @Column({ type: 'text', nullable: false })
   original_name: string;
-
-  @Column({ type: 'text', nullable: false })
-  mime_type: string;
 
   @Column({ type: 'int', nullable: false })
   file_size_bytes: number;

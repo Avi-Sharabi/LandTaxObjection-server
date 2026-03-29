@@ -15,7 +15,7 @@ export class DisputeCasesService {
     private readonly comparablesService: ComparablesService,
     @InjectRepository(DisputeCase)
     private disputeCasesRepository: Repository<DisputeCase>,
-  ) {}
+  ) { }
 
   create(createDisputeCaseDto: CreateDisputeCaseDto) {
     return 'This action adds a new disputeCase';
@@ -32,7 +32,7 @@ export class DisputeCasesService {
   async findOne(id: string): Promise<DisputeCase> {
     const disputeCase = await this.disputeCasesRepository.findOne({
       where: { id },
-      relations: ['client', 'property', 'valuation_notice', 'assigned_accountant', 'assigned_lawyer', 'legal_grounds'],
+      relations: ['client', 'property', 'valuation_notice', 'assigned_accountant', 'assigned_lawyer', 'legal_grounds', "dispute_constraints"],
     });
     if (!disputeCase) throw new NotFoundException(`Dispute case #${id} not found`);
     return disputeCase;

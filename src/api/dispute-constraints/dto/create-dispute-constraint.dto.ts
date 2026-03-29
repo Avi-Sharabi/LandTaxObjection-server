@@ -2,16 +2,13 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsArray,
   IsEnum,
-  IsNumber,
   IsOptional,
   IsString,
   IsUUID,
-  Min,
   ValidateNested,
 } from 'class-validator';
-import { OmitType, PartialType } from '@nestjs/swagger';
 import { Transform, Type } from 'class-transformer';
-import { ConstraintType } from '../../site-constraints/entities/site-constraints.entity';
+import { ConstraintType } from '../entities/constraint-type.enum';
 import { UploadedByRole } from '../../valuation-notices/entities/valuation-notice-file.entity';
 
 export class ConstraintFileInputDto {
@@ -28,10 +25,6 @@ export class ConstraintFileInputDto {
   )
   @IsString()
   data: string;
-
-  @ApiProperty({ description: 'MIME type of the file', example: 'application/pdf' })
-  @IsString()
-  mime_type: string;
 }
 
 export class CreateDisputeConstraintDto {
@@ -48,18 +41,6 @@ export class CreateDisputeConstraintDto {
   @IsString()
   description?: string;
 
-  @ApiPropertyOptional({ description: 'Disputed value (AUD)', example: 150000.00 })
-  @IsOptional()
-  @IsNumber({ maxDecimalPlaces: 2 })
-  @Min(0)
-  disputed_value?: number;
-
-  @ApiPropertyOptional({ description: 'Display sort order', example: 0 })
-  @IsOptional()
-  @IsNumber()
-  @Min(0)
-  sort_order?: number;
-
   @ApiPropertyOptional({
     description: 'Supporting documents to upload with this constraint (all in one call)',
     type: [ConstraintFileInputDto],
@@ -75,8 +56,3 @@ export class CreateDisputeConstraintDto {
   @IsEnum(UploadedByRole)
   uploaded_by_role?: UploadedByRole;
 }
-
-// PATCH — only scalar fields are editable; dispute_id, constraint_type, files are immutable via this endpoint.
-export class UpdateDisputeConstraintDto extends PartialType(
-  OmitType(CreateDisputeConstraintDto, ['dispute_id', 'constraint_type', 'files', 'uploaded_by_role'] as const),
-) {}
