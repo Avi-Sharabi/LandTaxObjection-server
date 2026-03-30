@@ -19,6 +19,7 @@ export enum DisputeStatus {
   AWAITING_VG_RESPONSE = 'awaiting_vg_response',
   OUTCOME_RECEIVED = 'outcome_received',
   CLOSED = 'closed',
+  CLOSED_NO_OBJECTION = 'closed_no_objection',
 }
 
 export enum OutcomeResult {
