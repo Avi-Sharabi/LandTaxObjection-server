@@ -17,9 +17,6 @@ import { CreateDisputeIntakeDto } from './dto/create-dispute-intake.dto';
 import { CloseNoObjectionDto } from './dto/close-no-objection.dto';
 import { DisputeCaseResponseDto } from './dto/dispute-case-response.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { RolesGuard } from '../../common/guards/roles.guard';
-import { Roles } from '../../common/decorators/roles.decorator';
-import { UserRole } from '../users/entities/user.entity';
 
 
 @ApiTags('dispute-cases')
@@ -91,14 +88,13 @@ export class DisputeCasesController {
     return this.disputeCasesService.advanceToAppraisal(id);
   }
 
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.INTERNAL_Assessor)
+  @UseGuards(JwtAuthGuard)
   @Post(':id/close-no-objection')
   @ApiOperation({
     summary: 'Close a dispute case with no objection',
     description:
       'Closes the dispute case when the internal assessment value is at or above the VG assessed value, ' +
-      'indicating no viable objection grounds. Requires Internal Assessor role.',
+      'indicating no viable objection grounds.',
   })
   @ApiParam({ name: 'id', description: 'Dispute case UUID' })
   @ApiBody({ type: CloseNoObjectionDto })
