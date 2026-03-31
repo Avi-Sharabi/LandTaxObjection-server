@@ -92,7 +92,7 @@ export class DisputeCasesController {
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ACCOUNTANT, UserRole.INTERNAL_Assessor, UserRole.ADMIN)
+  @Roles(UserRole.INTERNAL_Assessor)
   @Post(':id/close-no-objection')
   @ApiOperation({
     summary: 'Close a dispute case with no objection',
@@ -102,12 +102,10 @@ export class DisputeCasesController {
   })
   @ApiParam({ name: 'id', description: 'Dispute case UUID' })
   @ApiBody({ type: CloseNoObjectionDto })
-  @ApiResponse({ status: 200, description: 'Case closed successfully — no objection warranted', type: DisputeCaseResponseDto })
-  @ApiResponse({ status: 400, description: 'Internal assessment value is below the VG assessed value — objection grounds exist' })
-  @ApiResponse({ status: 401, description: 'Unauthorised — valid JWT required' })
-  @ApiResponse({ status: 403, description: 'Forbidden — Internal Assessor role required' })
-  @ApiResponse({ status: 404, description: 'Dispute case not found' })
-  @ApiResponse({ status: 409, description: 'Dispute case is already closed' })
+  @ApiResponse({ status: 200, description: 'Case closed — no objection warranted', type: DisputeCaseResponseDto })
+  @ApiResponse({ status: 400, description: 'Internal assessment value is not below the VG assessed value' })
+  @ApiResponse({ status: 409, description: 'Case is already closed' })
+
   closeNoObjection(
     @Param('id') id: string,
     @Body() dto: CloseNoObjectionDto,
