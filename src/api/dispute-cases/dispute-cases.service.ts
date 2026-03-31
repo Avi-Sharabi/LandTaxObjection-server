@@ -11,7 +11,7 @@ import { CreateDisputeCaseDto } from './dto/create-dispute-case.dto';
 import { UpdateDisputeCaseDto } from './dto/update-dispute-case.dto';
 import { CreateDisputeIntakeDto } from './dto/create-dispute-intake.dto';
 import { CloseNoObjectionDto } from './dto/close-no-objection.dto';
-import { CloseNoObjectionResponseDto } from './dto/close-no-objection-response.dto';
+import { DisputeCaseResponseDto } from './dto/dispute-case-response.dto';
 import { DisputeCase, DisputeStatus } from './entities/dispute-case.entity';
 import { DisputeIntakeOrchestrator } from './intake/dispute-intake.orchestrator';
 import { ComparablesService } from '../comparables/comparables.service';
@@ -70,10 +70,10 @@ export class DisputeCasesService {
     return this.disputeCasesRepository.save(disputeCase);
   }
 
-  async closeNoObjection(caseId: string, dto: CloseNoObjectionDto): Promise<CloseNoObjectionResponseDto> {
+  async closeNoObjection(caseId: string, dto: CloseNoObjectionDto): Promise<DisputeCaseResponseDto> {
     const disputeCase = await this.disputeCasesRepository.findOne({
       where: { id: caseId },
-      relations: ['valuation_notice', 'client', 'property', 'assigned_accountant'],
+      relations: ['valuation_notice'],
     });
 
     if (!disputeCase) {
@@ -187,7 +187,7 @@ export class DisputeCasesService {
 
     // TODO: Xero closure logging — Ticket 4 / future Xero integration placeholder
 
-    return CloseNoObjectionResponseDto.from(saved, sasUrl);
+    return DisputeCaseResponseDto.fromEntity(saved);
   }
 
   async remove(id: string): Promise<{ message: string }> {
