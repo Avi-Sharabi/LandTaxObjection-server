@@ -14,6 +14,8 @@ import { DisputeCasesService } from './dispute-cases.service';
 import { CreateDisputeCaseDto } from './dto/create-dispute-case.dto';
 import { UpdateDisputeCaseDto } from './dto/update-dispute-case.dto';
 import { CreateDisputeIntakeDto } from './dto/create-dispute-intake.dto';
+import { CloseNoObjectionDto } from './dto/close-no-objection.dto';
+import { DisputeCaseResponseDto } from './dto/dispute-case-response.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 
 
@@ -84,6 +86,27 @@ export class DisputeCasesController {
   @ApiResponse({ status: 422, description: 'Fewer than 3 comparable sales exist' })
   advanceToAppraisal(@Param('id') id: string) {
     return this.disputeCasesService.advanceToAppraisal(id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post(':id/close-no-objection')
+  @ApiOperation({
+    summary: 'Close a dispute case with no objection',
+    description:
+      'Closes the dispute case when the internal assessment value is at or above the VG assessed value, ' +
+      'indicating no viable objection grounds.',
+  })
+  @ApiParam({ name: 'id', description: 'Dispute case UUID' })
+  @ApiBody({ type: CloseNoObjectionDto })
+  @ApiResponse({ status: 200, description: 'Case closed — no objection warranted', type: DisputeCaseResponseDto })
+  @ApiResponse({ status: 400, description: 'Internal assessment value is not below the VG assessed value' })
+  @ApiResponse({ status: 409, description: 'Case is already closed' })
+
+  closeNoObjection(
+    @Param('id') id: string,
+    @Body() dto: CloseNoObjectionDto,
+  ): Promise<DisputeCaseResponseDto> {
+    return this.disputeCasesService.closeNoObjection(id, dto);
   }
 
   @UseGuards(JwtAuthGuard)
