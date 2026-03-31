@@ -19,6 +19,7 @@ export enum DisputeStatus {
   AWAITING_VG_RESPONSE = 'awaiting_vg_response',
   OUTCOME_RECEIVED = 'outcome_received',
   CLOSED = 'closed',
+  CLOSED_NO_OBJECTION = 'closed_no_objection',
 }
 
 export enum OutcomeResult {
@@ -117,6 +118,9 @@ export class DisputeCase {
 
   @Column({ type: 'timestamptz', nullable: true })
   closed_at: Date | null;
+
+  @Column({ type: 'text', nullable: true })
+  advisory_letter_url: string | null;
 
   @CreateDateColumn({ type: 'timestamptz' })
   created_at: Date;

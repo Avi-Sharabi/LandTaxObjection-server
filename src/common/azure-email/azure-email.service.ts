@@ -61,4 +61,42 @@ export class AzureEmailService {
         const poller = await this.emailClient.beginSend(message);
         await poller.pollUntilDone();
     }
+
+    async sendAdvisoryLetterNotification(data: {
+        clientName: string;
+        clientEmail: string;
+        caseReference: string;
+        propertyAddress: string;
+        vgAssessedValue: string;
+        internalAssessedValue: string;
+        assessorFullName: string;
+        advisoryLetterUrl: string;
+    }): Promise<void> {
+        const notifyEmail = this.config.get('ADVISORY_LETTER_NOTIFY_EMAIL') || 'avi.sharabi@ymlgroup.com.au';
+
+        const html = this.loadTemplate('advisory-letter-notification', {
+            caseReference: data.caseReference,
+            clientName: data.clientName,
+            clientEmail: data.clientEmail,
+            propertyAddress: data.propertyAddress,
+            vgAssessedValue: data.vgAssessedValue,
+            internalAssessedValue: data.internalAssessedValue,
+            assessorFullName: data.assessorFullName,
+            advisoryLetterUrl: data.advisoryLetterUrl,
+        });
+
+        const message = {
+            senderAddress: this.sender,
+            recipients: {
+                to: [{ address: notifyEmail, displayName: 'Avi Sharabi' }],
+            },
+            content: {
+                subject: `[${data.caseReference}] Advisory Letter Ready — Action Required`,
+                html,
+            },
+        };
+
+        const poller = await this.emailClient.beginSend(message);
+        await poller.pollUntilDone();
+    }
 }
