@@ -73,7 +73,7 @@ export class DisputeCasesService {
   async closeNoObjection(caseId: string, dto: CloseNoObjectionDto): Promise<DisputeCaseResponseDto> {
     const disputeCase = await this.disputeCasesRepository.findOne({
       where: { id: caseId },
-      relations: ['valuation_notice'],
+      relations: ['client', 'property', 'valuation_notice', 'assigned_accountant'],
     });
 
     if (!disputeCase) {
