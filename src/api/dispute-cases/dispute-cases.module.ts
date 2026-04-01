@@ -11,6 +11,7 @@ import { DisputeCasesController } from './dispute-cases.controller';
 import { DisputeCasesService } from './dispute-cases.service';
 import { DisputeCase } from './entities/dispute-case.entity';
 import { AssessmentDocument } from './entities/assessment-document.entity';
+import { CaseAuditLog } from './entities/case-audit-log.entity';
 import { AzureBlobModule } from 'src/common/azure-blob/azure-blob.module';
 import { AzureEmailService } from 'src/common/azure-email/azure-email.service';
 import { DisputeIntakeOrchestrator } from './intake/dispute-intake.orchestrator';
@@ -27,6 +28,7 @@ import { LetterGenerationService } from 'src/common/letter-generation/letter-gen
     TypeOrmModule.forFeature([
       DisputeCase,
       AssessmentDocument,
+      CaseAuditLog,
       DisputeLegalGround,
       Client,
       Property,

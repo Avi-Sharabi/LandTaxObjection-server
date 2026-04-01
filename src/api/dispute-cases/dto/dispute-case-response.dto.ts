@@ -59,6 +59,12 @@ export class DisputeCaseResponseDto {
   @ApiPropertyOptional()
   closed_at: Date | null;
 
+  @ApiPropertyOptional()
+  vg_response_received_at: Date | null;
+
+  @ApiPropertyOptional()
+  lodgment_reference_number: string | null;
+
   @ApiProperty()
   created_at: Date;
 
@@ -86,6 +92,8 @@ export class DisputeCaseResponseDto {
     dto.notes = entity.notes;
     dto.submitted_at = entity.submitted_at;
     dto.closed_at = entity.closed_at;
+    dto.vg_response_received_at = entity.vg_response_received_at;
+    dto.lodgment_reference_number = entity.lodgment_reference_number;
     dto.created_at = entity.created_at;
     dto.updated_at = entity.updated_at;
     return dto;

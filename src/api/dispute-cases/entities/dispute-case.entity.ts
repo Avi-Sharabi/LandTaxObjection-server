@@ -17,6 +17,7 @@ export enum DisputeStatus {
   AWAITING_CLIENT_APPROVAL = 'awaiting_client_approval',
   SUBMITTED_TO_VG = 'submitted_to_vg',
   AWAITING_VG_RESPONSE = 'awaiting_vg_response',
+  VG_RESPONSE_RECEIVED = 'vg_response_received',
   OUTCOME_RECEIVED = 'outcome_received',
   CLOSED = 'closed',
   CLOSED_NO_OBJECTION = 'closed_no_objection',
@@ -121,6 +122,12 @@ export class DisputeCase {
 
   @Column({ type: 'text', nullable: true })
   advisory_letter_url: string | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  vg_response_received_at: Date | null;
+
+  @Column({ type: 'text', nullable: true })
+  lodgment_reference_number: string | null;
 
   @CreateDateColumn({ type: 'timestamptz' })
   created_at: Date;

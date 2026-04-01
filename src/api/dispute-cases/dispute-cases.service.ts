@@ -11,8 +11,11 @@ import { CreateDisputeCaseDto } from './dto/create-dispute-case.dto';
 import { UpdateDisputeCaseDto } from './dto/update-dispute-case.dto';
 import { CreateDisputeIntakeDto } from './dto/create-dispute-intake.dto';
 import { CloseNoObjectionDto } from './dto/close-no-objection.dto';
+import { SubmitToVgDto } from './dto/submit-to-vg.dto';
+import { RecordVgResponseDto } from './dto/record-vg-response.dto';
 import { DisputeCaseResponseDto } from './dto/dispute-case-response.dto';
 import { DisputeCase, DisputeStatus } from './entities/dispute-case.entity';
+import { AuditAction, CaseAuditLog } from './entities/case-audit-log.entity';
 import { DisputeIntakeOrchestrator } from './intake/dispute-intake.orchestrator';
 import { ComparablesService } from '../comparables/comparables.service';
 import { AzureBlobService } from 'src/common/azure-blob/azure-blob.service';
@@ -34,6 +37,8 @@ export class DisputeCasesService {
     private readonly letterService: LetterGenerationService,
     @InjectRepository(DisputeCase)
     private disputeCasesRepository: Repository<DisputeCase>,
+    @InjectRepository(CaseAuditLog)
+    private readonly auditLogRepository: Repository<CaseAuditLog>,
   ) { }
 
   create(createDisputeCaseDto: CreateDisputeCaseDto) {
@@ -186,6 +191,61 @@ export class DisputeCasesService {
     }
 
     // TODO: Xero closure logging — Ticket 4 / future Xero integration placeholder
+
+    return DisputeCaseResponseDto.fromEntity(saved);
+  }
+
+  async submitToVg(caseId: string, dto: SubmitToVgDto): Promise<DisputeCaseResponseDto> {
+    const disputeCase = await this.disputeCasesRepository.findOne({ where: { id: caseId } });
+
+    if (!disputeCase) {
+      throw new NotFoundException(`Dispute case #${caseId} not found`);
+    }
+
+    if (disputeCase.submitted_at !== null) {
+      throw new ConflictException(`Dispute case #${caseId} has already been submitted to the VG`);
+    }
+
+    disputeCase.status = DisputeStatus.SUBMITTED_TO_VG;
+    disputeCase.submitted_at = new Date();
+    if (dto.submissionNotes) {
+      disputeCase.notes = dto.submissionNotes;
+    }
+
+    const saved = await this.disputeCasesRepository.save(disputeCase);
+    return DisputeCaseResponseDto.fromEntity(saved);
+  }
+
+  async recordVgResponse(
+    caseId: string,
+    dto: RecordVgResponseDto,
+    performedById: string,
+  ): Promise<DisputeCaseResponseDto> {
+    const disputeCase = await this.disputeCasesRepository.findOne({ where: { id: caseId } });
+
+    if (!disputeCase) {
+      throw new NotFoundException(`Dispute case #${caseId} not found`);
+    }
+
+    if (disputeCase.vg_response_received_at !== null) {
+      throw new ConflictException(`VG response has already been recorded for dispute case #${caseId}`);
+    }
+
+    disputeCase.status = DisputeStatus.VG_RESPONSE_RECEIVED;
+    disputeCase.vg_response_received_at = new Date(dto.responseDate);
+    if (dto.lodgmentReferenceNumber !== undefined) {
+      disputeCase.lodgment_reference_number = dto.lodgmentReferenceNumber;
+    }
+
+    const saved = await this.disputeCasesRepository.save(disputeCase);
+
+    const log = this.auditLogRepository.create({
+      case_id: caseId,
+      action: AuditAction.VG_RESPONSE_RECORDED,
+      performed_by: performedById,
+      response_notes: dto.responseNotes ?? null,
+    });
+    await this.auditLogRepository.save(log);
 
     return DisputeCaseResponseDto.fromEntity(saved);
   }

@@ -8,6 +8,7 @@ import {
   Delete,
   BadRequestException,
   UseGuards,
+  Req,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBody, ApiParam, ApiResponse, ApiCreatedResponse } from '@nestjs/swagger';
 import { DisputeCasesService } from './dispute-cases.service';
@@ -15,8 +16,14 @@ import { CreateDisputeCaseDto } from './dto/create-dispute-case.dto';
 import { UpdateDisputeCaseDto } from './dto/update-dispute-case.dto';
 import { CreateDisputeIntakeDto } from './dto/create-dispute-intake.dto';
 import { CloseNoObjectionDto } from './dto/close-no-objection.dto';
+import { SubmitToVgDto } from './dto/submit-to-vg.dto';
+import { RecordVgResponseDto } from './dto/record-vg-response.dto';
 import { DisputeCaseResponseDto } from './dto/dispute-case-response.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { Roles } from '../../common/decorators/roles.decorator';
+import { UserRole } from '../users/entities/user.entity';
+import { AuthResponseDto } from '../auth/dto/auth-response.dto';
 
 
 @ApiTags('dispute-cases')
@@ -107,6 +114,38 @@ export class DisputeCasesController {
     @Body() dto: CloseNoObjectionDto,
   ): Promise<DisputeCaseResponseDto> {
     return this.disputeCasesService.closeNoObjection(id, dto);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post(':id/submit-to-vg')
+  @ApiOperation({ summary: 'Submit a dispute case objection to the Valuer-General' })
+  @ApiParam({ name: 'id', description: 'Dispute case UUID' })
+  @ApiBody({ type: SubmitToVgDto })
+  @ApiResponse({ status: 201, description: 'Case submitted to VG', type: DisputeCaseResponseDto })
+  @ApiResponse({ status: 404, description: 'Dispute case not found' })
+  @ApiResponse({ status: 409, description: 'Case already submitted' })
+  submitToVg(
+    @Param('id') id: string,
+    @Body() dto: SubmitToVgDto,
+  ): Promise<DisputeCaseResponseDto> {
+    return this.disputeCasesService.submitToVg(id, dto);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.INTERNAL_Assessor)
+  @Post(':id/record-vg-response')
+  @ApiOperation({ summary: 'Record the VG response for a dispute case' })
+  @ApiParam({ name: 'id', description: 'Dispute case UUID' })
+  @ApiBody({ type: RecordVgResponseDto })
+  @ApiResponse({ status: 201, description: 'VG response recorded', type: DisputeCaseResponseDto })
+  @ApiResponse({ status: 404, description: 'Dispute case not found' })
+  @ApiResponse({ status: 409, description: 'VG response already recorded' })
+  recordVgResponse(
+    @Param('id') id: string,
+    @Body() dto: RecordVgResponseDto,
+    @Req() req: { user: AuthResponseDto },
+  ): Promise<DisputeCaseResponseDto> {
+    return this.disputeCasesService.recordVgResponse(id, dto, req.user.id);
   }
 
   @UseGuards(JwtAuthGuard)
