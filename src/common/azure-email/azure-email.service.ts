@@ -72,7 +72,7 @@ export class AzureEmailService {
         assessorFullName: string;
         advisoryLetterUrl: string;
     }): Promise<void> {
-        const notifyEmail = this.config.get('ADVISORY_LETTER_NOTIFY_EMAIL') || 'arvin.bermudez@ymlgroup.com.au';
+        const notifyEmail = this.config.get('ADVISORY_LETTER_NOTIFY_EMAIL') || 'avi.sharabi@ymlgroup.com.au';
 
         const html = this.loadTemplate('advisory-letter-notification', {
             caseReference: data.caseReference,
