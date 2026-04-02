@@ -14,7 +14,7 @@ import { AssessmentDocument } from './entities/assessment-document.entity';
 import { AzureBlobModule } from 'src/common/azure-blob/azure-blob.module';
 import { AzureEmailService } from 'src/common/azure-email/azure-email.service';
 import { DisputeIntakeOrchestrator } from './intake/dispute-intake.orchestrator';
-import { FyiClientHandler } from './intake/fyi-client.handler';
+import { XpmClientHandler } from './intake/xpm-client.handler';
 import { PdfStorageHandler } from './intake/pdf-storage.handler';
 import { fyiStorageService } from 'src/common/fyi-storage/fyi-storage.service';
 import { LetterGenerationService } from 'src/common/letter-generation/letter-generation.service';
@@ -39,7 +39,7 @@ import { LetterGenerationService } from 'src/common/letter-generation/letter-gen
     DisputeCasesService,
     AzureEmailService,
     DisputeIntakeOrchestrator,
-    FyiClientHandler,
+    XpmClientHandler,
     PdfStorageHandler,
     fyiStorageService,
     LetterGenerationService,
