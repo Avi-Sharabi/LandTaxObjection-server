@@ -8,20 +8,8 @@ import {
 } from 'typeorm';
 import { ValuationNotice } from './valuation-notice.entity';
 import { User } from '../../users/entities/user.entity';
-
-export enum UploadStatus {
-  PENDING  = 'pending',
-  SCANNING = 'scanning',
-  COMPLETE = 'complete',
-  FAILED   = 'failed',
-  REJECTED = 'rejected',
-}
-
-export enum UploadedByRole {
-  CLIENT                  = 'client',
-  STAFF                   = 'staff',
-  STAFF_ON_BEHALF_OF_CLIENT = 'staff_on_behalf_of_client',
-}
+export { UploadStatus, UploadedByRole } from 'src/common/enums/upload.enums';
+import { UploadStatus, UploadedByRole } from 'src/common/enums/upload.enums';
 
 @Entity('valuation_notice_files')
 export class ValuationNoticeFile {

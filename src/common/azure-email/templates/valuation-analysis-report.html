@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Valuation Analysis Report — {{caseReference}}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: Arial, Helvetica, sans-serif;
+      font-size: 11px;
+      color: #1a1a1a;
+      background: #ffffff;
+      padding: 0;
+    }
+    .page { width: 100%; }
+
+    /* ── Header ─────────────────────────────────────── */
+    .header {
+      background-color: #0d2b57;
+      color: #ffffff;
+      padding: 24px 32px 20px;
+    }
+    .header-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+    }
+    .firm-name {
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+    }
+    .firm-sub {
+      font-size: 10px;
+      color: #a8c0e0;
+      margin-top: 3px;
+    }
+    .report-title {
+      font-size: 13px;
+      font-weight: 700;
+      text-align: right;
+      color: #f0f4ff;
+    }
+    .report-subtitle {
+      font-size: 9px;
+      color: #f0b53a;
+      text-align: right;
+      font-weight: 700;
+      letter-spacing: 0.8px;
+      margin-top: 3px;
+      text-transform: uppercase;
+    }
+    .header-meta {
+      margin-top: 14px;
+      display: flex;
+      gap: 24px;
+    }
+    .meta-item {
+      font-size: 10px;
+      color: #a8c0e0;
+    }
+    .meta-value {
+      color: #ffffff;
+      font-weight: 600;
+    }
+    .case-badge {
+      display: inline-block;
+      background: #f0b53a;
+      color: #0d2b57;
+      padding: 3px 10px;
+      border-radius: 3px;
+      font-weight: 700;
+      font-size: 11px;
+    }
+
+    /* ── Section Layout ──────────────────────────────── */
+    .section {
+      margin: 18px 32px 0;
+    }
+    .section-title {
+      font-size: 12px;
+      font-weight: 700;
+      color: #0d2b57;
+      text-transform: uppercase;
+      letter-spacing: 0.6px;
+      border-bottom: 2px solid #0d2b57;
+      padding-bottom: 4px;
+      margin-bottom: 10px;
+    }
+    .section-number {
+      display: inline-block;
+      background: #0d2b57;
+      color: #fff;
+      font-size: 9px;
+      font-weight: 700;
+      padding: 1px 6px;
+      border-radius: 2px;
+      margin-right: 6px;
+      vertical-align: middle;
+    }
+
+    /* ── Key-Value Table ─────────────────────────────── */
+    .kv-table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+    .kv-table td {
+      padding: 5px 8px;
+      vertical-align: top;
+    }
+    .kv-table tr:nth-child(even) td {
+      background: #f4f7fb;
+    }
+    .kv-label {
+      width: 34%;
+      color: #555;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .kv-value {
+      color: #1a1a1a;
+    }
+
+    /* ── Valuation Comparison ────────────────────────── */
+    .comparison-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 10px;
+    }
+    .comparison-table th {
+      background: #0d2b57;
+      color: #fff;
+      padding: 6px 10px;
+      text-align: left;
+      font-size: 10px;
+    }
+    .comparison-table td {
+      padding: 6px 10px;
+      border-bottom: 1px solid #e0e7f0;
+      vertical-align: top;
+    }
+    .comparison-table tr:nth-child(even) td {
+      background: #f4f7fb;
+    }
+    .val-label { color: #555; font-weight: 600; }
+    .val-amount { font-weight: 700; color: #0d2b57; }
+    .val-delta  { font-weight: 700; color: #c0392b; }
+
+    .no-objection-banner {
+      background: #e8f5e9;
+      border: 1.5px solid #43a047;
+      border-radius: 4px;
+      padding: 8px 14px;
+      text-align: center;
+      font-weight: 700;
+      font-size: 11px;
+      color: #2e7d32;
+      margin-top: 6px;
+    }
+
+    /* ── Comparable Sales Table ──────────────────────── */
+    .comparables-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 9.5px;
+    }
+    .comparables-table th {
+      background: #0d2b57;
+      color: #fff;
+      padding: 5px 6px;
+      text-align: left;
+      font-size: 9px;
+      white-space: nowrap;
+    }
+    .comparables-table td {
+      padding: 4px 6px;
+      border-bottom: 1px solid #e0e7f0;
+      vertical-align: top;
+    }
+    .comparables-table tr:nth-child(even) td {
+      background: #f4f7fb;
+    }
+    .no-data {
+      font-style: italic;
+      color: #999;
+      padding: 8px 0;
+    }
+
+    /* ── Methodology ─────────────────────────────────── */
+    .methodology-body {
+      line-height: 1.6;
+      color: #333;
+    }
+    .methodology-body p {
+      margin-bottom: 8px;
+    }
+    .analyst-notes-box {
+      background: #f4f7fb;
+      border-left: 3px solid #1976d2;
+      padding: 8px 12px;
+      margin-top: 8px;
+      font-style: italic;
+      color: #333;
+    }
+    .analyst-notes-label {
+      font-weight: 700;
+      font-style: normal;
+      color: #0d2b57;
+      display: block;
+      margin-bottom: 3px;
+    }
+
+    /* ── Lists ───────────────────────────────────────── */
+    .ground-list, .constraint-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+    .ground-list li, .constraint-list li {
+      padding: 4px 0 4px 16px;
+      position: relative;
+      border-bottom: 1px solid #eee;
+      text-transform: capitalize;
+    }
+    .ground-list li::before, .constraint-list li::before {
+      content: "•";
+      position: absolute;
+      left: 4px;
+      color: #0d2b57;
+      font-weight: 700;
+    }
+    .no-items {
+      font-style: italic;
+      color: #999;
+    }
+
+    /* ── Conclusion ──────────────────────────────────── */
+    .conclusion-body {
+      line-height: 1.7;
+      color: #333;
+    }
+    .conclusion-body p {
+      margin-bottom: 8px;
+    }
+    .assessor-notes-box {
+      background: #fff8e1;
+      border-left: 3px solid #f0b53a;
+      padding: 8px 12px;
+      margin-top: 8px;
+      color: #333;
+    }
+    .assessor-notes-label {
+      font-weight: 700;
+      color: #0d2b57;
+      display: block;
+      margin-bottom: 3px;
+    }
+
+    /* ── Signature ───────────────────────────────────── */
+    .signature-section {
+      margin: 20px 32px 0;
+      display: flex;
+      justify-content: flex-end;
+    }
+    .signature-block {
+      text-align: right;
+      border-top: 1px solid #ccc;
+      padding-top: 6px;
+      min-width: 220px;
+    }
+    .signature-name {
+      font-weight: 700;
+      color: #0d2b57;
+    }
+    .signature-role {
+      color: #555;
+      font-size: 10px;
+    }
+    .signature-date {
+      color: #888;
+      font-size: 10px;
+      margin-top: 2px;
+    }
+
+    /* ── Footer ──────────────────────────────────────── */
+    .footer {
+      margin: 20px 32px 32px;
+      border-top: 1px solid #d0dbe9;
+      padding-top: 8px;
+      font-size: 9px;
+      color: #888;
+      line-height: 1.5;
+    }
+    .footer strong {
+      color: #555;
+    }
+  </style>
+</head>
+<body>
+<div class="page">
+
+  <!-- ══════════════════ HEADER ══════════════════ -->
+  <div class="header">
+    <div class="header-top">
+      <div>
+        <div class="firm-name">YML Group</div>
+        <div class="firm-sub">Tax &amp; SMSF Division — Land Tax Dispute Module</div>
+      </div>
+      <div>
+        <div class="report-title">Valuation Analysis Report</div>
+        <div class="report-subtitle">Confidential — Internal Use Only</div>
+      </div>
+    </div>
+    <div class="header-meta">
+      <div class="meta-item">Case Reference:&nbsp;<span class="case-badge">{{caseReference}}</span></div>
+      <div class="meta-item">Report Date:&nbsp;<span class="meta-value">{{reportDate}}</span></div>
+      <div class="meta-item">Prepared By:&nbsp;<span class="meta-value">{{assessorFullName}}</span></div>
+    </div>
+  </div>
+
+  <!-- ══════════════════ SECTION 1: PROPERTY DETAILS ══════════════════ -->
+  <div class="section">
+    <div class="section-title"><span class="section-number">1</span>Subject Property Details</div>
+    <table class="kv-table">
+      <tr>
+        <td class="kv-label">Property Address</td>
+        <td class="kv-value">{{propertyAddress}}</td>
+      </tr>
+      <tr>
+        <td class="kv-label">Land Area</td>
+        <td class="kv-value">{{landAreaSqm}}</td>
+      </tr>
+      <tr>
+        <td class="kv-label">Zoning / Land Use</td>
+        <td class="kv-value">{{zoning}}</td>
+      </tr>
+    </table>
+  </div>
+
+  <!-- ══════════════════ SECTION 2: VALUATION COMPARISON ══════════════════ -->
+  <div class="section">
+    <div class="section-title"><span class="section-number">2</span>Valuation Comparison</div>
+    <table class="comparison-table">
+      <thead>
+        <tr>
+          <th>Item</th>
+          <th>Value (AUD)</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="val-label">Valuer-General (VG) Assessed Value</td>
+          <td class="val-amount">{{vgAssessedValue}}</td>
+        </tr>
+        <tr>
+          <td class="val-label">Internal Appraisal Value</td>
+          <td class="val-amount">{{internalAssessedValue}}</td>
+        </tr>
+        <tr>
+          <td class="val-label">Difference (Internal less VG)</td>
+          <td class="val-delta">{{valuationDelta}}</td>
+        </tr>
+        <tr>
+          <td class="val-label">VG Valuation Date</td>
+          <td class="kv-value">{{valuationDate}}</td>
+        </tr>
+        <tr>
+          <td class="val-label">Internal Appraisal Completed</td>
+          <td class="kv-value">{{appraisedAt}}</td>
+        </tr>
+      </tbody>
+    </table>
+    <div class="no-objection-banner">
+      Internal Appraisal Value &ge; VG Assessed Value &mdash; NO VIABLE OBJECTION GROUNDS EXIST
+    </div>
+  </div>
+
+  <!-- ══════════════════ SECTION 3: COMPARABLE SALES ══════════════════ -->
+  <div class="section">
+    <div class="section-title"><span class="section-number">3</span>Comparable Sales Analysis</div>
+    <table class="comparables-table">
+      <thead>
+        <tr>
+          <th>Address</th>
+          <th>Sale Date</th>
+          <th>Sale Price</th>
+          <th>Est. Improvements</th>
+          <th>Adj. Land Value</th>
+          <th>Land Area (m&sup2;)</th>
+          <th>Rate / m&sup2;</th>
+          <th>Notes</th>
+        </tr>
+      </thead>
+      <tbody>
+        {{#each comparables}}{{this}}{{/each}}
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ══════════════════ SECTION 4: METHODOLOGY ══════════════════ -->
+  <div class="section">
+    <div class="section-title"><span class="section-number">4</span>Valuation Methodology</div>
+    <div class="methodology-body">
+      <p>
+        The internal appraisal was conducted in accordance with Section 6A of the
+        <em>Valuation of Land Act 1916</em>, which requires land to be valued as if it were
+        vacant (unimproved) as at 1 July of the preceding year. The <strong>Direct Comparison
+        Method</strong> was applied, whereby comparable arm's-length sales were identified,
+        adjusted for improvements (using the partitioning method to isolate the land-only
+        component), time-adjusted to the relevant valuation date, and converted to a rate
+        per square metre for consistent cross-comparison.
+      </p>
+      <p>
+        Comparable sales were ranked by proximity, similarity of land area, zoning, and
+        constraint profile. Sales requiring the fewest adjustments were assigned the greatest
+        weight in the reconciliation. The indicative land value was derived by applying the
+        weighted average rate per square metre to the subject property's land area.
+      </p>
+      <p>
+        The resulting indicative value was reconciled against the Valuer-General's Component
+        Factor model. The internal appraisal result is consistent with — or exceeds — the
+        VG assessed value, confirming that the mass appraisal model has not materially
+        overstated the land value for this property.
+      </p>
+      <div class="analyst-notes-box">
+        <span class="analyst-notes-label">Analyst Notes</span>
+        {{analystNotes}}
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════ SECTION 5: GROUNDS & CONSTRAINTS ══════════════════ -->
+  <div class="section">
+    <div class="section-title"><span class="section-number">5</span>Legal Grounds &amp; Property Constraints Reviewed</div>
+    <table class="kv-table" style="margin-bottom:10px;">
+      <tr>
+        <td class="kv-label" style="width:30%; vertical-align:top; padding-top:8px;">Legal Grounds Considered</td>
+        <td class="kv-value">
+          <ul class="ground-list">
+            {{#each legalGrounds}}{{this}}{{/each}}
+          </ul>
+        </td>
+      </tr>
+      <tr>
+        <td class="kv-label" style="vertical-align:top; padding-top:8px;">Property Constraints Reviewed</td>
+        <td class="kv-value">
+          <ul class="constraint-list">
+            {{#each constraints}}{{this}}{{/each}}
+          </ul>
+        </td>
+      </tr>
+    </table>
+  </div>
+
+  <!-- ══════════════════ SECTION 6: CONCLUSION ══════════════════ -->
+  <div class="section">
+    <div class="section-title"><span class="section-number">6</span>Conclusion</div>
+    <div class="conclusion-body">
+      <p>
+        Based on the comparable sales analysis and the internal manual appraisal conducted
+        under the Direct Comparison Method, the market land value of the subject property
+        has been determined at <strong>{{internalAssessedValue}}</strong>.
+      </p>
+      <p>
+        This is <strong>at or above</strong> the Valuer-General's assessed value of
+        <strong>{{vgAssessedValue}}</strong>. Accordingly, no material discrepancy exists
+        between the independent appraisal and the VG assessment that would support a viable
+        objection under Section 16 of the <em>Land Tax Management Act 1956</em>.
+      </p>
+      <p>
+        This dispute case has been formally closed without objection.
+        The client has been notified by way of an advisory letter.
+      </p>
+      <div class="assessor-notes-box">
+        <span class="assessor-notes-label">Assessor Notes</span>
+        {{assessorNotes}}
+      </div>
+    </div>
+  </div>
+
+  <!-- ══════════════════ SIGNATURE ══════════════════ -->
+  <div class="signature-section">
+    <div class="signature-block">
+      <div class="signature-name">{{assessorFullName}}</div>
+      <div class="signature-role">YML Group — Land Tax Assessor</div>
+      <div class="signature-date">Closed: {{closedAt}}</div>
+    </div>
+  </div>
+
+  <!-- ══════════════════ FOOTER ══════════════════ -->
+  <div class="footer">
+    <strong>CONFIDENTIAL:</strong> This report is prepared solely for internal use by YML Group in
+    connection with the land tax valuation dispute process. It does not constitute legal advice.
+    Auto-generated by the YML Group Land Tax Dispute Platform on {{reportDate}}.
+    Case Reference: {{caseReference}}.
+  </div>
+
+</div>
+</body>
+</html>

@@ -122,6 +122,9 @@ export class DisputeCase {
   @Column({ type: 'text', nullable: true })
   advisory_letter_url: string | null;
 
+  @Column({ type: 'text', nullable: true })
+  analysis_report_url: string | null;
+
   @CreateDateColumn({ type: 'timestamptz' })
   created_at: Date;
 

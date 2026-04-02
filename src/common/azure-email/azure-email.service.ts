@@ -71,8 +71,9 @@ export class AzureEmailService {
         internalAssessedValue: string;
         assessorFullName: string;
         advisoryLetterUrl: string;
+        analysisReportUrl: string;
     }): Promise<void> {
-        const notifyEmail = this.config.get('ADVISORY_LETTER_NOTIFY_EMAIL') || 'avi.sharabi@ymlgroup.com.au';
+        const notifyEmail = this.config.get('ADVISORY_LETTER_NOTIFY_EMAIL') || 'arvin.bermudez@ymlgroup.com.au';
 
         const html = this.loadTemplate('advisory-letter-notification', {
             caseReference: data.caseReference,
@@ -83,6 +84,7 @@ export class AzureEmailService {
             internalAssessedValue: data.internalAssessedValue,
             assessorFullName: data.assessorFullName,
             advisoryLetterUrl: data.advisoryLetterUrl,
+            analysisReportUrl: data.analysisReportUrl,
         });
 
         const message = {
@@ -91,7 +93,7 @@ export class AzureEmailService {
                 to: [{ address: notifyEmail, displayName: 'Avi Sharabi' }],
             },
             content: {
-                subject: `[${data.caseReference}] Advisory Letter Ready — Action Required`,
+                subject: `[${data.caseReference}] Action Required: Advisory Letter Dispatch`,
                 html,
             },
         };

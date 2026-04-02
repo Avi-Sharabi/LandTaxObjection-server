@@ -18,6 +18,7 @@ import { ComparablesService } from '../comparables/comparables.service';
 import { AzureBlobService } from 'src/common/azure-blob/azure-blob.service';
 import { AzureEmailService } from 'src/common/azure-email/azure-email.service';
 import { LetterGenerationService } from 'src/common/letter-generation/letter-generation.service';
+import { PdfGenerationService } from 'src/common/pdf-generation/pdf-generation.service';
 
 const CLOSED_STATUSES: DisputeStatus[] = [
   DisputeStatus.CLOSED,
@@ -32,6 +33,7 @@ export class DisputeCasesService {
     private readonly blobService: AzureBlobService,
     private readonly emailService: AzureEmailService,
     private readonly letterService: LetterGenerationService,
+    private readonly pdfService: PdfGenerationService,
     @InjectRepository(DisputeCase)
     private disputeCasesRepository: Repository<DisputeCase>,
   ) { }
@@ -73,7 +75,15 @@ export class DisputeCasesService {
   async closeNoObjection(caseId: string, dto: CloseNoObjectionDto): Promise<DisputeCaseResponseDto> {
     const disputeCase = await this.disputeCasesRepository.findOne({
       where: { id: caseId },
-      relations: ['client', 'property', 'valuation_notice', 'assigned_accountant'],
+      relations: [
+        'client',
+        'property',
+        'valuation_notice',
+        'assigned_accountant',
+        'legal_grounds',
+        'dispute_constraints',
+        'comparables',
+      ],
     });
 
     if (!disputeCase) {
@@ -151,10 +161,82 @@ export class DisputeCasesService {
       throw new InternalServerErrorException('Failed to generate advisory letter download URL.');
     }
 
+    // ── Generate Valuation Analysis PDF ──────────────────────────────────
+
+    const fmtDate = (d: Date | null) =>
+      d ? new Date(d).toLocaleDateString('en-AU', { day: '2-digit', month: '2-digit', year: 'numeric' }) : 'N/A';
+
+    const comparableRows = (disputeCase.comparables ?? []).map((c) => {
+      const ratePerSqm =
+        c.land_area_sqm && Number(c.land_area_sqm) > 0
+          ? fmtCurrency(Number(c.adjusted_land_value) / Number(c.land_area_sqm))
+          : 'N/A';
+      return `<tr>
+        <td>${c.address}</td>
+        <td>${fmtDate(c.sale_date)}</td>
+        <td>${fmtCurrency(Number(c.sale_price))}</td>
+        <td>${fmtCurrency(Number(c.estimated_improvements_value))}</td>
+        <td>${fmtCurrency(Number(c.adjusted_land_value))}</td>
+        <td>${c.land_area_sqm ? Number(c.land_area_sqm).toLocaleString('en-AU') : 'N/A'}</td>
+        <td>${ratePerSqm}</td>
+        <td>${c.notes ?? '—'}</td>
+      </tr>`;
+    });
+
+    const legalGroundLines = (disputeCase.legal_grounds ?? []).map(
+      (g) => `<li>${g.ground.replace(/_/g, ' ')}${g.notes ? ': ' + g.notes : ''}</li>`,
+    );
+
+    const constraintLines = (disputeCase.dispute_constraints ?? []).map(
+      (c) => `<li>${c.constraint_type.replace(/_/g, ' ')}${c.description ? ': ' + c.description : ''}</li>`,
+    );
+
+    const pdfBuffer = await this.pdfService.generateValuationAnalysisReport({
+      caseReference: disputeCase.case_reference,
+      reportDate: closedAtFormatted,
+      propertyAddress,
+      landAreaSqm: property?.land_area_sqm
+        ? `${Number(property.land_area_sqm).toLocaleString('en-AU')} m\u00B2`
+        : 'N/A',
+      zoning: property?.zoning ?? 'N/A',
+      vgAssessedValue: fmtCurrency(vgAssessedValue),
+      internalAssessedValue: fmtCurrency(dto.internalAssessmentValue),
+      valuationDelta: fmtCurrency(Math.abs(dto.internalAssessmentValue - vgAssessedValue)),
+      valuationDate: assessmentDate,
+      analystNotes: disputeCase.valuation_notice?.analyst_notes ?? '—',
+      appraisedAt: disputeCase.valuation_notice?.appraised_at
+        ? new Date(disputeCase.valuation_notice.appraised_at).toLocaleDateString('en-AU')
+        : 'N/A',
+      assessorFullName: disputeCase.assigned_accountant?.fullName ?? 'YML Assessor',
+      assessorNotes: dto.assessorNotes ?? '—',
+      closedAt: closedAtFormatted,
+      comparables: comparableRows,
+      legalGrounds: legalGroundLines.length > 0 ? legalGroundLines : ['<li class="no-items">None recorded</li>'],
+      constraints: constraintLines.length > 0 ? constraintLines : ['<li class="no-items">None recorded</li>'],
+    });
+
+    const pdfBlobName = `cases/${caseId}/reports/valuation-analysis-${Date.now()}.pdf`;
+    const pdfBase64 = pdfBuffer.toString('base64');
+    const pdfBlobPath = await this.blobService.uploadFile(pdfBlobName, pdfBase64);
+    if (!pdfBlobPath) {
+      await this.blobService.deleteFile(blobPath);
+      throw new InternalServerErrorException('Failed to upload valuation analysis report to Blob Storage.');
+    }
+
+    const pdfSasUrl = this.blobService.getFileUrl(pdfBlobPath, 1440);
+    if (!pdfSasUrl) {
+      await this.blobService.deleteFile(blobPath);
+      await this.blobService.deleteFile(pdfBlobPath);
+      throw new InternalServerErrorException('Failed to generate analysis report download URL.');
+    }
+
+    // ─────────────────────────────────────────────────────────────────────
+
     // Persist status transition
     disputeCase.status = DisputeStatus.CLOSED_NO_OBJECTION;
     disputeCase.closed_at = closedAtDate;
     disputeCase.advisory_letter_url = blobPath;
+    disputeCase.analysis_report_url = pdfBlobPath;
     if (dto.assessorNotes !== undefined) {
       disputeCase.notes = dto.assessorNotes;
     }
@@ -172,14 +254,17 @@ export class DisputeCasesService {
         internalAssessedValue: fmtCurrency(dto.internalAssessmentValue),
         assessorFullName: saved.assigned_accountant?.fullName ?? 'YML Assessor',
         advisoryLetterUrl: sasUrl,
+        analysisReportUrl: pdfSasUrl,
       });
     } catch {
-      // Rollback: revert case status in DB and clean up the uploaded Blob
+      // Rollback: revert case status in DB and clean up both uploaded Blobs
       saved.status = originalStatus;
       saved.closed_at = null;
       saved.advisory_letter_url = null;
+      saved.analysis_report_url = null;
       await this.disputeCasesRepository.save(saved);
       await this.blobService.deleteFile(blobPath);
+      await this.blobService.deleteFile(pdfBlobPath);
       throw new InternalServerErrorException(
         'Advisory letter notification email failed to send. The closure operation has been rolled back.',
       );
