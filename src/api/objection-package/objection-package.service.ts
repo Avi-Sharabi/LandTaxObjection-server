@@ -17,6 +17,7 @@ const STATUS_ORDER: DisputeStatus[] = [
   DisputeStatus.ADVISORY_LETTER_ISSUED,
   DisputeStatus.OBJECTION_PACKAGE_PREPARED,
   DisputeStatus.AWAITING_CLIENT_APPROVAL,
+  DisputeStatus.CLIENT_APPROVED,
   DisputeStatus.SUBMITTED_TO_VG,
   DisputeStatus.AWAITING_VG_RESPONSE,
   DisputeStatus.OUTCOME_RECEIVED,
