@@ -68,7 +68,7 @@ export class DisputeCasesController {
   @UseGuards(JwtAuthGuard)
   @Get(':id')
   findOne(@Param('id') id: string) {
-    return this.disputeCasesService.findOne(id);
+    return this.disputeCasesService.findOneResponse(id);
   }
 
   @UseGuards(JwtAuthGuard)

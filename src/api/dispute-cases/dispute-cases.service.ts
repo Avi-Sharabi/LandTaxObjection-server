@@ -59,6 +59,15 @@ export class DisputeCasesService {
     return disputeCase;
   }
 
+  async findOneResponse(id: string): Promise<DisputeCase> {
+    const disputeCase = await this.findOne(id);
+    if (disputeCase.analysis_report_url) {
+      disputeCase.analysis_report_url =
+        this.blobService.getFileUrl(disputeCase.analysis_report_url, 1440) ?? null;
+    }
+    return disputeCase;
+  }
+
   async update(id: string, updateDisputeCaseDto: UpdateDisputeCaseDto): Promise<DisputeCase> {
     const disputeCase = await this.findOne(id);
     Object.assign(disputeCase, updateDisputeCaseDto);

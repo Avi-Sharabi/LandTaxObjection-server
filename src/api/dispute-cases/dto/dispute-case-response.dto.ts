@@ -59,13 +59,16 @@ export class DisputeCaseResponseDto {
   @ApiPropertyOptional()
   closed_at: Date | null;
 
+  @ApiPropertyOptional()
+  analysis_report_url: string | null;
+
   @ApiProperty()
   created_at: Date;
 
   @ApiProperty()
   updated_at: Date;
 
-  static fromEntity(entity: DisputeCase): DisputeCaseResponseDto {
+  static fromEntity(entity: DisputeCase, analysisReportSasUrl?: string | null): DisputeCaseResponseDto {
     const dto = new DisputeCaseResponseDto();
     dto.id = entity.id;
     dto.case_reference = entity.case_reference;
@@ -86,6 +89,7 @@ export class DisputeCaseResponseDto {
     dto.notes = entity.notes;
     dto.submitted_at = entity.submitted_at;
     dto.closed_at = entity.closed_at;
+    dto.analysis_report_url = analysisReportSasUrl ?? null;
     dto.created_at = entity.created_at;
     dto.updated_at = entity.updated_at;
     return dto;
