@@ -255,6 +255,8 @@ export class DisputeCasesService {
         assessorFullName: saved.assigned_accountant?.fullName ?? 'YML Assessor',
         advisoryLetterUrl: sasUrl,
         analysisReportUrl: pdfSasUrl,
+        analysisPdfBase64: pdfBase64,
+        closedAt: closedAtFormatted,
       });
     } catch {
       // Rollback: revert case status in DB and clean up both uploaded Blobs

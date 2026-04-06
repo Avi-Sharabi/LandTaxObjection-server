@@ -72,30 +72,38 @@ export class AzureEmailService {
         assessorFullName: string;
         advisoryLetterUrl: string;
         analysisReportUrl: string;
+        analysisPdfBase64: string;
+        closedAt: string;
     }): Promise<void> {
-        const notifyEmail = this.config.get('ADVISORY_LETTER_NOTIFY_EMAIL') || 'arvin.bermudez@ymlgroup.com.au';
+        const contactEmail = this.config.get('CONTACT_EMAIL') || '';
 
         const html = this.loadTemplate('advisory-letter-notification', {
             caseReference: data.caseReference,
-            clientName: data.clientName,
-            clientEmail: data.clientEmail,
             propertyAddress: data.propertyAddress,
             vgAssessedValue: data.vgAssessedValue,
             internalAssessedValue: data.internalAssessedValue,
             assessorFullName: data.assessorFullName,
-            advisoryLetterUrl: data.advisoryLetterUrl,
             analysisReportUrl: data.analysisReportUrl,
+            closedAt: data.closedAt,
+            contactEmail,
         });
 
         const message = {
             senderAddress: this.sender,
             recipients: {
-                to: [{ address: notifyEmail, displayName: 'Avi Sharabi' }],
+                to: [{ address: data.clientEmail, displayName: data.clientName }],
             },
             content: {
-                subject: `[${data.caseReference}] Action Required: Advisory Letter Dispatch`,
+                subject: `[${data.caseReference}] Your Land Tax Dispute Case Has Been Closed`,
                 html,
             },
+            attachments: [
+                {
+                    name: `valuation-analysis-${data.caseReference}.pdf`,
+                    contentType: 'application/pdf',
+                    contentInBase64: data.analysisPdfBase64,
+                },
+            ],
         };
 
         const poller = await this.emailClient.beginSend(message);

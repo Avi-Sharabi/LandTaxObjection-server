@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>ACTION REQUIRED: Send Advisory Letter – Case Closed (No Objection)</title>
+  <title>Case Closed: No Objection — {{caseReference}}</title>
 </head>
 
 <body style="margin: 0; padding: 0; background-color: #f5f5f5; font-family: Arial, sans-serif; color: #333333;">
@@ -37,12 +37,12 @@
                 </svg>
 
                 <h2 style="margin: 12px 0 4px 0; font-size: 20px; font-weight: 600; color: #1a1a1a;">
-                 Case Closed with No Objection
+                  Case Closed with No Objection
                 </h2>
 
                 <p style="margin: 0; font-size: 14px; color: #666666;">
-                  This dispute case has been <strong>formally closed with no objection</strong>.<br />
-                  Please review the case summary and proceed with sending the advisory letter to the client.
+                  Your land tax dispute case has been formally closed with no objection.<br />
+                  Please find the attached Valuation Analysis Report for your records.
                 </p>
               </div>
 
@@ -64,27 +64,15 @@
                 <tr style="background-color: #f5f5f5;">
                   <td colspan="2"
                     style="padding: 10px 16px; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #1976d2; font-weight: bold; border-bottom: 1px solid #e0e0e0;">
-                    Client &amp; Property Information
+                    Property Information
                   </td>
                 </tr>
                 <tr>
                   <td width="40%"
                     style="padding: 10px 16px; font-size: 13px; color: #777777; border-bottom: 1px solid #f0f0f0;">
-                    Client Name</td>
+                    Property Address</td>
                   <td width="60%"
                     style="padding: 10px 16px; font-size: 13px; color: #1a1a1a; font-weight: bold; border-bottom: 1px solid #f0f0f0;">
-                    {{clientName}}</td>
-                </tr>
-                <tr style="background-color: #fafafa;">
-                  <td style="padding: 10px 16px; font-size: 13px; color: #777777; border-bottom: 1px solid #f0f0f0;">
-                    Client Email</td>
-                  <td style="padding: 10px 16px; font-size: 13px; color: #1a1a1a; border-bottom: 1px solid #f0f0f0;">
-                    {{clientEmail}}</td>
-                </tr>
-                <tr>
-                  <td style="padding: 10px 16px; font-size: 13px; color: #777777; border-bottom: 1px solid #f0f0f0;">
-                    Property Address</td>
-                  <td style="padding: 10px 16px; font-size: 13px; color: #1a1a1a; border-bottom: 1px solid #f0f0f0;">
                     {{propertyAddress}}</td>
                 </tr>
                 <tr style="background-color: #fafafa;">
@@ -96,7 +84,7 @@
                 </tr>
                 <tr>
                   <td style="padding: 10px 16px; font-size: 13px; color: #777777; border-bottom: 1px solid #f0f0f0;">
-                    Internal Assessed Value</td>
+                    Our Assessed Value</td>
                   <td
                     style="padding: 10px 16px; font-size: 13px; color: #1a1a1a; font-weight: bold; border-bottom: 1px solid #f0f0f0;">
                     {{internalAssessedValue}}</td>
@@ -107,20 +95,37 @@
                 </tr>
               </table>
 
-              <!-- CTA Button: Valuation Analysis PDF -->
-              <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom: 12px;">
+              <!-- Case Closure Info -->
+              <table width="100%" cellpadding="0" cellspacing="0"
+                style="border: 1px solid #e8f5e9; border-radius: 6px; background-color: #f9fbe7; overflow: hidden; margin-bottom: 28px;">
                 <tr>
-                  <td align="center">
-                    <a href="{{analysisReportUrl}}"
-                      style="display: inline-block; background-color: #388e3c; color: #ffffff; text-decoration: none; font-size: 15px; font-weight: bold; padding: 14px 32px; border-radius: 6px; letter-spacing: 0.3px;">
-                      Download Valuation Analysis Report (PDF)
+                  <td colspan="2"
+                    style="padding: 10px 16px; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #388e3c; font-weight: bold; border-bottom: 1px solid #e8f5e9;">
+                    Case Closure Details
+                  </td>
+                </tr>
+                <tr>
+                  <td width="40%"
+                    style="padding: 10px 16px; font-size: 13px; color: #777777; border-bottom: 1px solid #e8f5e9;">
+                    Date Closed</td>
+                  <td width="60%"
+                    style="padding: 10px 16px; font-size: 13px; color: #1a1a1a; font-weight: bold; border-bottom: 1px solid #e8f5e9;">
+                    {{closedAt}}</td>
+                </tr>
+                <tr style="background-color: #f1f8e9;">
+                  <td style="padding: 10px 16px; font-size: 13px; color: #777777;">Valuation Analysis Report</td>
+                  <td style="padding: 10px 16px; font-size: 13px;">
+                    <a href="{{analysisReportUrl}}" style="color: #388e3c; font-weight: bold; text-decoration: none;">
+                      View Report &rarr;
                     </a>
                   </td>
                 </tr>
               </table>
 
-              <p style="margin: 0; font-size: 12px; color: #999999; text-align: center;">
-                These download links expire in 24 hours.
+              <!-- Contact -->
+              <p style="margin: 0 0 4px 0; font-size: 13px; color: #555555; text-align: center;">
+                If you have any questions, contact us at
+                <a href="mailto:{{contactEmail}}" style="color: #1976d2; text-decoration: none;">{{contactEmail}}</a>
               </p>
 
             </td>
