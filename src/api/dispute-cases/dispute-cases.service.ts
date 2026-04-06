@@ -60,12 +60,6 @@ export class DisputeCasesService {
 
   
 
-  async findOneResponse(id: string): Promise<DisputeCaseResponseDto> {
-    const disputeCase = await this.findOne(id);
-    const sasUrl = this.blobService.getFileUrl(disputeCase.analysis_report_blob_path);
-    return DisputeCaseResponseDto.fromEntity(disputeCase, sasUrl);
-  }
-
   async update(id: string, updateDisputeCaseDto: UpdateDisputeCaseDto): Promise<DisputeCase> {
     const disputeCase = await this.findOne(id);
     Object.assign(disputeCase, updateDisputeCaseDto);
