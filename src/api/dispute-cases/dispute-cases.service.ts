@@ -3,6 +3,7 @@ import {
   ConflictException,
   Injectable,
   InternalServerErrorException,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -26,6 +27,9 @@ const CLOSED_STATUSES: DisputeStatus[] = [
 
 @Injectable()
 export class DisputeCasesService {
+  private readonly logger = new Logger(DisputeCasesService.name);
+  private cachedReportBuffer: Buffer | null = null;
+
   constructor(
     private readonly intakeOrchestrator: DisputeIntakeOrchestrator,
     private readonly comparablesService: ComparablesService,
@@ -98,6 +102,7 @@ export class DisputeCasesService {
       throw new ConflictException(`Dispute case #${caseId} is already closed`);
     }
 
+    const originalStatus = disputeCase.status;
     const vgAssessedValue = Number(disputeCase.valuation_notice?.assessed_land_value ?? 0);
 
     if (dto.internalAssessmentValue < vgAssessedValue) {
@@ -106,8 +111,6 @@ export class DisputeCasesService {
         `($${vgAssessedValue.toLocaleString()}). The case has viable objection grounds and should not be closed without objection.`,
       );
     }
-
-    const originalStatus = disputeCase.status;
 
     // Build property address string
     const property = disputeCase.property;
@@ -119,15 +122,6 @@ export class DisputeCasesService {
     const fmtCurrency = (val: number) =>
       `$${val.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-    // Format assessment date
-    const assessmentDate = disputeCase.valuation_notice?.valuation_date
-      ? new Date(disputeCase.valuation_notice.valuation_date).toLocaleDateString('en-AU', {
-          day: '2-digit',
-          month: 'long',
-          year: 'numeric',
-        })
-      : 'N/A';
-
     const closedAtDate = new Date();
     const closedAtFormatted = closedAtDate.toLocaleString('en-AU', {
       day: '2-digit',
@@ -137,7 +131,13 @@ export class DisputeCasesService {
       minute: '2-digit',
     });
 
-    // Generate case summary HTML
+    const assessmentDate = disputeCase.valuation_notice?.valuation_date
+      ? new Date(disputeCase.valuation_notice.valuation_date).toLocaleDateString('en-AU', {
+          day: '2-digit', month: 'long', year: 'numeric',
+        })
+      : 'N/A';
+
+    // ── 1. Generate advisory letter HTML → upload to letters/ folder ──────
     const letterHtml = this.letterService.generateAdvisoryLetter({
       caseReference: disputeCase.case_reference,
       clientName: disputeCase.client?.name ?? 'Client',
@@ -150,69 +150,86 @@ export class DisputeCasesService {
       closedAt: closedAtFormatted,
     });
 
-    // Upload case summary to Blob Storage
-    const blobName = `cases/${disputeCase.case_reference}/letters/advisory-${Date.now()}.html`;
-    const base64Html = Buffer.from(letterHtml, 'utf-8').toString('base64');
-    const blobPath = await this.blobService.uploadFile(blobName, base64Html);
-    if (!blobPath) {
+    const letterBlobName = `cases/${disputeCase.case_reference}/letters/advisory-${Date.now()}.html`;
+    const letterBlobPath = await this.blobService.uploadFile(
+      letterBlobName,
+      Buffer.from(letterHtml, 'utf-8').toString('base64'),
+    );
+    if (!letterBlobPath) {
       throw new InternalServerErrorException('Failed to upload advisory letter to Blob Storage.');
     }
 
-    // Generate SAS URL now (needed in the notification email body)
-    const sasUrl = this.blobService.getFileUrl(blobPath, 1440); // 24-hour expiry
-    if (!sasUrl) {
-      await this.blobService.deleteFile(blobPath);
-      throw new InternalServerErrorException('Failed to generate advisory letter download URL.');
+    // ── 2. Fetch static report (cached) → upload to case reports/ folder ──
+    const SAMPLE_REPORT_BLOB = 'cases/report/Sample Valuation Analysis Report.pdf';
+    if (!this.cachedReportBuffer) {
+      this.cachedReportBuffer = await this.blobService.getFileContent(SAMPLE_REPORT_BLOB);
+    }
+    const pdfBase64 = this.cachedReportBuffer.toString('base64');
+    const reportBlobName = `cases/${disputeCase.case_reference}/reports/valuation-analysis-${Date.now()}.pdf`;
+    const reportBlobPath = await this.blobService.uploadFile(reportBlobName, pdfBase64);
+    if (!reportBlobPath) {
+      await this.blobService.deleteFile(letterBlobPath);
+      throw new InternalServerErrorException('Failed to upload analysis report to Blob Storage.');
     }
 
-    // ── Fetch static Valuation Analysis Report from Blob Storage ─────────
-    const SAMPLE_REPORT_BLOB = 'cases/report/Sample Valuation Analysis Report.pdf';
-
-    const pdfBuffer = await this.blobService.getFileContent(SAMPLE_REPORT_BLOB);
-    const pdfBase64 = pdfBuffer.toString('base64');
-    const pdfSasUrl = this.blobService.getFileUrl(SAMPLE_REPORT_BLOB, 1440);
+    const pdfSasUrl = this.blobService.getFileUrl(reportBlobPath, 1440);
     if (!pdfSasUrl) {
-      await this.blobService.deleteFile(blobPath);
+      await this.blobService.deleteFile(letterBlobPath);
+      await this.blobService.deleteFile(reportBlobPath);
       throw new InternalServerErrorException('Failed to generate analysis report download URL.');
     }
     // ─────────────────────────────────────────────────────────────────────
 
+    // Guard: client must have an email before we commit anything
+    const clientEmail = disputeCase.client?.email ?? '';
+    if (!clientEmail) {
+      await this.blobService.deleteFile(letterBlobPath);
+      await this.blobService.deleteFile(reportBlobPath);
+      throw new InternalServerErrorException(
+        `Cannot send advisory letter: client on case ${disputeCase.case_reference} has no email address.`,
+      );
+    }
+
     // Persist status transition
     disputeCase.status = DisputeStatus.CLOSED_NO_OBJECTION;
     disputeCase.closed_at = closedAtDate;
-    disputeCase.advisory_letter_url = blobPath;
-    disputeCase.analysis_report_url = SAMPLE_REPORT_BLOB;
+    disputeCase.advisory_letter_url = letterBlobPath;
+    disputeCase.analysis_report_url = reportBlobPath;
     if (dto.assessorNotes !== undefined) {
       disputeCase.notes = dto.assessorNotes;
     }
 
     const saved = await this.disputeCasesRepository.save(disputeCase);
 
-    // Notify Avi — if this fails, roll back the entire closure operation
+    // Send email — await so failures surface and trigger rollback
     try {
       await this.emailService.sendAdvisoryLetterNotification({
         caseReference: saved.case_reference,
         clientName: saved.client?.name ?? 'Client',
-        clientEmail: saved.client?.email ?? '',
+        clientEmail,
         propertyAddress,
         vgAssessedValue: fmtCurrency(vgAssessedValue),
         internalAssessedValue: fmtCurrency(dto.internalAssessmentValue),
         assessorFullName: saved.assigned_accountant?.fullName ?? 'YML Assessor',
-        advisoryLetterUrl: sasUrl,
         analysisReportUrl: pdfSasUrl,
         analysisPdfBase64: pdfBase64,
         closedAt: closedAtFormatted,
       });
-    } catch {
-      // Rollback: revert case status in DB and clean up the advisory letter blob
+    } catch (err) {
+      this.logger.error(
+        `Advisory letter email failed for case ${saved.case_reference}: ${(err as Error)?.message}`,
+        (err as Error)?.stack,
+      );
+      // Rollback: revert DB and clean up blobs
       saved.status = originalStatus;
       saved.closed_at = null;
       saved.advisory_letter_url = null;
       saved.analysis_report_url = null;
       await this.disputeCasesRepository.save(saved);
-      await this.blobService.deleteFile(blobPath);
+      await this.blobService.deleteFile(letterBlobPath);
+      await this.blobService.deleteFile(reportBlobPath);
       throw new InternalServerErrorException(
-        'Advisory letter notification email failed to send. The closure operation has been rolled back.',
+        `Advisory letter email failed: ${(err as Error)?.message}`,
       );
     }
 

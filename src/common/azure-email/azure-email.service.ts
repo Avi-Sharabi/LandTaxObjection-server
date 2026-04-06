@@ -70,7 +70,6 @@ export class AzureEmailService {
         vgAssessedValue: string;
         internalAssessedValue: string;
         assessorFullName: string;
-        advisoryLetterUrl: string;
         analysisReportUrl: string;
         analysisPdfBase64: string;
         closedAt: string;
