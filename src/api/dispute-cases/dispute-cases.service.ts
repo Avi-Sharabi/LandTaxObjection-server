@@ -18,8 +18,6 @@ import { DisputeIntakeOrchestrator } from './intake/dispute-intake.orchestrator'
 import { ComparablesService } from '../comparables/comparables.service';
 import { AzureBlobService } from 'src/common/azure-blob/azure-blob.service';
 import { AzureEmailService } from 'src/common/azure-email/azure-email.service';
-import * as fs from 'fs';
-import * as path from 'path';
 
 const CLOSED_STATUSES: DisputeStatus[] = [
   DisputeStatus.CLOSED,
@@ -129,40 +127,7 @@ export class DisputeCasesService {
       minute: '2-digit',
     });
 
-    const assessmentDate = disputeCase.valuation_notice?.valuation_date
-      ? new Date(disputeCase.valuation_notice.valuation_date).toLocaleDateString('en-AU', {
-          day: '2-digit', month: 'long', year: 'numeric',
-        })
-      : 'N/A';
-
-    // ── 1. Generate advisory letter HTML → upload to letters/ folder ──────
-    const templatePath = path.join(__dirname, '../../common/azure-email/templates/advisory-letter.html');
-    const letterData: Record<string, string> = {
-      caseReference: disputeCase.case_reference,
-      clientName: disputeCase.client?.name ?? 'Client',
-      clientEmail: disputeCase.client?.email ?? '',
-      propertyAddress,
-      vgAssessedValue: fmtCurrency(vgAssessedValue),
-      internalAssessedValue: fmtCurrency(dto.internalAssessmentValue),
-      assessmentDate,
-      assessorFullName: disputeCase.assigned_accountant?.fullName ?? 'YML Assessor',
-      closedAt: closedAtFormatted,
-    };
-    let letterHtml = fs.readFileSync(templatePath, 'utf-8');
-    for (const [key, value] of Object.entries(letterData)) {
-      letterHtml = letterHtml.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), value);
-    }
-
-    const letterBlobName = `cases/${disputeCase.case_reference}/letters/advisory-${Date.now()}.html`;
-    const letterBlobPath = await this.blobService.uploadFile(
-      letterBlobName,
-      Buffer.from(letterHtml, 'utf-8').toString('base64'),
-    );
-    if (!letterBlobPath) {
-      throw new InternalServerErrorException('Failed to upload advisory letter to Blob Storage.');
-    }
-
-    // ── 2. Fetch static report for email attachment (not saved to blob) ───
+    // ── Fetch static report for email attachment ──────────────────────────
     const SAMPLE_REPORT_BLOB = 'cases/report/Sample Valuation Analysis Report.pdf';
     const pdfBuffer = await this.blobService.getFileContent(SAMPLE_REPORT_BLOB);
     const pdfBase64 = pdfBuffer.toString('base64');
@@ -171,7 +136,6 @@ export class DisputeCasesService {
     // Guard: client must have an email before we commit anything
     const clientEmail = disputeCase.client?.email ?? '';
     if (!clientEmail) {
-      await this.blobService.deleteFile(letterBlobPath);
       throw new InternalServerErrorException(
         `Cannot send advisory letter: client on case ${disputeCase.case_reference} has no email address.`,
       );
@@ -204,11 +168,10 @@ export class DisputeCasesService {
         `Advisory letter email failed for case ${saved.case_reference}: ${(err as Error)?.message}`,
         (err as Error)?.stack,
       );
-      // Rollback: revert DB and clean up blobs
+      // Rollback: revert DB status
       saved.status = originalStatus;
       saved.closed_at = null;
       await this.disputeCasesRepository.save(saved);
-      await this.blobService.deleteFile(letterBlobPath);
       throw new InternalServerErrorException(
         `Advisory letter email failed: ${(err as Error)?.message}`,
       );
