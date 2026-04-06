@@ -2,10 +2,11 @@ import {
   BadRequestException,
   ConflictException,
   Injectable,
-  InternalServerErrorException,
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { AdvisoryLetterEmailFailedException } from './exceptions/advisory-letter-email-failed.exception';
+import { ClientEmailMissingException } from './exceptions/client-email-missing.exception';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { CreateDisputeCaseDto } from './dto/create-dispute-case.dto';
@@ -57,13 +58,12 @@ export class DisputeCasesService {
     return disputeCase;
   }
 
-  async findOneResponse(id: string): Promise<DisputeCase> {
+  
+
+  async findOneResponse(id: string): Promise<DisputeCaseResponseDto> {
     const disputeCase = await this.findOne(id);
-    if (disputeCase.analysis_report_url) {
-      disputeCase.analysis_report_url =
-        this.blobService.getFileUrl(disputeCase.analysis_report_url, 1440) ?? null;
-    }
-    return disputeCase;
+    const sasUrl = this.blobService.getFileUrl(disputeCase.analysis_report_blob_path);
+    return DisputeCaseResponseDto.fromEntity(disputeCase, sasUrl);
   }
 
   async update(id: string, updateDisputeCaseDto: UpdateDisputeCaseDto): Promise<DisputeCase> {
@@ -127,18 +127,12 @@ export class DisputeCasesService {
       minute: '2-digit',
     });
 
-    // ── Fetch static report for email attachment ──────────────────────────
-    const SAMPLE_REPORT_BLOB = 'cases/report/Sample Valuation Analysis Report.pdf';
-    const pdfBuffer = await this.blobService.getFileContent(SAMPLE_REPORT_BLOB);
-    const pdfBase64 = pdfBuffer.toString('base64');
-    // ─────────────────────────────────────────────────────────────────────
+    const attachments = await this.buildAttachments(caseId);
 
     // Guard: client must have an email before we commit anything
     const clientEmail = disputeCase.client?.email ?? '';
     if (!clientEmail) {
-      throw new InternalServerErrorException(
-        `Cannot send advisory letter: client on case ${disputeCase.case_reference} has no email address.`,
-      );
+      throw new ClientEmailMissingException(disputeCase.case_reference);
     }
 
     // Persist status transition
@@ -150,9 +144,9 @@ export class DisputeCasesService {
 
     const saved = await this.disputeCasesRepository.save(disputeCase);
 
-    // Send email — await so failures surface and trigger rollback
-    try {
-      await this.emailService.sendAdvisoryLetterNotification({
+    // Send email — rollback DB status on failure
+    await this.emailService
+      .sendAdvisoryLetterNotification({
         caseReference: saved.case_reference,
         clientName: saved.client?.name ?? 'Client',
         clientEmail,
@@ -160,22 +154,19 @@ export class DisputeCasesService {
         vgAssessedValue: fmtCurrency(vgAssessedValue),
         internalAssessedValue: fmtCurrency(dto.internalAssessmentValue),
         assessorFullName: saved.assigned_accountant?.fullName ?? 'YML Assessor',
-        analysisPdfBase64: pdfBase64,
+        attachments,
         closedAt: closedAtFormatted,
+      })
+      .catch(async (err: Error) => {
+        this.logger.error(
+          `Advisory letter email failed for case ${saved.case_reference}: ${err.message}`,
+          err.stack,
+        );
+        saved.status = originalStatus;
+        saved.closed_at = null;
+        await this.disputeCasesRepository.save(saved);
+        throw new AdvisoryLetterEmailFailedException(saved.case_reference, err.message);
       });
-    } catch (err) {
-      this.logger.error(
-        `Advisory letter email failed for case ${saved.case_reference}: ${(err as Error)?.message}`,
-        (err as Error)?.stack,
-      );
-      // Rollback: revert DB status
-      saved.status = originalStatus;
-      saved.closed_at = null;
-      await this.disputeCasesRepository.save(saved);
-      throw new InternalServerErrorException(
-        `Advisory letter email failed: ${(err as Error)?.message}`,
-      );
-    }
 
     // TODO: Xero closure logging — Ticket 4 / future Xero integration placeholder
 
@@ -186,5 +177,23 @@ export class DisputeCasesService {
     const disputeCase = await this.findOne(id);
     await this.disputeCasesRepository.remove(disputeCase);
     return { message: `Dispute case #${id} removed` };
+  }
+
+  private async buildAttachments(caseId: string): Promise<{ name: string; contentType: string; contentInBase64: string }[]> {
+    const disputeCase = await this.disputeCasesRepository.findOne({
+      where: { id: caseId },
+      select: ['id', 'case_reference', 'analysis_report_blob_path'],
+    });
+
+    if (!disputeCase?.analysis_report_blob_path) return [];
+
+    const pdfBuffer = await this.blobService.getFileContent(disputeCase.analysis_report_blob_path);
+    return [
+      {
+        name: `valuation-analysis-${disputeCase.case_reference}.pdf`,
+        contentType: 'application/pdf',
+        contentInBase64: pdfBuffer.toString('base64'),
+      },
+    ];
   }
 }

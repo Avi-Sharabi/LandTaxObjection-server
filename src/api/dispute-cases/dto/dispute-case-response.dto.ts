@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { DisputeCase, DisputeStatus, Jurisdiction, OutcomeResult } from '../entities/dispute-case.entity';
+import { DecisionOutcome } from '../../valuation-notices/entities/valuation-notice.entity';
 
 export class DisputeCaseResponseDto {
   @ApiProperty()
@@ -62,6 +63,20 @@ export class DisputeCaseResponseDto {
   @ApiPropertyOptional()
   analysis_report_url: string | null;
 
+  @ApiPropertyOptional()
+  valuation_notice: {
+    id: string;
+    valuation_date: Date;
+    assessed_land_value: number | null;
+    appraised_value: number | null;
+    valuation_delta: number | null;
+    decision_outcome: DecisionOutcome | null;
+    analyst_notes: string | null;
+    notice_reference: string | null;
+    benchmark_uplift_pct: number | null;
+    is_exempt: boolean;
+  } | null;
+
   @ApiProperty()
   created_at: Date;
 
@@ -90,6 +105,20 @@ export class DisputeCaseResponseDto {
     dto.submitted_at = entity.submitted_at;
     dto.closed_at = entity.closed_at;
     dto.analysis_report_url = analysisReportSasUrl ?? null;
+    dto.valuation_notice = entity.valuation_notice
+      ? {
+          id: entity.valuation_notice.id,
+          valuation_date: entity.valuation_notice.valuation_date,
+          assessed_land_value: entity.valuation_notice.assessed_land_value,
+          appraised_value: entity.valuation_notice.appraised_value,
+          valuation_delta: entity.valuation_notice.valuation_delta,
+          decision_outcome: entity.valuation_notice.decision_outcome,
+          analyst_notes: entity.valuation_notice.analyst_notes,
+          notice_reference: entity.valuation_notice.notice_reference,
+          benchmark_uplift_pct: entity.valuation_notice.benchmark_uplift_pct,
+          is_exempt: entity.valuation_notice.is_exempt,
+        }
+      : null;
     dto.created_at = entity.created_at;
     dto.updated_at = entity.updated_at;
     return dto;

@@ -290,7 +290,7 @@ async function seedCase(
                 (id, case_reference, client_id, property_id, valuation_notice_id,
                  assigned_accountant_id, assigned_lawyer_id, jurisdiction, status,
                  statutory_deadline, no_legal_ground_flagged, original_assessed_value,
-                 analysis_report_url)
+                 analysis_report_blob_path)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
         `, [
             c.disputeCase,

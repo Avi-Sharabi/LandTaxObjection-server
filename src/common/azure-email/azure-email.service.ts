@@ -1,15 +1,31 @@
 // src/common/azure-email/azure-email.service.ts
 
-import { Injectable } from '@nestjs/common';
+import { Injectable, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { EmailClient } from '@azure/communication-email';
 import * as fs from 'fs';
 import * as path from 'path';
 
+interface EmailAttachment {
+    name: string;
+    contentType: string;
+    contentInBase64: string;
+}
+
+const TEMPLATE_NAMES = [
+    'dispute-application-submitted',
+    'advisory-letter-notification',
+    'objection-package-approval',
+    'objection-package-reminder',
+] as const;
+
+type TemplateName = (typeof TEMPLATE_NAMES)[number];
+
 @Injectable()
-export class AzureEmailService {
+export class AzureEmailService implements OnModuleInit {
     private readonly emailClient: EmailClient;
     private readonly sender: string;
+    private readonly templateCache = new Map<TemplateName, string>();
 
     constructor(private readonly config: ConfigService) {
         this.emailClient = new EmailClient(
@@ -18,13 +34,19 @@ export class AzureEmailService {
         this.sender = this.config.get('AZURE_COMMUNICATION_SENDER') || "";
     }
 
-    private loadTemplate(templateName: string, variables: Record<string, string | string[]>): string {
-        const filePath = path.join(__dirname, 'templates', `${templateName}.html`);
-        let html = fs.readFileSync(filePath, 'utf-8');
+    onModuleInit(): void {
+        for (const name of TEMPLATE_NAMES) {
+            const filePath = path.join(__dirname, 'templates', `${name}.html`);
+            if (!fs.existsSync(filePath)) continue;
+            this.templateCache.set(name, fs.readFileSync(filePath, 'utf-8'));
+        }
+    }
+
+    private loadTemplate(templateName: TemplateName, variables: Record<string, string | string[]>): string {
+        let html = this.templateCache.get(templateName)!;
 
         Object.entries(variables).forEach(([key, value]) => {
             if (Array.isArray(value)) {
-                // Replace {{#each key}}...body...{{/each}} blocks
                 const blockRegex = new RegExp(
                     `\\{\\{#each ${key}\\}\\}([\\s\\S]*?)\\{\\{/each\\}\\}`,
                     'g',
@@ -70,7 +92,7 @@ export class AzureEmailService {
         vgAssessedValue: string;
         internalAssessedValue: string;
         assessorFullName: string;
-        analysisPdfBase64: string;
+        attachments?: EmailAttachment[];
         closedAt: string;
     }): Promise<void> {
         const contactEmail = this.config.get('CONTACT_EMAIL') || '';
@@ -94,13 +116,77 @@ export class AzureEmailService {
                 subject: `[${data.caseReference}] Your Land Tax Dispute Case Has Been Closed`,
                 html,
             },
-            attachments: [
-                {
-                    name: `valuation-analysis-${data.caseReference}.pdf`,
-                    contentType: 'application/pdf',
-                    contentInBase64: data.analysisPdfBase64,
-                },
-            ],
+            ...(data.attachments?.length && { attachments: data.attachments }),
+        };
+
+        const poller = await this.emailClient.beginSend(message);
+        await poller.pollUntilDone();
+    }
+
+    async sendObjectionPackageApproval(params: {
+        sendTo: string;
+        clientName: string;
+        propertyAddress: string;
+        taxYear: string;
+        approvalLink: string;
+        firmName: string;
+        contactEmail: string;
+        attachments?: EmailAttachment[];
+    }): Promise<void> {
+        const html = this.loadTemplate('objection-package-approval', {
+            client_name: params.clientName,
+            property_address: params.propertyAddress,
+            tax_year: params.taxYear,
+            approval_link: params.approvalLink,
+            firm_name: params.firmName,
+            contact_email: params.contactEmail,
+        });
+
+        const message = {
+            senderAddress: this.sender,
+            recipients: {
+                to: [{ address: params.sendTo, displayName: params.clientName }],
+            },
+            content: {
+                subject: 'Action Required \u2013 Please Review and Approve Your Objection Package',
+                html,
+            },
+            ...(params.attachments?.length && { attachments: params.attachments }),
+        };
+
+        const poller = await this.emailClient.beginSend(message);
+        await poller.pollUntilDone();
+    }
+
+    async sendObjectionPackageReminder(params: {
+        sendTo: string;
+        clientName: string;
+        propertyAddress: string;
+        taxYear: string;
+        approvalLink: string;
+        firmName: string;
+        contactEmail: string;
+        attachments?: EmailAttachment[];
+    }): Promise<void> {
+        const html = this.loadTemplate('objection-package-reminder', {
+            client_name: params.clientName,
+            property_address: params.propertyAddress,
+            tax_year: params.taxYear,
+            approval_link: params.approvalLink,
+            firm_name: params.firmName,
+            contact_email: params.contactEmail,
+        });
+
+        const message = {
+            senderAddress: this.sender,
+            recipients: {
+                to: [{ address: params.sendTo, displayName: params.clientName }],
+            },
+            content: {
+                subject: 'Reminder \u2013 Your Objection Package Awaits Approval',
+                html,
+            },
+            ...(params.attachments?.length && { attachments: params.attachments }),
         };
 
         const poller = await this.emailClient.beginSend(message);

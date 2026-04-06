@@ -121,7 +121,7 @@ export class DisputeCase {
 
 
   @Column({ type: 'text', nullable: true })
-  analysis_report_url: string | null;
+  analysis_report_blob_path: string | null;
 
   @CreateDateColumn({ type: 'timestamptz' })
   created_at: Date;
