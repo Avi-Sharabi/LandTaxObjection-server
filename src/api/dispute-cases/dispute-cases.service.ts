@@ -18,7 +18,8 @@ import { DisputeIntakeOrchestrator } from './intake/dispute-intake.orchestrator'
 import { ComparablesService } from '../comparables/comparables.service';
 import { AzureBlobService } from 'src/common/azure-blob/azure-blob.service';
 import { AzureEmailService } from 'src/common/azure-email/azure-email.service';
-import { LetterGenerationService } from 'src/common/letter-generation/letter-generation.service';
+import * as fs from 'fs';
+import * as path from 'path';
 
 const CLOSED_STATUSES: DisputeStatus[] = [
   DisputeStatus.CLOSED,
@@ -35,7 +36,6 @@ export class DisputeCasesService {
     private readonly comparablesService: ComparablesService,
     private readonly blobService: AzureBlobService,
     private readonly emailService: AzureEmailService,
-    private readonly letterService: LetterGenerationService,
     @InjectRepository(DisputeCase)
     private disputeCasesRepository: Repository<DisputeCase>,
   ) { }
@@ -138,7 +138,8 @@ export class DisputeCasesService {
       : 'N/A';
 
     // ── 1. Generate advisory letter HTML → upload to letters/ folder ──────
-    const letterHtml = this.letterService.generateAdvisoryLetter({
+    const templatePath = path.join(__dirname, '../../common/azure-email/templates/advisory-letter.html');
+    const letterData: Record<string, string> = {
       caseReference: disputeCase.case_reference,
       clientName: disputeCase.client?.name ?? 'Client',
       clientEmail: disputeCase.client?.email ?? '',
@@ -148,7 +149,11 @@ export class DisputeCasesService {
       assessmentDate,
       assessorFullName: disputeCase.assigned_accountant?.fullName ?? 'YML Assessor',
       closedAt: closedAtFormatted,
-    });
+    };
+    let letterHtml = fs.readFileSync(templatePath, 'utf-8');
+    for (const [key, value] of Object.entries(letterData)) {
+      letterHtml = letterHtml.replace(new RegExp(`\\{\\{${key}\\}\\}`, 'g'), value);
+    }
 
     const letterBlobName = `cases/${disputeCase.case_reference}/letters/advisory-${Date.now()}.html`;
     const letterBlobPath = await this.blobService.uploadFile(
