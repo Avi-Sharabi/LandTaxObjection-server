@@ -18,7 +18,6 @@ import { XpmClientHandler } from './intake/xpm-client.handler';
 import { PdfStorageHandler } from './intake/pdf-storage.handler';
 import { fyiStorageService } from 'src/common/fyi-storage/fyi-storage.service';
 import { LetterGenerationService } from 'src/common/letter-generation/letter-generation.service';
-import { PdfGenerationService } from 'src/common/pdf-generation/pdf-generation.service';
 
 @Module({
   imports: [
@@ -44,7 +43,6 @@ import { PdfGenerationService } from 'src/common/pdf-generation/pdf-generation.s
     PdfStorageHandler,
     fyiStorageService,
     LetterGenerationService,
-    PdfGenerationService,
   ],
 })
 export class DisputeCasesModule { }
