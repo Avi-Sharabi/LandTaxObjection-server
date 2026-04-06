@@ -12,7 +12,7 @@ const SEED_IDS = {
     disputeCase:        'c5070af9-8669-4e49-a241-8ea087b192eb',
 } as const;
 
-const ARVIN_EMAIL = 'arvin.bermudez@ymlgroup.com.au';
+const APRIL_EMAIL = 'april.clemente@ymlgroup.com.au';
 
 const logger = new Logger('CaseClosedNoObjectionSeeder');
 
@@ -22,12 +22,12 @@ export async function seedCaseClosedNoObjection(dataSource: DataSource): Promise
 
     // ── Resolve April's ID (seeded by user.seeder.ts before this runs) ─────────
 
-    const arvin = await userRepo.findOneBy({ email: ARVIN_EMAIL });
-    if (!arvin) {
-        throw new Error(`[CaseClosedNoObjectionSeeder] User "${ARVIN_EMAIL}" not found. Ensure seedUsers() runs first.`);
+    const april = await userRepo.findOneBy({ email: APRIL_EMAIL });
+    if (!april) {
+        throw new Error(`[CaseClosedNoObjectionSeeder] User "${APRIL_EMAIL}" not found. Ensure seedUsers() runs first.`);
     }
-    const arvinId = arvin.id;
-    logger.log(`Resolved user: ${arvin.fullName} (${arvinId})`);
+    const aprilId = april.id;
+    logger.log(`Resolved user: ${april.fullName} (${aprilId})`);
 
     // ── 1. Client ──────────────────────────────────────────────────────────────
 
@@ -37,9 +37,9 @@ export async function seedCaseClosedNoObjection(dataSource: DataSource): Promise
             clientRepo.create({
                 id:                     SEED_IDS.client,
                 name:                   'Test Client — Castle Hill',
-                email:                  'arvin.bermudez@ymlgroup.com.au',
+                email:                  'client.castlehill@example.com.au',
                 status:                 ClientStatus.ACTIVE,
-                assigned_accountant_id: arvinId,
+                assigned_accountant_id: aprilId,
             }),
         );
         logger.log('Seeded client');
@@ -113,7 +113,7 @@ export async function seedCaseClosedNoObjection(dataSource: DataSource): Promise
             SEED_IDS.valuationNotice,
             SEED_IDS.property,
             SEED_IDS.assessmentDocument,
-            arvinId,
+            aprilId,
             '2024-07-01',
             703574.80,
             704000.00,
@@ -149,14 +149,14 @@ export async function seedCaseClosedNoObjection(dataSource: DataSource): Promise
             SEED_IDS.client,
             SEED_IDS.property,
             SEED_IDS.valuationNotice,
-            arvinId,
+            aprilId,
             null,
             'NSW',
             'advisory_letter_issued',
             '2025-03-21',
             false,
             703574.80,
-            null,
+            'clients/10f158ec-b176-46e0-9d40-35ffdf588a6b/disputes/54d5a0c9-c216-4002-a36b-110c5122bb12/analysisReport/Sample Valuation Analysis Report.pdf',
         ]);
         logger.log(`Seeded dispute case: ${SEED_IDS.disputeCase}`);
     } else {
