@@ -29,8 +29,6 @@ const CLOSED_STATUSES: DisputeStatus[] = [
 @Injectable()
 export class DisputeCasesService {
   private readonly logger = new Logger(DisputeCasesService.name);
-  private cachedReportBuffer: Buffer | null = null;
-
   constructor(
     private readonly intakeOrchestrator: DisputeIntakeOrchestrator,
     private readonly comparablesService: ComparablesService,
@@ -164,32 +162,16 @@ export class DisputeCasesService {
       throw new InternalServerErrorException('Failed to upload advisory letter to Blob Storage.');
     }
 
-    // ── 2. Fetch static report (cached) → upload to case reports/ folder ──
+    // ── 2. Fetch static report for email attachment (not saved to blob) ───
     const SAMPLE_REPORT_BLOB = 'cases/report/Sample Valuation Analysis Report.pdf';
-    if (!this.cachedReportBuffer) {
-      this.cachedReportBuffer = await this.blobService.getFileContent(SAMPLE_REPORT_BLOB);
-    }
-    const pdfBase64 = this.cachedReportBuffer.toString('base64');
-    const reportBlobName = `cases/${disputeCase.case_reference}/reports/valuation-analysis-${Date.now()}.pdf`;
-    const reportBlobPath = await this.blobService.uploadFile(reportBlobName, pdfBase64);
-    if (!reportBlobPath) {
-      await this.blobService.deleteFile(letterBlobPath);
-      throw new InternalServerErrorException('Failed to upload analysis report to Blob Storage.');
-    }
-
-    const pdfSasUrl = this.blobService.getFileUrl(reportBlobPath, 1440);
-    if (!pdfSasUrl) {
-      await this.blobService.deleteFile(letterBlobPath);
-      await this.blobService.deleteFile(reportBlobPath);
-      throw new InternalServerErrorException('Failed to generate analysis report download URL.');
-    }
+    const pdfBuffer = await this.blobService.getFileContent(SAMPLE_REPORT_BLOB);
+    const pdfBase64 = pdfBuffer.toString('base64');
     // ─────────────────────────────────────────────────────────────────────
 
     // Guard: client must have an email before we commit anything
     const clientEmail = disputeCase.client?.email ?? '';
     if (!clientEmail) {
       await this.blobService.deleteFile(letterBlobPath);
-      await this.blobService.deleteFile(reportBlobPath);
       throw new InternalServerErrorException(
         `Cannot send advisory letter: client on case ${disputeCase.case_reference} has no email address.`,
       );
@@ -198,8 +180,6 @@ export class DisputeCasesService {
     // Persist status transition
     disputeCase.status = DisputeStatus.CLOSED_NO_OBJECTION;
     disputeCase.closed_at = closedAtDate;
-    disputeCase.advisory_letter_url = letterBlobPath;
-    disputeCase.analysis_report_url = reportBlobPath;
     if (dto.assessorNotes !== undefined) {
       disputeCase.notes = dto.assessorNotes;
     }
@@ -216,7 +196,6 @@ export class DisputeCasesService {
         vgAssessedValue: fmtCurrency(vgAssessedValue),
         internalAssessedValue: fmtCurrency(dto.internalAssessmentValue),
         assessorFullName: saved.assigned_accountant?.fullName ?? 'YML Assessor',
-        analysisReportUrl: pdfSasUrl,
         analysisPdfBase64: pdfBase64,
         closedAt: closedAtFormatted,
       });
@@ -228,11 +207,8 @@ export class DisputeCasesService {
       // Rollback: revert DB and clean up blobs
       saved.status = originalStatus;
       saved.closed_at = null;
-      saved.advisory_letter_url = null;
-      saved.analysis_report_url = null;
       await this.disputeCasesRepository.save(saved);
       await this.blobService.deleteFile(letterBlobPath);
-      await this.blobService.deleteFile(reportBlobPath);
       throw new InternalServerErrorException(
         `Advisory letter email failed: ${(err as Error)?.message}`,
       );

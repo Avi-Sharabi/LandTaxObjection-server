@@ -70,7 +70,6 @@ export class AzureEmailService {
         vgAssessedValue: string;
         internalAssessedValue: string;
         assessorFullName: string;
-        analysisReportUrl: string;
         analysisPdfBase64: string;
         closedAt: string;
     }): Promise<void> {
@@ -82,7 +81,6 @@ export class AzureEmailService {
             vgAssessedValue: data.vgAssessedValue,
             internalAssessedValue: data.internalAssessedValue,
             assessorFullName: data.assessorFullName,
-            analysisReportUrl: data.analysisReportUrl,
             closedAt: data.closedAt,
             contactEmail,
         });

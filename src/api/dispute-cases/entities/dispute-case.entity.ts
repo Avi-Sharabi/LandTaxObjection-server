@@ -119,8 +119,6 @@ export class DisputeCase {
   @Column({ type: 'timestamptz', nullable: true })
   closed_at: Date | null;
 
-  @Column({ type: 'text', nullable: true })
-  advisory_letter_url: string | null;
 
   @Column({ type: 'text', nullable: true })
   analysis_report_url: string | null;
