@@ -1,25 +1,24 @@
 import {
-  BadRequestException,
   ConflictException,
+  GoneException,
   Injectable,
-  Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import { AdvisoryLetterEmailFailedException } from './exceptions/advisory-letter-email-failed.exception';
-import { ClientEmailMissingException } from './exceptions/client-email-missing.exception';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
-import { CreateDisputeCaseDto } from './dto/create-dispute-case.dto';
+import { DataSource, Repository } from 'typeorm';
+import { randomUUID } from 'crypto';
+import { ConfigService } from '@nestjs/config';
 import { UpdateDisputeCaseDto } from './dto/update-dispute-case.dto';
 import { CreateDisputeIntakeDto } from './dto/create-dispute-intake.dto';
 import { CloseNoObjectionDto } from './dto/close-no-objection.dto';
 import { DisputeCaseResponseDto } from './dto/dispute-case-response.dto';
+import { ApprovalDocumentsResponseDto } from './dto/approval-documents-response.dto';
 import { DisputeCase, DisputeStatus } from './entities/dispute-case.entity';
 import { DisputeIntakeOrchestrator } from './intake/dispute-intake.orchestrator';
 import { ComparablesService } from '../comparables/comparables.service';
-import { AzureBlobService } from 'src/common/azure-blob/azure-blob.service';
 import { AzureEmailService } from 'src/common/azure-email/azure-email.service';
+import { AzureBlobService } from 'src/common/azure-blob/azure-blob.service';
+import { PackageDocument, PackageDocumentStatus } from '../objection-package/entities/package-document.entity';
 
 const CLOSED_STATUSES: DisputeStatus[] = [
   DisputeStatus.CLOSED,
@@ -30,29 +29,27 @@ const CLOSED_STATUSES: DisputeStatus[] = [
 export class DisputeCasesService {
   private readonly logger = new Logger(DisputeCasesService.name);
   constructor(
+    private readonly dataSource: DataSource,
     private readonly intakeOrchestrator: DisputeIntakeOrchestrator,
     private readonly comparablesService: ComparablesService,
-    private readonly blobService: AzureBlobService,
-    private readonly emailService: AzureEmailService,
+    private readonly azureEmailService: AzureEmailService,
+    private readonly azureBlobService: AzureBlobService,
     private readonly config: ConfigService,
     @InjectRepository(DisputeCase)
     private disputeCasesRepository: Repository<DisputeCase>,
+    @InjectRepository(PackageDocument)
+    private readonly packageDocumentRepo: Repository<PackageDocument>,
   ) { }
 
-
-  create(_createDisputeCaseDto: CreateDisputeCaseDto) {
-    return 'This action adds a new disputeCase';
-  }
-
-  async submitIntakeApplication(intakeDto: CreateDisputeIntakeDto) {
+  async submitIntakeApplication(intakeDto: CreateDisputeIntakeDto): Promise<unknown> {
     return this.intakeOrchestrator.submitIntakeApplication(intakeDto);
   }
 
-  async findAll(): Promise<DisputeCase[]> {
-    return this.disputeCasesRepository.find();
+  async findAll(): Promise<DisputeCaseResponseDto[]> {
+    return await this.disputeCasesRepository.find()
   }
 
-  async findOne(id: string): Promise<DisputeCase> {
+  async findOne(id: string): Promise<DisputeCaseResponseDto> {
     const disputeCase = await this.disputeCasesRepository.findOne({
       where: { id },
       relations: ['client', 'property', 'valuation_notice', 'assigned_accountant', 'assigned_lawyer', 'legal_grounds', 'dispute_constraints'],
@@ -61,67 +58,19 @@ export class DisputeCasesService {
     return disputeCase;
   }
 
-  async findReportUrl(id: string): Promise<{ id: string; case_reference: string; analysis_report_url: string | null }> {
-    const disputeCase = await this.disputeCasesRepository.findOne({
-      where: { id },
-      select: ['id', 'case_reference', 'analysis_report_blob_path'],
-    });
+  async update(id: string, updateDisputeCaseDto: UpdateDisputeCaseDto): Promise<DisputeCaseResponseDto> {
+    const disputeCase = await this.disputeCasesRepository.findOne({ where: { id } });
     if (!disputeCase) throw new NotFoundException(`Dispute case #${id} not found`);
-    const analysis_report_url = this.blobService.getFileUrl(disputeCase.analysis_report_blob_path, 72 * 60, 'inline');
-    return { id: disputeCase.id, case_reference: disputeCase.case_reference, analysis_report_url };
-  }
-  
-  
-  async findAdvisoryView(id: string): Promise<{
-    caseReference: string;
-    propertyAddress: string;
-    closedAt: string | null;
-    pdfUrl: string | null;
-  }> {
-    const disputeCase = await this.disputeCasesRepository.findOne({
-      where: { id },
-      relations: ['property', 'valuation_notice'],
-    });
-    if (!disputeCase) throw new NotFoundException(`Dispute case #${id} not found`);
-
-    const property = disputeCase.property;
-    const propertyAddress = property
-      ? `${property.address}, ${property.suburb} ${property.state} ${property.postcode}`
-      : 'Address not available';
-
-    const closedAt = disputeCase.closed_at
-      ? disputeCase.closed_at.toLocaleString('en-AU', {
-          day: '2-digit',
-          month: 'long',
-          year: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit',
-        })
-      : null;
-
-    const pdfUrl = disputeCase.analysis_report_blob_path
-      ? this.blobService.getFileUrl(disputeCase.analysis_report_blob_path, 72 * 60, 'inline')
-      : null;
-
-    return {
-      caseReference: disputeCase.case_reference,
-      propertyAddress,
-      closedAt,
-      pdfUrl,
-    };
-  }
-
-  async update(id: string, updateDisputeCaseDto: UpdateDisputeCaseDto): Promise<DisputeCase> {
-    const disputeCase = await this.findOne(id);
     Object.assign(disputeCase, updateDisputeCaseDto);
-    return this.disputeCasesRepository.save(disputeCase);
+    return await this.disputeCasesRepository.save(disputeCase);
   }
 
-  async advanceToAppraisal(id: string): Promise<DisputeCase> {
-    const disputeCase = await this.findOne(id);
+  async advanceToAppraisal(id: string): Promise<DisputeCaseResponseDto> {
+    const disputeCase = await this.disputeCasesRepository.findOne({ where: { id } });
+    if (!disputeCase) throw new NotFoundException(`Dispute case #${id} not found`);
     await this.comparablesService.assertMinimumComparables(id);
     disputeCase.status = DisputeStatus.APPRAISAL;
-    return this.disputeCasesRepository.save(disputeCase);
+    return await this.disputeCasesRepository.save(disputeCase);
   }
 
   async closeNoObjection(caseId: string, dto: CloseNoObjectionDto): Promise<DisputeCaseResponseDto> {
@@ -147,7 +96,7 @@ export class DisputeCasesService {
     const vgAssessedValue = Number(disputeCase.valuation_notice?.assessed_land_value ?? 0);
 
     if (dto.internalAssessmentValue < vgAssessedValue) {
-      throw new BadRequestException(
+      throw new ConflictException(
         `Internal assessment value ($${dto.internalAssessmentValue.toLocaleString()}) is less than the VG assessed value ` +
         `($${vgAssessedValue.toLocaleString()}). The case has viable objection grounds and should not be closed without objection.`,
       );
@@ -185,45 +134,153 @@ export class DisputeCasesService {
       disputeCase.notes = dto.assessorNotes;
     }
 
-    const saved = await this.disputeCasesRepository.save(disputeCase);
+    return await this.disputeCasesRepository.save(disputeCase);
+  }
 
-    const blobPath = disputeCase.analysis_report_blob_path ?? '';
-    const viewReportUrl = blobPath
-      ? `${this.config.get<string>('FRONTEND_URL') ?? ''}/view-report/${caseId}`
-      : '';
+  async sendObjectionPackage(caseId: string): Promise<DisputeCaseResponseDto> {
+    const disputeCase = await this.disputeCasesRepository.findOne({
+      where: { id: caseId },
+      relations: ['client', 'property', 'valuation_notice'],
+    });
 
-    // Send email — rollback DB status on failure
-    await this.emailService
-      .sendAdvisoryLetterNotification({
-        caseReference: saved.case_reference,
-        clientName: saved.client?.name ?? 'Client',
-        clientEmail,
-        propertyAddress,
-        vgAssessedValue: fmtCurrency(vgAssessedValue),
-        internalAssessedValue: fmtCurrency(dto.internalAssessmentValue),
-        assessorFullName: saved.assigned_accountant?.fullName ?? 'YML Assessor',
-        closedAt: closedAtFormatted,
-        viewReportUrl,
-      })
-      .catch(async (err: Error) => {
-        this.logger.error(
-          `Advisory letter email failed for case ${saved.case_reference}: ${err.message}`,
-          err.stack,
-        );
-        saved.status = originalStatus;
-        saved.closed_at = null;
-        await this.disputeCasesRepository.save(saved);
-        throw new AdvisoryLetterEmailFailedException(saved.case_reference, err.message);
+    if (!disputeCase) {
+      throw new NotFoundException(`Dispute case #${caseId} not found`);
+    }
+
+    if (disputeCase.client_approved_at !== null) {
+      throw new ConflictException(`Dispute case #${caseId} has already been approved by the client`);
+    }
+
+    const token = randomUUID();
+    const expires = new Date();
+    expires.setDate(expires.getDate() + 30);
+
+    const frontendUrl = this.config.get<string>('FRONTEND_URL') ?? '';
+    const approvalLink = `${frontendUrl}/approve-package?token=${token}`;
+    const clientName = disputeCase.client.name;
+    const propertyAddress = [disputeCase.property.address, disputeCase.property.suburb]
+      .filter(Boolean)
+      .join(', ');
+    const taxYear = String(new Date(disputeCase.valuation_notice.valuation_date).getFullYear());
+
+    // Send email first — only persist state if the send succeeds.
+    await this.azureEmailService.sendObjectionPackageApproval({
+      sendTo: disputeCase.client.email ?? '',
+      clientName,
+      propertyAddress,
+      taxYear,
+      approvalLink,
+      firmName: this.config.get<string>('FIRM_NAME') ?? 'Your Firm',
+      contactEmail: this.config.get<string>('CONTACT_EMAIL') ?? '',
+    });
+
+    disputeCase.client_approval_token = token;
+    disputeCase.client_approval_token_expires_at = expires;
+    disputeCase.status = DisputeStatus.AWAITING_CLIENT_APPROVAL;
+    disputeCase.client_approval_requested_at = new Date();
+
+    return await this.disputeCasesRepository.save(disputeCase);
+  }
+
+  async approveObjectionPackage(token: string): Promise<{ alreadyApproved: boolean; propertyAddress?: string }> {
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      // Lock only the dispute_cases row — no JOINs, as PostgreSQL rejects
+      // FOR UPDATE on the nullable side of a LEFT JOIN.
+      const disputeCase = await queryRunner.manager.findOne(DisputeCase, {
+        where: { client_approval_token: token },
+        lock: { mode: 'pessimistic_write' },
       });
 
-    // TODO: Xero closure logging — Ticket 4 / future Xero integration placeholder
+      if (!disputeCase) {
+        throw new NotFoundException('Approval token is invalid or does not exist');
+      }
 
-    return DisputeCaseResponseDto.fromEntity(saved);
+      if (disputeCase.client_approved_at !== null) {
+        await queryRunner.commitTransaction();
+        return { alreadyApproved: true };
+      }
+
+      if (!disputeCase.client_approval_token_expires_at || disputeCase.client_approval_token_expires_at < new Date()) {
+        throw new GoneException('Approval token has expired — please request a new package from your adviser');
+      }
+
+      disputeCase.client_approved_at = new Date();
+      disputeCase.client_approval_token = null;
+      disputeCase.client_approval_token_expires_at = null;
+      disputeCase.status = DisputeStatus.CLIENT_APPROVED;
+
+      await queryRunner.manager.save(disputeCase);
+      await queryRunner.commitTransaction();
+
+      // Fetch property address after commit — outside the locked transaction,
+      // so relations are safe to join here.
+      const withProperty = await this.disputeCasesRepository.findOne({
+        where: { id: disputeCase.id },
+        relations: ['property'],
+      });
+
+      const propertyAddress = [withProperty?.property?.address, withProperty?.property?.suburb]
+        .filter(Boolean)
+        .join(', ');
+
+      return { alreadyApproved: false, propertyAddress };
+    } catch (err) {
+      await queryRunner.rollbackTransaction();
+      throw err;
+    } finally {
+      await queryRunner.release();
+    }
+  }
+
+  async getApprovalDocuments(token: string): Promise<ApprovalDocumentsResponseDto> {
+    const disputeCase = await this.disputeCasesRepository.findOne({
+      where: { client_approval_token: token },
+      relations: ['property', 'valuation_notice'],
+    });
+
+    if (!disputeCase) {
+      throw new NotFoundException('Approval token is invalid or does not exist');
+    }
+
+    if (!disputeCase.client_approval_token_expires_at || disputeCase.client_approval_token_expires_at < new Date()) {
+      throw new GoneException('Approval token has expired — please request a new package from your adviser');
+    }
+
+    if (disputeCase.client_approved_at !== null) {
+      return { alreadyApproved: true, documents: [] };
+    }
+
+    const docs = await this.packageDocumentRepo.find({
+      where: { dispute_case_id: disputeCase.id, status: PackageDocumentStatus.READY },
+    });
+
+    const propertyAddress = [disputeCase.property.address, disputeCase.property.suburb]
+      .filter(Boolean)
+      .join(', ');
+    const taxYear = String(new Date(disputeCase.valuation_notice.valuation_date).getFullYear());
+
+    return {
+      alreadyApproved: false,
+      propertyAddress,
+      taxYear,
+      documents: docs
+        .filter((doc): doc is PackageDocument & { blob_name: string } => doc.blob_name !== null)
+        .map((doc) => ({
+          id: doc.id,
+          name: doc.name,
+          viewUrl: this.azureBlobService.getFileUrl(doc.blob_name, 30),
+        })),
+    };
   }
 
 
   async remove(id: string): Promise<{ message: string }> {
-    const disputeCase = await this.findOne(id);
+    const disputeCase = await this.disputeCasesRepository.findOne({ where: { id } });
+    if (!disputeCase) throw new NotFoundException(`Dispute case #${id} not found`);
     await this.disputeCasesRepository.remove(disputeCase);
     return { message: `Dispute case #${id} removed` };
   }

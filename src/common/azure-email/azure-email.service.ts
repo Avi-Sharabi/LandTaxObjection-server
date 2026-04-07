@@ -37,7 +37,6 @@ export class AzureEmailService implements OnModuleInit {
     onModuleInit(): void {
         for (const name of TEMPLATE_NAMES) {
             const filePath = path.join(__dirname, 'templates', `${name}.html`);
-            if (!fs.existsSync(filePath)) continue;
             this.templateCache.set(name, fs.readFileSync(filePath, 'utf-8'));
         }
     }
