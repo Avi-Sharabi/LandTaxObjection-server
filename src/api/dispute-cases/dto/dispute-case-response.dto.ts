@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { DisputeStatus, Jurisdiction, OutcomeResult } from '../entities/dispute-case.entity';
+import { DecisionOutcome } from '../../valuation-notices/entities/valuation-notice.entity';
 
 export class DisputeCaseResponseDto {
   @ApiProperty()
@@ -90,7 +91,10 @@ export class DisputeCaseResponseDto {
   closed_at: Date | null;
 
   @ApiPropertyOptional()
-  analysis_report_url: string | null;
+  analysis_report_blob_path?: string | null;
+
+  @ApiPropertyOptional()
+  analysis_report_url?: string | null;
 
   @ApiPropertyOptional()
   valuation_notice: {

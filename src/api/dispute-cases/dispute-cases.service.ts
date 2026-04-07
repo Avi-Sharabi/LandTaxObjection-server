@@ -19,6 +19,7 @@ import { ComparablesService } from '../comparables/comparables.service';
 import { AzureEmailService } from 'src/common/azure-email/azure-email.service';
 import { AzureBlobService } from 'src/common/azure-blob/azure-blob.service';
 import { PackageDocument, PackageDocumentStatus } from '../objection-package/entities/package-document.entity';
+import { ClientEmailMissingException } from './exceptions/client-email-missing.exception';
 
 const CLOSED_STATUSES: DisputeStatus[] = [
   DisputeStatus.CLOSED,
@@ -27,7 +28,6 @@ const CLOSED_STATUSES: DisputeStatus[] = [
 
 @Injectable()
 export class DisputeCasesService {
-  private readonly logger = new Logger(DisputeCasesService.name);
   constructor(
     private readonly dataSource: DataSource,
     private readonly intakeOrchestrator: DisputeIntakeOrchestrator,
@@ -92,7 +92,6 @@ export class DisputeCasesService {
       throw new ConflictException(`Dispute case #${caseId} is already closed`);
     }
 
-    const originalStatus = disputeCase.status;
     const vgAssessedValue = Number(disputeCase.valuation_notice?.assessed_land_value ?? 0);
 
     if (dto.internalAssessmentValue < vgAssessedValue) {
@@ -102,30 +101,43 @@ export class DisputeCasesService {
       );
     }
 
-    // Build property address string
-    const property = disputeCase.property;
-    const propertyAddress = property
-      ? `${property.address}, ${property.suburb} ${property.state} ${property.postcode}`
-      : 'Address not available';
-
-    // Format currency values
-    const fmtCurrency = (val: number) =>
-      `$${val.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-
     const closedAtDate = new Date();
-    const closedAtFormatted = closedAtDate.toLocaleString('en-AU', {
-      day: '2-digit',
-      month: 'long',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
 
     // Guard: client must have an email before we commit anything
     const clientEmail = disputeCase.client?.email ?? '';
     if (!clientEmail) {
       throw new ClientEmailMissingException(disputeCase.case_reference);
     }
+
+    const property = disputeCase.property;
+    const propertyAddress = property
+      ? [property.address, property.suburb, property.state, property.postcode].filter(Boolean).join(', ')
+      : 'Address not available';
+
+    const fmtAud = (val: number) =>
+      `$${val.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+
+    const closedAtFormatted = closedAtDate.toLocaleString('en-AU', {
+      day: '2-digit', month: 'long', year: 'numeric',
+      hour: '2-digit', minute: '2-digit',
+    });
+
+    const assessorFullName = disputeCase.assigned_accountant?.fullName ?? 'Your YML Adviser';
+
+    const viewReportUrl = this.azureBlobService.getFileUrl(disputeCase.analysis_report_blob_path, 72 * 60) ?? undefined;
+
+    // Send advisory letter email first — only persist if send succeeds.
+    await this.azureEmailService.sendAdvisoryLetterNotification({
+      clientEmail,
+      clientName: disputeCase.client.name,
+      caseReference: disputeCase.case_reference,
+      propertyAddress,
+      vgAssessedValue: fmtAud(vgAssessedValue),
+      internalAssessedValue: fmtAud(dto.internalAssessmentValue),
+      assessorFullName,
+      closedAt: closedAtFormatted,
+      viewReportUrl,
+    });
 
     // Persist status transition
     disputeCase.status = DisputeStatus.CLOSED_NO_OBJECTION;
@@ -277,6 +289,26 @@ export class DisputeCasesService {
     };
   }
 
+
+  async findAdvisoryView(id: string): Promise<{ id: string; case_reference: string; analysis_report_url: string | null }> {
+    const disputeCase = await this.disputeCasesRepository.findOne({ where: { id } });
+    if (!disputeCase) throw new NotFoundException(`Dispute case #${id} not found`);
+    return {
+      id: disputeCase.id,
+      case_reference: disputeCase.case_reference,
+      analysis_report_url: this.azureBlobService.getFileUrl(disputeCase.analysis_report_blob_path, 72 * 60),
+    };
+  }
+
+  async findReportUrl(id: string): Promise<{ id: string; case_reference: string; analysis_report_url: string | null }> {
+    const disputeCase = await this.disputeCasesRepository.findOne({ where: { id } });
+    if (!disputeCase) throw new NotFoundException(`Dispute case #${id} not found`);
+    return {
+      id: disputeCase.id,
+      case_reference: disputeCase.case_reference,
+      analysis_report_url: this.azureBlobService.getFileUrl(disputeCase.analysis_report_blob_path, 60),
+    };
+  }
 
   async remove(id: string): Promise<{ message: string }> {
     const disputeCase = await this.disputeCasesRepository.findOne({ where: { id } });
