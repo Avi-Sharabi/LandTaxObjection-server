@@ -2,7 +2,6 @@ import {
   ConflictException,
   GoneException,
   Injectable,
-  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -13,6 +12,7 @@ import { UpdateDisputeCaseDto } from './dto/update-dispute-case.dto';
 import { CreateDisputeIntakeDto } from './dto/create-dispute-intake.dto';
 import { CloseNoObjectionDto } from './dto/close-no-objection.dto';
 import { DisputeCaseResponseDto } from './dto/dispute-case-response.dto';
+import { ApprovalDocumentsResponseDto } from './dto/approval-documents-response.dto';
 import { DisputeCase, DisputeStatus } from './entities/dispute-case.entity';
 import { DisputeIntakeOrchestrator } from './intake/dispute-intake.orchestrator';
 import { ComparablesService } from '../comparables/comparables.service';
@@ -27,8 +27,6 @@ const CLOSED_STATUSES: DisputeStatus[] = [
 
 @Injectable()
 export class DisputeCasesService {
-  private readonly logger = new Logger(DisputeCasesService.name);
-
   constructor(
     private readonly dataSource: DataSource,
     private readonly intakeOrchestrator: DisputeIntakeOrchestrator,
@@ -41,28 +39,6 @@ export class DisputeCasesService {
     @InjectRepository(PackageDocument)
     private readonly packageDocumentRepo: Repository<PackageDocument>,
   ) { }
-
-  async buildAttachments(caseId: string): Promise<{ name: string; contentType: string; contentInBase64: string }[]> {
-    const docs = await this.packageDocumentRepo.find({
-      where: { dispute_case_id: caseId, status: PackageDocumentStatus.READY },
-    });
-
-    const readyDocs = docs.filter((doc) => doc.blob_name !== null);
-
-    const results = await Promise.allSettled(
-      readyDocs.map(async (doc) => {
-        const buffer = await this.azureBlobService.getFileContent(doc.blob_name!);
-        if (!buffer.length) throw new Error('empty blob');
-        return { name: `${doc.name}.pdf`, contentType: 'application/pdf', contentInBase64: buffer.toString('base64') };
-      }),
-    );
-
-    return results.flatMap((result, i) => {
-      if (result.status === 'fulfilled') return [result.value];
-      this.logger.warn(`[SEND-PACKAGE] Failed to fetch attachment blob=${readyDocs[i].blob_name} — skipping`);
-      return [];
-    });
-  }
 
   async submitIntakeApplication(intakeDto: CreateDisputeIntakeDto): Promise<unknown> {
     return this.intakeOrchestrator.submitIntakeApplication(intakeDto);
@@ -154,8 +130,6 @@ export class DisputeCasesService {
       .join(', ');
     const taxYear = String(new Date(disputeCase.valuation_notice.valuation_date).getFullYear());
 
-    const attachments = await this.buildAttachments(caseId);
-
     // Send email first — only persist state if the send succeeds.
     await this.azureEmailService.sendObjectionPackageApproval({
       sendTo: disputeCase.client.email ?? '',
@@ -165,7 +139,6 @@ export class DisputeCasesService {
       approvalLink,
       firmName: this.config.get<string>('FIRM_NAME') ?? 'Your Firm',
       contactEmail: this.config.get<string>('CONTACT_EMAIL') ?? '',
-      attachments,
     });
 
     disputeCase.client_approval_token = token;
@@ -228,6 +201,47 @@ export class DisputeCasesService {
     } finally {
       await queryRunner.release();
     }
+  }
+
+  async getApprovalDocuments(token: string): Promise<ApprovalDocumentsResponseDto> {
+    const disputeCase = await this.disputeCasesRepository.findOne({
+      where: { client_approval_token: token },
+      relations: ['property', 'valuation_notice'],
+    });
+
+    if (!disputeCase) {
+      throw new NotFoundException('Approval token is invalid or does not exist');
+    }
+
+    if (!disputeCase.client_approval_token_expires_at || disputeCase.client_approval_token_expires_at < new Date()) {
+      throw new GoneException('Approval token has expired — please request a new package from your adviser');
+    }
+
+    if (disputeCase.client_approved_at !== null) {
+      return { alreadyApproved: true, documents: [] };
+    }
+
+    const docs = await this.packageDocumentRepo.find({
+      where: { dispute_case_id: disputeCase.id, status: PackageDocumentStatus.READY },
+    });
+
+    const propertyAddress = [disputeCase.property.address, disputeCase.property.suburb]
+      .filter(Boolean)
+      .join(', ');
+    const taxYear = String(new Date(disputeCase.valuation_notice.valuation_date).getFullYear());
+
+    return {
+      alreadyApproved: false,
+      propertyAddress,
+      taxYear,
+      documents: docs
+        .filter((doc): doc is PackageDocument & { blob_name: string } => doc.blob_name !== null)
+        .map((doc) => ({
+          id: doc.id,
+          name: doc.name,
+          viewUrl: this.azureBlobService.getFileUrl(doc.blob_name, 30),
+        })),
+    };
   }
 
   async remove(id: string): Promise<{ message: string }> {

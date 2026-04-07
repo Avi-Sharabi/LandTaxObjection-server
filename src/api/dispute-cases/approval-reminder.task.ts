@@ -5,7 +5,6 @@ import { Repository, IsNull, LessThan } from 'typeorm';
 import { randomUUID } from 'crypto';
 import { ConfigService } from '@nestjs/config';
 import { DisputeCase, DisputeStatus } from './entities/dispute-case.entity';
-import { DisputeCasesService } from './dispute-cases.service';
 import { AzureEmailService } from 'src/common/azure-email/azure-email.service';
 
 const MAX_REMINDERS = 3;
@@ -17,7 +16,6 @@ export class ApprovalReminderTask {
   constructor(
     @InjectRepository(DisputeCase)
     private readonly repo: Repository<DisputeCase>,
-    private readonly disputeCasesService: DisputeCasesService,
     private readonly azureEmailService: AzureEmailService,
     private readonly config: ConfigService,
   ) {}
@@ -74,8 +72,6 @@ export class ApprovalReminderTask {
           .join(', ');
         const taxYear = String(new Date(disputeCase.valuation_notice.valuation_date).getFullYear());
 
-        const attachments = await this.disputeCasesService.buildAttachments(disputeCase.id);
-
         await this.azureEmailService.sendObjectionPackageReminder({
           sendTo: disputeCase.client.email ?? '',
           clientName: disputeCase.client.name,
@@ -84,7 +80,6 @@ export class ApprovalReminderTask {
           approvalLink,
           firmName: this.config.get<string>('FIRM_NAME') ?? 'Your Firm',
           contactEmail: this.config.get<string>('CONTACT_EMAIL') ?? '',
-          attachments,
         });
 
         disputeCase.client_approval_token = token;

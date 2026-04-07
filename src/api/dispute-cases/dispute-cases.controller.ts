@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Controller,
   Get,
   Post,
@@ -8,15 +9,18 @@ import {
   Delete,
   UseGuards,
   HttpCode,
+  Query,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiBody,
   ApiOperation,
   ApiParam,
+  ApiQuery,
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
+import { ApprovalDocumentsResponseDto } from './dto/approval-documents-response.dto';
 import { DisputeCasesService } from './dispute-cases.service';
 import { UpdateDisputeCaseDto } from './dto/update-dispute-case.dto';
 import { CreateDisputeIntakeDto } from './dto/create-dispute-intake.dto';
@@ -63,6 +67,24 @@ export class DisputeCasesController {
     @Body() dto: ApproveObjectionPackageDto,
   ): Promise<{ alreadyApproved: boolean; propertyAddress?: string }> {
     return this.disputeCasesService.approveObjectionPackage(dto.token);
+  }
+
+  @Get('approval-documents')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Get objection package documents for client review',
+    description: 'Public endpoint. Returns signed document view URLs for the given approval token. Used by the client-facing approval page before the client submits their approval.',
+  })
+  @ApiQuery({ name: 'token', required: true, description: 'Approval token UUID' })
+  @ApiResponse({ status: 200, description: 'Document list returned', type: ApprovalDocumentsResponseDto })
+  @ApiResponse({ status: 400, description: 'Missing or malformed token' })
+  @ApiResponse({ status: 404, description: 'Token not found or invalid' })
+  @ApiResponse({ status: 410, description: 'Token has expired' })
+  getApprovalDocuments(@Query('token') token: string): Promise<ApprovalDocumentsResponseDto> {
+    if (!token || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(token)) {
+      throw new BadRequestException('Invalid or missing approval token');
+    }
+    return this.disputeCasesService.getApprovalDocuments(token);
   }
 
   @UseGuards(JwtAuthGuard)
