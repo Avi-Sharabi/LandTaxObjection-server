@@ -4,7 +4,9 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
+import * as crypto from 'crypto';
 import { ConfigService } from '@nestjs/config';
 import { AdvisoryLetterEmailFailedException } from './exceptions/advisory-letter-email-failed.exception';
 import { ClientEmailMissingException } from './exceptions/client-email-missing.exception';
@@ -38,6 +40,36 @@ export class DisputeCasesService {
     @InjectRepository(DisputeCase)
     private disputeCasesRepository: Repository<DisputeCase>,
   ) { }
+
+  private generateViewToken(caseId: string, blobPath: string): string {
+    const payload = Buffer.from(
+      JSON.stringify({
+        caseId,
+        blobPath,
+        exp: Math.floor(Date.now() / 1000) + 72 * 60 * 60,
+      }),
+    ).toString('base64url');
+    const secret = this.config.get<string>('JWT_SECRET') ?? '';
+    const sig = crypto.createHmac('sha256', secret).update(payload).digest('base64url');
+    return `${payload}.${sig}`;
+  }
+
+  private verifyViewToken(token: string): { caseId: string; blobPath: string } | null {
+    const dotIndex = token.lastIndexOf('.');
+    if (dotIndex === -1) return null;
+    const payload = token.slice(0, dotIndex);
+    const sig = token.slice(dotIndex + 1);
+    const secret = this.config.get<string>('JWT_SECRET') ?? '';
+    const expected = crypto.createHmac('sha256', secret).update(payload).digest('base64url');
+    if (expected !== sig) return null;
+    try {
+      const data = JSON.parse(Buffer.from(payload, 'base64url').toString());
+      if (data.exp < Math.floor(Date.now() / 1000)) return null;
+      return { caseId: data.caseId, blobPath: data.blobPath };
+    } catch {
+      return null;
+    }
+  }
 
   create(_createDisputeCaseDto: CreateDisputeCaseDto) {
     return 'This action adds a new disputeCase';
@@ -140,10 +172,10 @@ export class DisputeCasesService {
 
     const saved = await this.disputeCasesRepository.save(disputeCase);
 
-    // Generate secure view token (no expiry) for the PDF fallback button in the email
+    // Generate HMAC-signed token (72hr expiry) for the PDF fallback button in the email
     const blobPath = disputeCase.analysis_report_blob_path ?? '';
     const viewReportUrl = blobPath
-      ? `${this.config.get<string>('FRONTEND_URL') ?? ''}/view-report/${caseId}`
+      ? `${this.config.get<string>('FRONTEND_URL') ?? ''}/view-report/${this.generateViewToken(caseId, blobPath)}`
       : '';
 
     // Send email — rollback DB status on failure
@@ -174,6 +206,49 @@ export class DisputeCasesService {
     // TODO: Xero closure logging — Ticket 4 / future Xero integration placeholder
 
     return DisputeCaseResponseDto.fromEntity(saved);
+  }
+
+  async getAdvisoryViewDocument(token: string): Promise<{
+    pdfUrl: string | null;
+    caseReference: string;
+    propertyAddress: string;
+    closedAt: string | null;
+  }> {
+    const payload = this.verifyViewToken(token);
+    if (!payload) {
+      throw new UnauthorizedException('This link is invalid or has expired.');
+    }
+
+    const disputeCase = await this.disputeCasesRepository.findOne({
+      where: { id: payload.caseId },
+      relations: ['property'],
+    });
+
+    if (!disputeCase) {
+      throw new NotFoundException(`Dispute case not found.`);
+    }
+
+    const property = disputeCase.property;
+    const propertyAddress = property
+      ? `${property.address}, ${property.suburb} ${property.state} ${property.postcode}`
+      : 'Address not available';
+
+    const pdfUrl = this.blobService.getFileUrl(payload.blobPath, 60, 'inline');
+
+    const closedAt = disputeCase.closed_at
+      ? disputeCase.closed_at.toLocaleString('en-AU', {
+          day: '2-digit',
+          month: 'long',
+          year: 'numeric',
+        })
+      : null;
+
+    return {
+      pdfUrl,
+      caseReference: disputeCase.case_reference,
+      propertyAddress,
+      closedAt,
+    };
   }
 
   async remove(id: string): Promise<{ message: string }> {
