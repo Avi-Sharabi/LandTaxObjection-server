@@ -79,12 +79,17 @@ export class DisputeCasesService {
     return this.disputeCasesRepository.find();
   }
 
-  async findOne(id: string): Promise<DisputeCase & { analysis_report_url: string | null }> {
+  async findOne(id: string): Promise<DisputeCase> {
     const disputeCase = await this.disputeCasesRepository.findOne({
       where: { id },
       relations: ['client', 'property', 'valuation_notice', 'assigned_accountant', 'assigned_lawyer', 'legal_grounds', 'dispute_constraints'],
     });
     if (!disputeCase) throw new NotFoundException(`Dispute case #${id} not found`);
+    return disputeCase;
+  }
+
+  async findOneWithReportUrl(id: string): Promise<DisputeCase & { analysis_report_url: string | null }> {
+    const disputeCase = await this.findOne(id);
     const analysis_report_url = this.blobService.getFileUrl(disputeCase.analysis_report_blob_path, 60, 'inline');
     return Object.assign(disputeCase, { analysis_report_url });
   }
