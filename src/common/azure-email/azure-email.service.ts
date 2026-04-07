@@ -94,6 +94,7 @@ export class AzureEmailService implements OnModuleInit {
         assessorFullName: string;
         attachments?: EmailAttachment[];
         closedAt: string;
+        viewReportUrl?: string;
     }): Promise<void> {
         const contactEmail = this.config.get('CONTACT_EMAIL') || '';
 
@@ -105,6 +106,7 @@ export class AzureEmailService implements OnModuleInit {
             assessorFullName: data.assessorFullName,
             closedAt: data.closedAt,
             contactEmail,
+            viewReportUrl: data.viewReportUrl ?? '',
         });
 
         const message = {

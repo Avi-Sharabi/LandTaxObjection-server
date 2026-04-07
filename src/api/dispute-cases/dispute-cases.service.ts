@@ -5,6 +5,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { AdvisoryLetterEmailFailedException } from './exceptions/advisory-letter-email-failed.exception';
 import { ClientEmailMissingException } from './exceptions/client-email-missing.exception';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -33,6 +34,7 @@ export class DisputeCasesService {
     private readonly comparablesService: ComparablesService,
     private readonly blobService: AzureBlobService,
     private readonly emailService: AzureEmailService,
+    private readonly config: ConfigService,
     @InjectRepository(DisputeCase)
     private disputeCasesRepository: Repository<DisputeCase>,
   ) { }
@@ -49,17 +51,17 @@ export class DisputeCasesService {
     return this.disputeCasesRepository.find();
   }
 
-  async findOne(id: string): Promise<DisputeCase> {
+  async findOne(id: string): Promise<DisputeCase & { analysis_report_url: string | null }> {
     const disputeCase = await this.disputeCasesRepository.findOne({
       where: { id },
       relations: ['client', 'property', 'valuation_notice', 'assigned_accountant', 'assigned_lawyer', 'legal_grounds', 'dispute_constraints'],
     });
     if (!disputeCase) throw new NotFoundException(`Dispute case #${id} not found`);
-    return disputeCase;
+    const analysis_report_url = this.blobService.getFileUrl(disputeCase.analysis_report_blob_path, 60, 'inline');
+    return Object.assign(disputeCase, { analysis_report_url });
   }
-
   
-
+  
   async update(id: string, updateDisputeCaseDto: UpdateDisputeCaseDto): Promise<DisputeCase> {
     const disputeCase = await this.findOne(id);
     Object.assign(disputeCase, updateDisputeCaseDto);
@@ -138,6 +140,12 @@ export class DisputeCasesService {
 
     const saved = await this.disputeCasesRepository.save(disputeCase);
 
+    // Generate secure view token (no expiry) for the PDF fallback button in the email
+    const blobPath = disputeCase.analysis_report_blob_path ?? '';
+    const viewReportUrl = blobPath
+      ? `${this.config.get<string>('FRONTEND_URL') ?? ''}/view-report/${caseId}`
+      : '';
+
     // Send email — rollback DB status on failure
     await this.emailService
       .sendAdvisoryLetterNotification({
@@ -150,6 +158,7 @@ export class DisputeCasesService {
         assessorFullName: saved.assigned_accountant?.fullName ?? 'YML Assessor',
         attachments,
         closedAt: closedAtFormatted,
+        viewReportUrl,
       })
       .catch(async (err: Error) => {
         this.logger.error(
