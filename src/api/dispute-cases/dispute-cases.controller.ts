@@ -65,19 +65,19 @@ export class DisputeCasesController {
     return this.disputeCasesService.findAll();
   }
 
-  @Get('advisory-view/:token')
-  @ApiOperation({ summary: 'Get advisory letter PDF via secure token (public, 72hr expiry)' })
-  @ApiParam({ name: 'token', description: 'HMAC-signed document access token' })
-  @ApiResponse({ status: 200, description: 'PDF URL and case metadata returned' })
-  @ApiResponse({ status: 401, description: 'Invalid or expired token' })
-  getAdvisoryViewDocument(@Param('token') token: string) {
-    return this.disputeCasesService.getAdvisoryViewDocument(token);
-  }
-
   @UseGuards(JwtAuthGuard)
   @Get(':id')
   findOne(@Param('id') id: string) {
-    return this.disputeCasesService.findOneWithReportUrl(id);
+    return this.disputeCasesService.findOne(id);
+  }
+
+  @Get(':id/report-url')
+  @ApiOperation({ summary: 'Get dispute case report URL' })
+  @ApiParam({ name: 'id', description: 'Dispute case UUID' })
+  @ApiResponse({ status: 200, description: 'Case ID, reference, and signed report URL' })
+  @ApiResponse({ status: 404, description: 'Dispute case not found' })
+  getReportUrl(@Param('id') id: string) {
+    return this.disputeCasesService.findReportUrl(id);
   }
 
   @UseGuards(JwtAuthGuard)
