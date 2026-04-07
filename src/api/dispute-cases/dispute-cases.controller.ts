@@ -65,6 +65,16 @@ export class DisputeCasesController {
     return this.disputeCasesService.findAll();
   }
 
+  // Public endpoint — no auth guard. Must be declared before @Get(':id') to avoid conflict.
+  @Get('advisory-view/:id')
+  @ApiOperation({ summary: 'Public advisory document view — returns case summary and 72-hr signed PDF URL' })
+  @ApiParam({ name: 'id', description: 'Dispute case UUID' })
+  @ApiResponse({ status: 200, description: 'Case summary and PDF URL' })
+  @ApiResponse({ status: 404, description: 'Dispute case not found' })
+  findAdvisoryView(@Param('id') id: string) {
+    return this.disputeCasesService.findAdvisoryView(id);
+  }
+
   @UseGuards(JwtAuthGuard)
   @Get(':id')
   findOne(@Param('id') id: string) {

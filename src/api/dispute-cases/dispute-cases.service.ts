@@ -72,6 +72,45 @@ export class DisputeCasesService {
   }
   
   
+  async findAdvisoryView(id: string): Promise<{
+    caseReference: string;
+    propertyAddress: string;
+    closedAt: string | null;
+    pdfUrl: string | null;
+  }> {
+    const disputeCase = await this.disputeCasesRepository.findOne({
+      where: { id },
+      relations: ['property', 'valuation_notice'],
+    });
+    if (!disputeCase) throw new NotFoundException(`Dispute case #${id} not found`);
+
+    const property = disputeCase.property;
+    const propertyAddress = property
+      ? `${property.address}, ${property.suburb} ${property.state} ${property.postcode}`
+      : 'Address not available';
+
+    const closedAt = disputeCase.closed_at
+      ? disputeCase.closed_at.toLocaleString('en-AU', {
+          day: '2-digit',
+          month: 'long',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+        })
+      : null;
+
+    const pdfUrl = disputeCase.analysis_report_blob_path
+      ? this.blobService.getFileUrl(disputeCase.analysis_report_blob_path, 72 * 60, 'inline')
+      : null;
+
+    return {
+      caseReference: disputeCase.case_reference,
+      propertyAddress,
+      closedAt,
+      pdfUrl,
+    };
+  }
+
   async update(id: string, updateDisputeCaseDto: UpdateDisputeCaseDto): Promise<DisputeCase> {
     const disputeCase = await this.findOne(id);
     Object.assign(disputeCase, updateDisputeCaseDto);
@@ -150,7 +189,7 @@ export class DisputeCasesService {
 
     const blobPath = disputeCase.analysis_report_blob_path ?? '';
     const viewReportUrl = blobPath
-      ? `${this.config.get<string>('FRONTEND_URL') ?? ''}/cases/${caseId}`
+      ? `${this.config.get<string>('FRONTEND_URL') ?? ''}/view-report/${caseId}`
       : '';
 
     // Send email — rollback DB status on failure
