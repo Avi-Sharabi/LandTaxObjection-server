@@ -43,11 +43,7 @@ export class DisputeCasesService {
 
   private generateViewToken(caseId: string, blobPath: string): string {
     const payload = Buffer.from(
-      JSON.stringify({
-        caseId,
-        blobPath,
-        exp: Math.floor(Date.now() / 1000) + 72 * 60 * 60,
-      }),
+      JSON.stringify({ caseId, blobPath, exp: Math.floor(Date.now() / 1000) + 72 * 60 * 60 }),
     ).toString('base64url');
     const secret = this.config.get<string>('JWT_SECRET') ?? '';
     const sig = crypto.createHmac('sha256', secret).update(payload).digest('base64url');
@@ -155,8 +151,6 @@ export class DisputeCasesService {
       minute: '2-digit',
     });
 
-    const attachments = await this.buildAttachments(caseId);
-
     // Guard: client must have an email before we commit anything
     const clientEmail = disputeCase.client?.email ?? '';
     if (!clientEmail) {
@@ -172,7 +166,6 @@ export class DisputeCasesService {
 
     const saved = await this.disputeCasesRepository.save(disputeCase);
 
-    // Generate HMAC-signed token (72hr expiry) for the PDF fallback button in the email
     const blobPath = disputeCase.analysis_report_blob_path ?? '';
     const viewReportUrl = blobPath
       ? `${this.config.get<string>('FRONTEND_URL') ?? ''}/view-report/${this.generateViewToken(caseId, blobPath)}`
@@ -188,7 +181,6 @@ export class DisputeCasesService {
         vgAssessedValue: fmtCurrency(vgAssessedValue),
         internalAssessedValue: fmtCurrency(dto.internalAssessmentValue),
         assessorFullName: saved.assigned_accountant?.fullName ?? 'YML Assessor',
-        attachments,
         closedAt: closedAtFormatted,
         viewReportUrl,
       })
@@ -257,21 +249,4 @@ export class DisputeCasesService {
     return { message: `Dispute case #${id} removed` };
   }
 
-  private async buildAttachments(caseId: string): Promise<{ name: string; contentType: string; contentInBase64: string }[]> {
-    const disputeCase = await this.disputeCasesRepository.findOne({
-      where: { id: caseId },
-      select: ['id', 'case_reference', 'analysis_report_blob_path'],
-    });
-
-    if (!disputeCase?.analysis_report_blob_path) return [];
-
-    const pdfBuffer = await this.blobService.getFileContent(disputeCase.analysis_report_blob_path);
-    return [
-      {
-        name: `valuation-analysis-${disputeCase.case_reference}.pdf`,
-        contentType: 'application/pdf',
-        contentInBase64: pdfBuffer.toString('base64'),
-      },
-    ];
-  }
 }
