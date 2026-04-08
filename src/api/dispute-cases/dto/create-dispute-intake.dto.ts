@@ -1,6 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import {
   IsArray,
+  IsBase64,
   IsBoolean,
   IsDateString,
   IsEmail,
@@ -96,6 +97,7 @@ export class CreateDisputeIntakeDto {
   })
   @IsOptional()
   @IsString()
+  @IsBase64()
   attachment?: string;
 
   // ─── Applicant Details ──────────────────────────────────────────────────────

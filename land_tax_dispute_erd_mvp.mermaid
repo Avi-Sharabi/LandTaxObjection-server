@@ -1,121 +1,169 @@
 erDiagram
-
   users {
-    UUID id PK
-    TEXT email
-    TEXT full_name
-    user_role role
-    TEXT phone
-    BOOL is_active
+    uuid id PK
+    text email
+    text full_name
+    enum role
+    boolean is_active
+    timestamptz created_at
   }
 
   clients {
-    UUID id PK
-    TEXT display_name
-    TEXT abn
-    TEXT contact_email
-    TEXT contact_phone
-    client_status status
-    UUID assigned_accountant_id FK
-    TEXT fyi_client_id
-    TEXT valuation_blob_url
-    TIMESTAMPTZ tc_accepted_at
+    uuid id PK
+    enum status
+    text name
+    text email
+    uuid assigned_accountant_id FK
+    text xpm_uuid
+    timestamptz created_at
   }
 
   properties {
-    UUID id PK
-    UUID client_id FK
-    TEXT address
-    TEXT suburb
-    jurisdiction state
-    TEXT postcode
-    NUMERIC land_area_sqm
-    TEXT zoning
+    uuid id PK
+    uuid client_id FK
+    text address
+    text suburb
+    enum state
+    text postcode
+    numeric ownership_pct
+    numeric land_area_sqm
+    text zoning
+    text pid
+  }
+
+  assessment_documents {
+    uuid id PK
+    uuid client_id FK
+    text file_path
+    date notice_date
+    text valuation_year
   }
 
   valuation_notices {
-    UUID id PK
-    UUID property_id FK
-    DATE valuation_date
-    NUMERIC assessed_land_value
-    NUMERIC benchmark_uplift_pct
-    TEXT blob_storage_url
+    uuid id PK
+    uuid property_id FK
+    uuid source_document_id FK
+    uuid appraised_by_id FK
+    date valuation_date
+    numeric assessed_land_value
+    numeric appraised_value
+    numeric valuation_delta
+    enum decision_outcome
+    boolean is_exempt
+  }
+
+  valuation_notice_files {
+    uuid id PK
+    uuid valuation_notice_id FK
+    text blob_path
+    text original_name
+    enum upload_status
+    uuid uploaded_by FK
+    uuid confirmed_by FK
   }
 
   dispute_cases {
-    UUID id PK
-    TEXT case_reference
-    UUID client_id FK
-    UUID property_id FK
-    UUID valuation_notice_id FK
-    UUID assigned_accountant_id FK
-    UUID assigned_lawyer_id FK
-    jurisdiction jurisdiction
-    dispute_status status
-    DATE statutory_deadline
-    BOOL no_legal_ground_flagged
-    TIMESTAMPTZ client_approval_requested_at
-    TIMESTAMPTZ client_approved_at
-    BOOL flag_heritage
-    BOOL flag_easement
-    BOOL flag_flood_zone
-    BOOL flag_environmental
-    BOOL flag_zoning
-    SMALLINT evidence_strength_score
-    outcome_result outcome
-    NUMERIC original_assessed_value
-    NUMERIC final_agreed_value
-    NUMERIC tax_saving_achieved
-    NUMERIC invoice_amount
+    uuid id PK
+    text case_reference
+    uuid client_id FK
+    uuid property_id FK
+    uuid valuation_notice_id FK
+    uuid assigned_accountant_id FK
+    uuid assigned_lawyer_id FK
+    enum jurisdiction
+    enum status
+    date statutory_deadline
+    uuid client_approval_token
+    timestamptz client_approved_at
+    timestamptz client_approval_token_expires_at
+    smallint reminder_count
+    enum outcome
+    numeric tax_saving_achieved
   }
 
   dispute_legal_grounds {
-    UUID id PK
-    UUID dispute_id FK
-    legal_ground ground
-    TEXT notes
-    BOOL validated
+    uuid id PK
+    uuid dispute_id FK
+    enum ground
+    boolean validated
+    text notes
   }
 
   comparable_sales {
-    UUID id PK
-    UUID dispute_id FK
-    TEXT property_address
-    DATE sale_date
-    NUMERIC sale_price_total
-    NUMERIC improvements_value
-    NUMERIC adjusted_land_value
-    NUMERIC land_area_sqm
-  }
-
-  site_constraints {
-    UUID id PK
-    UUID dispute_id FK
-    constraint_type constraint_type
-    TEXT description
-    TEXT legal_argument
-    TEXT document_blob_url
+    uuid id PK
+    uuid dispute_case_id FK
+    text address
+    date sale_date
+    numeric sale_price
+    numeric adjusted_land_value
+    uuid created_by_id FK
   }
 
   dispute_documents {
-    UUID id PK
-    UUID dispute_id FK
-    document_type document_type
-    TEXT filename
-    TEXT blob_storage_url
-    UUID uploaded_by FK
+    uuid id PK
+    uuid dispute_id FK
+    enum document_type
+    text filename
+    text blob_storage_url
+    uuid uploaded_by FK
+    timestamptz uploaded_at
   }
 
-  clients         }o--||  users                 : "assigned accountant"
-  clients         ||--o{  properties             : "owns"
-  properties      ||--o{  valuation_notices      : "has"
-  properties      ||--o{  dispute_cases          : "subject of"
-  dispute_cases   }o--||  clients                : "belongs to"
-  dispute_cases   }o--||  valuation_notices      : "disputes"
-  dispute_cases   }o--o|  users                  : "accountant"
-  dispute_cases   }o--o|  users                  : "lawyer"
-  dispute_cases   ||--o{  dispute_legal_grounds  : "must have"
-  dispute_cases   ||--o{  comparable_sales       : "evidenced by"
-  dispute_cases   ||--o{  site_constraints       : "constrained by"
-  dispute_cases   ||--o{  dispute_documents      : "has files"
-  dispute_documents }o--o| users                 : "uploaded by"
+  dispute_constraints {
+    uuid id PK
+    uuid dispute_id FK
+    enum constraint_type
+    text description
+  }
+
+  constraint_files {
+    uuid id PK
+    uuid dispute_constraint_id FK
+    enum document_category
+    text blob_path
+    enum upload_status
+    uuid uploaded_by FK
+    uuid confirmed_by FK
+  }
+
+  package_documents {
+    uuid id PK
+    uuid dispute_case_id FK
+    text name
+    enum category
+    enum status
+    text blob_name
+    integer file_size_bytes
+    timestamptz generated_at
+  }
+
+  users ||--o{ clients : "assigned accountant"
+  users ||--o{ valuation_notices : "appraised by"
+  users ||--o{ valuation_notice_files : "uploaded by"
+  users ||--o{ valuation_notice_files : "confirmed by"
+  users ||--o{ dispute_cases : "accountant"
+  users ||--o{ dispute_cases : "lawyer"
+  users ||--o{ comparable_sales : "created by"
+  users ||--o{ dispute_documents : "uploaded by"
+  users ||--o{ constraint_files : "uploaded by"
+  users ||--o{ constraint_files : "confirmed by"
+
+  clients ||--o{ properties : "owns"
+  clients ||--o{ assessment_documents : "has"
+  clients ||--o{ dispute_cases : "subject of"
+
+  properties ||--o{ valuation_notices : "has"
+  properties ||--o{ dispute_cases : "disputed in"
+
+  assessment_documents ||--o{ valuation_notices : "source doc"
+
+  valuation_notices ||--o{ valuation_notice_files : "has files"
+  valuation_notices ||--o{ dispute_cases : "triggers"
+
+  dispute_cases ||--o{ dispute_legal_grounds : "grounded by"
+  dispute_cases ||--o{ comparable_sales : "supported by"
+  dispute_cases ||--o{ dispute_documents : "has documents"
+  dispute_cases ||--o{ dispute_constraints : "constrained by"
+  dispute_cases ||--o{ package_documents : "packaged into"
+
+  dispute_constraints ||--o{ constraint_files : "evidenced by"
