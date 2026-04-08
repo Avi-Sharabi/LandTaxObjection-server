@@ -179,7 +179,7 @@ export class DisputeCasesService {
 
     const token = randomUUID();
     const expires = new Date();
-    expires.setDate(expires.getDate() + APPROVAL_TOKEN_EXPIRY_DAYS);
+    expires.setDate(expires.getDate() + 3);
 
     const frontendUrl = this.config.get<string>('FRONTEND_URL') ?? '';
     const approvalLink = `${frontendUrl}/approve-package?token=${token}`;
