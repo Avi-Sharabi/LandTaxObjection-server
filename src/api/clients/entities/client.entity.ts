@@ -30,69 +30,119 @@ export class Client {
   @Column({ type: 'enum', enum: ClientStatus, nullable: false, default: ClientStatus.PROSPECT })
   status: ClientStatus;
 
-  // ─── Identity (matches FYI field names) ──────────────────────────────────────
+  // ─── Identity ────────────────────────────────────────────────────────────────
 
   @Column({ type: 'text', nullable: false })
-  name: string;                    // FYI: name
+  name: string;                             // XPM: name
 
   @Column({ type: 'text', nullable: true })
-  email: string;                   // FYI: email
+  title: string | null;                     // XPM: title
 
   @Column({ type: 'text', nullable: true })
-  phone: string;                   // FYI: phone
+  gender: string | null;                    // XPM: gender
 
   @Column({ type: 'text', nullable: true })
-  mobile: string;                  // FYI: mobile
-
-  // ─── Address (matches FYI field names) ───────────────────────────────────────
+  first_name: string | null;               // XPM: firstName
 
   @Column({ type: 'text', nullable: true })
-  address: string;                 // FYI: address
+  middle_name: string | null;              // XPM: middleName
 
   @Column({ type: 'text', nullable: true })
-  city: string;                    // FYI: city
+  last_name: string | null;               // XPM: lastName
 
   @Column({ type: 'text', nullable: true })
-  region: string;                  // FYI: region
+  email: string | null;                    // XPM: email
+
+  @Column({ type: 'date', nullable: true })
+  date_of_birth: Date | null;              // XPM: dateOfBirth
 
   @Column({ type: 'text', nullable: true })
-  postcode: string;                // FYI: postcode
+  phone: string | null;                    // XPM: phone
 
   @Column({ type: 'text', nullable: true })
-  country: string;                 // FYI: country
-
-  // ─── Business (matches FYI field names) ──────────────────────────────────────
+  fax: string | null;                      // XPM: fax
 
   @Column({ type: 'text', nullable: true })
-  business_number: string;         // FYI: business_number
+  website: string | null;                  // XPM: website
+
+  // ─── Address ─────────────────────────────────────────────────────────────────
 
   @Column({ type: 'text', nullable: true })
-  company_number: string;          // FYI: company_number
+  address: string | null;                  // XPM: address
 
   @Column({ type: 'text', nullable: true })
-  client_code: string;             // FYI: details.client_code
+  city: string | null;                     // XPM: city
 
   @Column({ type: 'text', nullable: true })
-  source: string;                  // FYI: source (e.g. "xpm")
+  region: string | null;                   // XPM: region
 
   @Column({ type: 'text', nullable: true })
-  source_id: string;               // FYI: source_id
-
-  // ─── FYI Metadata ────────────────────────────────────────────────────────────
+  postcode: string | null;                 // XPM: postCode
 
   @Column({ type: 'text', nullable: true })
-  fyi_id: string | null;           // FYI: id
+  country: string | null;                  // XPM: country
+
+  // ─── Postal Address ───────────────────────────────────────────────────────────
 
   @Column({ type: 'text', nullable: true })
-  fyi_uuid: string | null;         // FYI: details.uuid
+  postal_address: string | null;           // XPM: postalAddress
 
   @Column({ type: 'text', nullable: true })
-  fyi_manager_email: string | null; // FYI: manager_user.email
+  postal_city: string | null;              // XPM: postalCity
 
   @Column({ type: 'text', nullable: true })
-  fyi_partner_email: string | null; // FYI: partner_user.email
+  postal_region: string | null;            // XPM: postalRegion
+
+  @Column({ type: 'text', nullable: true })
+  postal_postcode: string | null;          // XPM: postalPostCode
+
+  @Column({ type: 'text', nullable: true })
+  postal_country: string | null;           // XPM: postalCountry
+
+  // ─── Business / Tax ───────────────────────────────────────────────────────────
+
+  @Column({ type: 'text', nullable: true })
+  business_number: string | null;          // XPM: businessNumber
+
+  @Column({ type: 'text', nullable: true })
+  company_number: string | null;           // XPM: companyNumber
+
+  @Column({ type: 'text', nullable: true })
+  tax_number: string | null;               // XPM: taxNumber
+
+  @Column({ type: 'text', nullable: true })
+  business_structure: string | null;       // XPM: businessStructure
+
+  @Column({ type: 'text', nullable: true })
+  tax_agent: string | null;                // XPM: taxAgent
+
+  @Column({ type: 'text', nullable: true })
+  agency_status: string | null;            // XPM: agencyStatus
+
+  @Column({ type: 'text', nullable: true })
+  referral_source: string | null;          // XPM: referralSource
+
+  // ─── XPM Metadata ────────────────────────────────────────────────────────────
+
+  @Column({ type: 'text', nullable: true })
+  xpm_uuid: string | null;                 // XPM: uuid
+
+  @Column({ type: 'text', nullable: true })
+  xpm_account_manager_uuid: string | null; // XPM: accountManager.uuid
+
+  @Column({ type: 'text', nullable: true })
+  xpm_account_manager_name: string | null; // XPM: accountManager.name
+
+  @Column({ type: 'text', nullable: true })
+  xpm_job_manager_uuid: string | null;     // XPM: jobManager.uuid
+
+  @Column({ type: 'text', nullable: true })
+  xpm_job_manager_name: string | null;     // XPM: jobManager.name
 
   // ─── Internal ────────────────────────────────────────────────────────────────
+
+  @Column({ type: 'text', nullable: true })
+  source: string | null;                   // e.g. "xpm" or "intake_form"
 
   @Column({ type: 'uuid', nullable: true, name: 'assigned_accountant_id' })
   assigned_accountant_id: string | null;

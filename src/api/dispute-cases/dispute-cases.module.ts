@@ -11,19 +11,20 @@ import { DisputeCasesController } from './dispute-cases.controller';
 import { DisputeCasesService } from './dispute-cases.service';
 import { DisputeCase } from './entities/dispute-case.entity';
 import { AssessmentDocument } from './entities/assessment-document.entity';
-import { CaseAuditLog } from './entities/case-audit-log.entity';
+import { PackageDocument } from '../objection-package/entities/package-document.entity';
 import { AzureBlobModule } from 'src/common/azure-blob/azure-blob.module';
-import { AzureEmailService } from 'src/common/azure-email/azure-email.service';
+import { AzureEmailModule } from 'src/common/azure-email/azure-email.module';
 import { DisputeIntakeOrchestrator } from './intake/dispute-intake.orchestrator';
-import { FyiClientHandler } from './intake/fyi-client.handler';
+import { XpmClientHandler } from './intake/xpm-client.handler';
 import { PdfStorageHandler } from './intake/pdf-storage.handler';
 import { fyiStorageService } from 'src/common/fyi-storage/fyi-storage.service';
-import { LetterGenerationService } from 'src/common/letter-generation/letter-generation.service';
+import { ApprovalReminderTask } from './approval-reminder.task';
 
 @Module({
   imports: [
     HttpModule,
     AzureBlobModule,
+    AzureEmailModule,
     ComparablesModule,
     TypeOrmModule.forFeature([
       DisputeCase,
@@ -34,17 +35,17 @@ import { LetterGenerationService } from 'src/common/letter-generation/letter-gen
       Property,
       ValuationNotice,
       User,
+      PackageDocument,
     ]),
   ],
   controllers: [DisputeCasesController],
   providers: [
     DisputeCasesService,
-    AzureEmailService,
     DisputeIntakeOrchestrator,
-    FyiClientHandler,
+    XpmClientHandler,
     PdfStorageHandler,
     fyiStorageService,
-    LetterGenerationService,
+    ApprovalReminderTask,
   ],
 })
-export class DisputeCasesModule { }
+export class DisputeCasesModule {}

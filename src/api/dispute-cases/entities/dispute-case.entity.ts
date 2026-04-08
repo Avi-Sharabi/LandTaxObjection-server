@@ -15,6 +15,7 @@ export enum DisputeStatus {
   ADVISORY_LETTER_ISSUED = 'advisory_letter_issued',
   OBJECTION_PACKAGE_PREPARED = 'objection_package_prepared',
   AWAITING_CLIENT_APPROVAL = 'awaiting_client_approval',
+  CLIENT_APPROVED = 'client_approved',
   SUBMITTED_TO_VG = 'submitted_to_vg',
   AWAITING_VG_RESPONSE = 'awaiting_vg_response',
   VG_RESPONSE_RECEIVED = 'vg_response_received',
@@ -36,6 +37,7 @@ export enum Jurisdiction {
   QLD = 'QLD',
   WA = 'WA',
 }
+
 
 @Entity('dispute_cases')
 export class DisputeCase {
@@ -77,6 +79,18 @@ export class DisputeCase {
 
   @Column({ type: 'timestamptz', nullable: true })
   client_approved_at: Date | null;
+
+  @Column({ type: 'uuid', nullable: true })
+  client_approval_token: string | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  client_approval_token_expires_at: Date | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  last_reminder_sent_at: Date | null;
+
+  @Column({ type: 'smallint', nullable: false, default: 0 })
+  reminder_count: number;
 
   @Column({ type: 'boolean', nullable: false, default: false })
   flag_heritage: boolean;
