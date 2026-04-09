@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import {
@@ -12,9 +12,11 @@ import { DisputeLegalGround, LegalGround } from '../../dispute-legal-grounds/ent
 import { Property, Jurisdiction } from '../../properties/entities/property.entity';
 import { ValuationNotice } from '../../valuation-notices/entities/valuation-notice.entity';
 import { User } from '../../users/entities/user.entity';
-import { FyiClientHandler } from './fyi-client.handler';
+import { XpmClientHandler } from './xpm-client.handler';
 import { PdfStorageHandler } from './pdf-storage.handler';
 import { AzureEmailService } from 'src/common/azure-email/azure-email.service';
+import { AccountantNotFoundException } from '../exceptions/accountant-not-found.exception';
+import { Client } from '../../clients/entities/client.entity';
 
 interface PropertyFlags {
   flag_heritage: boolean;
@@ -26,8 +28,10 @@ interface PropertyFlags {
 
 @Injectable()
 export class DisputeIntakeOrchestrator {
+  private readonly logger = new Logger(DisputeIntakeOrchestrator.name);
+
   constructor(
-    private readonly fyiClientHandler: FyiClientHandler,
+    private readonly xpmClientHandler: XpmClientHandler,
     private readonly pdfStorageHandler: PdfStorageHandler,
     private readonly azureEmailService: AzureEmailService,
     @InjectRepository(DisputeCase)
@@ -47,14 +51,14 @@ export class DisputeIntakeOrchestrator {
   async submitIntakeApplication(intakeDto: CreateDisputeIntakeDto): Promise<{ case_references: string[] }> {
     const accountant = await this.usersRepository.findOne({ where: { id: intakeDto.accountantId } });
     if (!accountant) {
-      throw new BadRequestException(`Accountant with ID ${intakeDto.accountantId} does not exist`);
+      throw new AccountantNotFoundException(intakeDto.accountantId);
     }
 
-    const fyiClient = await this.fyiClientHandler.findClientInFyi(intakeDto.email);
+    const xpmClient = await this.xpmClientHandler.findClientInXpm(intakeDto.fullName);
 
-    const client = fyiClient
-      ? await this.fyiClientHandler.handleExistingClient(intakeDto, fyiClient)
-      : await this.fyiClientHandler.handleNewProspect(intakeDto);
+    const client = xpmClient
+      ? await this.xpmClientHandler.handleExistingClient(intakeDto, xpmClient)
+      : await this.xpmClientHandler.handleNewProspect(intakeDto);
 
     // Create the source document first so its UUID can be used as the storage folder
     const assessmentDocument = await this.createAssessmentDocument(client.id, null, intakeDto.noticeDate, intakeDto.valuationYear);
@@ -63,7 +67,7 @@ export class DisputeIntakeOrchestrator {
     const filePath = await this.pdfStorageHandler.handlePdfStorage(
       intakeDto.attachment,
       assessmentDocument.id,
-      !!fyiClient,
+      !!xpmClient,
       assessmentDocument.id,  // folder identifier — caseReference not yet available at this stage
     );
     if (filePath) {
