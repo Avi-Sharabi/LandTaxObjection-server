@@ -2,6 +2,7 @@ import {
   ConflictException,
   GoneException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -12,6 +13,7 @@ import { UpdateDisputeCaseDto } from './dto/update-dispute-case.dto';
 import { CreateDisputeIntakeDto } from './dto/create-dispute-intake.dto';
 import { CloseNoObjectionDto } from './dto/close-no-objection.dto';
 import { DisputeCaseResponseDto } from './dto/dispute-case-response.dto';
+import { AnalysisReportResponseDto } from './dto/analysis-report-response.dto';
 import { ApprovalDocumentsResponseDto } from './dto/approval-documents-response.dto';
 import { DisputeCase, DisputeStatus } from './entities/dispute-case.entity';
 import { DisputeIntakeOrchestrator } from './intake/dispute-intake.orchestrator';
@@ -19,14 +21,22 @@ import { ComparablesService } from '../comparables/comparables.service';
 import { AzureEmailService } from 'src/common/azure-email/azure-email.service';
 import { AzureBlobService } from 'src/common/azure-blob/azure-blob.service';
 import { PackageDocument, PackageDocumentStatus } from '../objection-package/entities/package-document.entity';
+import { ClientEmailMissingException } from './exceptions/client-email-missing.exception';
+
+const THREE_DAY_WINDOW_DAYS = 3;
+const THREE_DAY_WINDOW_MINUTES = THREE_DAY_WINDOW_DAYS * 24 * 60;
+const THREE_DAY_WINDOW_HOURS = THREE_DAY_WINDOW_DAYS * 24;
 
 const CLOSED_STATUSES: DisputeStatus[] = [
   DisputeStatus.CLOSED,
   DisputeStatus.CLOSED_NO_OBJECTION,
 ];
 
+
 @Injectable()
 export class DisputeCasesService {
+  private readonly logger = new Logger(DisputeCasesService.name);
+
   constructor(
     private readonly dataSource: DataSource,
     private readonly intakeOrchestrator: DisputeIntakeOrchestrator,
@@ -75,7 +85,12 @@ export class DisputeCasesService {
   async closeNoObjection(caseId: string, dto: CloseNoObjectionDto): Promise<DisputeCaseResponseDto> {
     const disputeCase = await this.disputeCasesRepository.findOne({
       where: { id: caseId },
-      relations: ['valuation_notice'],
+      relations: [
+        'client',
+        'property',
+        'valuation_notice',
+        'assigned_accountant',
+      ],
     });
 
     if (!disputeCase) {
@@ -95,13 +110,45 @@ export class DisputeCasesService {
       );
     }
 
+    const closedAtDate = new Date();
+
+    // Guard: client must have an email before we commit anything
+    if (!disputeCase.client.email) {
+      throw new ClientEmailMissingException(disputeCase.case_reference);
+    }
+
+    const advisoryToken = randomUUID();
+    const advisoryTokenExpires = new Date(
+      closedAtDate.getTime() + THREE_DAY_WINDOW_HOURS * 60 * 60 * 1000,
+    );
+
+    const frontendUrl = this.config.get<string>('FRONTEND_URL') ?? '';
+    const viewReportUrl = `${frontendUrl}/advisory-view?token=${advisoryToken}`;
+
+    // Persist status transition first — email is sent after a successful save.
+    // If the email subsequently fails, the case is already correctly closed in
+    // the DB and the advisory email can be re-triggered manually.
     disputeCase.status = DisputeStatus.CLOSED_NO_OBJECTION;
-    disputeCase.closed_at = new Date();
+    disputeCase.closed_at = closedAtDate;
+    disputeCase.advisory_view_token = advisoryToken;
+    disputeCase.advisory_view_token_expires_at = advisoryTokenExpires;
     if (dto.assessorNotes !== undefined) {
       disputeCase.notes = dto.assessorNotes;
     }
 
-    return await this.disputeCasesRepository.save(disputeCase);
+    const saved = await this.disputeCasesRepository.save(disputeCase);
+
+    this.azureEmailService
+      .sendAdvisoryLetterNotification(
+        this.buildAdvisoryEmailPayload(disputeCase, dto, vgAssessedValue, closedAtDate, viewReportUrl),
+      )
+      .catch((err: unknown) => {
+        this.logger.error(
+          `Advisory letter email failed for case ${disputeCase.case_reference}: ${String(err)}`,
+        );
+      });
+
+    return saved;
   }
 
   async sendObjectionPackage(caseId: string): Promise<DisputeCaseResponseDto> {
@@ -120,14 +167,12 @@ export class DisputeCasesService {
 
     const token = randomUUID();
     const expires = new Date();
-    expires.setDate(expires.getDate() + 3);
+    expires.setDate(expires.getDate() + THREE_DAY_WINDOW_DAYS);
 
     const frontendUrl = this.config.get<string>('FRONTEND_URL') ?? '';
     const approvalLink = `${frontendUrl}/approve-package?token=${token}`;
     const clientName = disputeCase.client.name;
-    const propertyAddress = [disputeCase.property.address, disputeCase.property.suburb]
-      .filter(Boolean)
-      .join(', ');
+    const propertyAddress = this.buildPropertyAddress(disputeCase.property);
     const taxYear = String(new Date(disputeCase.valuation_notice.valuation_date).getFullYear());
 
     // Send email first — only persist state if the send succeeds.
@@ -171,7 +216,7 @@ export class DisputeCasesService {
         return { alreadyApproved: true };
       }
 
-      if (!disputeCase.client_approval_token_expires_at || disputeCase.client_approval_token_expires_at < new Date()) {
+      if (DisputeCasesService.isExpired(disputeCase.client_approval_token_expires_at)) {
         throw new GoneException('Approval token has expired — please request a new package from your adviser');
       }
 
@@ -190,9 +235,7 @@ export class DisputeCasesService {
         relations: ['property'],
       });
 
-      const propertyAddress = [withProperty?.property?.address, withProperty?.property?.suburb]
-        .filter(Boolean)
-        .join(', ');
+      const propertyAddress = this.buildPropertyAddress(withProperty?.property ?? null);
 
       return { alreadyApproved: false, propertyAddress };
     } catch (err) {
@@ -213,7 +256,7 @@ export class DisputeCasesService {
       throw new NotFoundException('Approval token is invalid or does not exist');
     }
 
-    if (!disputeCase.client_approval_token_expires_at || disputeCase.client_approval_token_expires_at < new Date()) {
+    if (DisputeCasesService.isExpired(disputeCase.client_approval_token_expires_at)) {
       throw new GoneException('Approval token has expired — please request a new package from your adviser');
     }
 
@@ -225,9 +268,7 @@ export class DisputeCasesService {
       where: { dispute_case_id: disputeCase.id, status: PackageDocumentStatus.READY },
     });
 
-    const propertyAddress = [disputeCase.property.address, disputeCase.property.suburb]
-      .filter(Boolean)
-      .join(', ');
+    const propertyAddress = this.buildPropertyAddress(disputeCase.property);
     const taxYear = String(new Date(disputeCase.valuation_notice.valuation_date).getFullYear());
 
     return {
@@ -239,8 +280,90 @@ export class DisputeCasesService {
         .map((doc) => ({
           id: doc.id,
           name: doc.name,
-          viewUrl: this.azureBlobService.getFileUrl(doc.blob_name, 30),
+          viewUrl: this.azureBlobService.getFileUrl(doc.blob_name, THREE_DAY_WINDOW_MINUTES),
         })),
+    };
+  }
+
+
+  async findAdvisoryView(token: string): Promise<AnalysisReportResponseDto> {
+    const disputeCase = await this.disputeCasesRepository.findOne({
+      where: { advisory_view_token: token },
+      select: ['id', 'case_reference', 'analysis_report_blob_path', 'advisory_view_token_expires_at'],
+    });
+
+    if (!disputeCase) {
+      throw new NotFoundException('Advisory view token is invalid or does not exist');
+    }
+
+    if (DisputeCasesService.isExpired(disputeCase.advisory_view_token_expires_at)) {
+      throw new GoneException('Advisory view link has expired — please contact your adviser to request a new one');
+    }
+
+    if (!disputeCase.analysis_report_blob_path) {
+      throw new NotFoundException('Analysis report is not yet available for this case');
+    }
+
+    return {
+      id: disputeCase.id,
+      case_reference: disputeCase.case_reference,
+      analysis_report_url: this.azureBlobService.getFileUrl(disputeCase.analysis_report_blob_path, THREE_DAY_WINDOW_MINUTES),
+    };
+  }
+
+  async findNoObjectionReportUrl(id: string): Promise<AnalysisReportResponseDto> {
+    const disputeCase = await this.disputeCasesRepository.findOne({
+      where: { id },
+      select: ['id', 'case_reference', 'analysis_report_blob_path'],
+    });
+    if (!disputeCase) throw new NotFoundException(`Dispute case #${id} not found`);
+    if (!disputeCase.analysis_report_blob_path) {
+      throw new NotFoundException(`Analysis report is not yet available for case #${id}`);
+    }
+    return {
+      id: disputeCase.id,
+      case_reference: disputeCase.case_reference,
+      analysis_report_url: this.azureBlobService.getFileUrl(disputeCase.analysis_report_blob_path, THREE_DAY_WINDOW_MINUTES),
+    };
+  }
+
+  private static isExpired(expiresAt: Date | null | undefined): boolean {
+    return !expiresAt || expiresAt < new Date();
+  }
+
+  private buildPropertyAddress(
+    property: { address: string | null; suburb: string | null; state: string | null; postcode: string | null } | null,
+  ): string {
+    if (!property) return 'Address not available';
+    return [property.address, property.suburb, property.state, property.postcode]
+      .filter(Boolean)
+      .join(', ');
+  }
+
+  private static formatAud(val: number): string {
+    return `$${val.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  }
+
+  private buildAdvisoryEmailPayload(
+    disputeCase: DisputeCase,
+    dto: CloseNoObjectionDto,
+    vgAssessedValue: number,
+    closedAtDate: Date,
+    viewReportUrl: string,
+  ): Parameters<AzureEmailService['sendAdvisoryLetterNotification']>[0] {
+    return {
+      clientEmail: disputeCase.client.email!, // guarded by ClientEmailMissingException before this is called
+      clientName: disputeCase.client.name,
+      caseReference: disputeCase.case_reference,
+      propertyAddress: this.buildPropertyAddress(disputeCase.property),
+      vgAssessedValue: DisputeCasesService.formatAud(vgAssessedValue),
+      internalAssessedValue: DisputeCasesService.formatAud(dto.internalAssessmentValue),
+      assessorFullName: disputeCase.assigned_accountant?.fullName ?? 'Your YML Adviser',
+      closedAt: closedAtDate.toLocaleString('en-AU', {
+        day: '2-digit', month: 'long', year: 'numeric',
+        hour: '2-digit', minute: '2-digit',
+      }),
+      viewReportUrl,
     };
   }
 
@@ -250,4 +373,5 @@ export class DisputeCasesService {
     await this.disputeCasesRepository.remove(disputeCase);
     return { message: `Dispute case #${id} removed` };
   }
+
 }

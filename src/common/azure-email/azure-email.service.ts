@@ -14,6 +14,7 @@ interface EmailAttachment {
 
 const TEMPLATE_NAMES = [
     'dispute-application-submitted',
+    'advisory-letter-notification',
     'objection-package-approval',
     'objection-package-reminder',
 ] as const;
@@ -45,7 +46,6 @@ export class AzureEmailService implements OnModuleInit {
 
         Object.entries(variables).forEach(([key, value]) => {
             if (Array.isArray(value)) {
-                // Replace {{#each key}}...body...{{/each}} blocks
                 const blockRegex = new RegExp(
                     `\\{\\{#each ${key}\\}\\}([\\s\\S]*?)\\{\\{/each\\}\\}`,
                     'g',
@@ -54,6 +54,12 @@ export class AzureEmailService implements OnModuleInit {
                     value.map((item) => body.replaceAll('{{this}}', item)).join(''),
                 );
             } else {
+                // Render {{#if key}}...{{/if}} blocks: include content when value is truthy, omit when falsy.
+                const ifRegex = new RegExp(
+                    `\\{\\{#if ${key}\\}\\}([\\s\\S]*?)\\{\\{/if\\}\\}`,
+                    'g',
+                );
+                html = html.replace(ifRegex, value ? '$1' : '');
                 html = html.replaceAll(`{{${key}}}`, value);
             }
         });
@@ -77,6 +83,47 @@ export class AzureEmailService implements OnModuleInit {
                 subject: `${subjectLabel} New Land Tax Dispute Intake`,
                 html,
             },
+        };
+
+        const poller = await this.emailClient.beginSend(message);
+        await poller.pollUntilDone();
+    }
+
+    async sendAdvisoryLetterNotification(data: {
+        clientName: string;
+        clientEmail: string;
+        caseReference: string;
+        propertyAddress: string;
+        vgAssessedValue: string;
+        internalAssessedValue: string;
+        assessorFullName: string;
+        attachments?: EmailAttachment[];
+        closedAt: string;
+        viewReportUrl?: string;
+    }): Promise<void> {
+        const contactEmail = this.config.getOrThrow<string>('CONTACT_EMAIL');
+
+        const html = this.loadTemplate('advisory-letter-notification', {
+            caseReference: data.caseReference,
+            propertyAddress: data.propertyAddress,
+            vgAssessedValue: data.vgAssessedValue,
+            internalAssessedValue: data.internalAssessedValue,
+            assessorFullName: data.assessorFullName,
+            closedAt: data.closedAt,
+            contactEmail,
+            viewReportUrl: data.viewReportUrl ?? '',
+        });
+
+        const message = {
+            senderAddress: this.sender,
+            recipients: {
+                to: [{ address: data.clientEmail, displayName: data.clientName }],
+            },
+            content: {
+                subject: `[${data.caseReference}] Your Land Tax Dispute Case Has Been Closed`,
+                html,
+            },
+            ...(data.attachments?.length && { attachments: data.attachments }),
         };
 
         const poller = await this.emailClient.beginSend(message);

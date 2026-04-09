@@ -10,16 +10,16 @@ import { ValuationNotice } from './valuation-notice.entity';
 import { User } from '../../users/entities/user.entity';
 
 export enum UploadStatus {
-  PENDING  = 'pending',
+  PENDING = 'pending',
   SCANNING = 'scanning',
   COMPLETE = 'complete',
-  FAILED   = 'failed',
+  FAILED = 'failed',
   REJECTED = 'rejected',
 }
 
 export enum UploadedByRole {
-  CLIENT                  = 'client',
-  STAFF                   = 'staff',
+  CLIENT = 'client',
+  STAFF = 'staff',
   STAFF_ON_BEHALF_OF_CLIENT = 'staff_on_behalf_of_client',
 }
 
