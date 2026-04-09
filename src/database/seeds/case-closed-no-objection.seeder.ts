@@ -3,8 +3,8 @@ import { DataSource } from 'typeorm';
 import { User } from 'src/api/users/entities/user.entity';
 import { Client, ClientStatus } from 'src/api/clients/entities/client.entity';
 
-const APRIL_EMAIL = 'pol.imbing@ymlgroup.com.au';
-const ARVIN_EMAIL = APRIL_EMAIL;
+const APRIL_EMAIL = 'april.clemente@ymlgroup.com.au';
+const ARVIN_EMAIL  = 'arvin.bermudez@ymlgroup.com.au';
 
 // ── ID pattern ────────────────────────────────────────────────────────────────
 // April  → c11, c12, c13, c14, c15  (prefix 1 = April)
