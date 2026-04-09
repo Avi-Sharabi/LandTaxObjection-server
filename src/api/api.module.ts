@@ -10,6 +10,8 @@ import { ValuationNoticesModule } from './valuation-notices/valuation-notices.mo
 import { ValuationModule } from './valuation/valuation.module';
 import { AuthModule } from './auth/auth.module';
 import { ObjectionPackageModule } from './objection-package/objection-package.module';
+import { NotificationsModule } from './notifications/notifications.module';
+
 @Module({
   imports: [
     AuthModule,
@@ -23,6 +25,7 @@ import { ObjectionPackageModule } from './objection-package/objection-package.mo
     UsersModule,
     DisputeLegalGroundsModule,
     ObjectionPackageModule,
+    NotificationsModule,
   ],
 })
 export class APIModule {}

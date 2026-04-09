@@ -61,7 +61,7 @@ export class DisputeCasesService {
   async findOne(id: string): Promise<DisputeCaseResponseDto> {
     const disputeCase = await this.disputeCasesRepository.findOne({
       where: { id },
-      relations: ['client', 'property', 'valuation_notice', 'assigned_accountant', 'assigned_lawyer', 'legal_grounds', 'dispute_constraints'],
+      relations: ['client', 'property', 'valuation_notice', 'assigned_accountant', 'assigned_lawyer', 'legal_grounds', "dispute_constraints"],
     });
     if (!disputeCase) throw new NotFoundException(`Dispute case #${id} not found`);
     return disputeCase;

@@ -143,6 +143,7 @@ export class DisputeCase {
   @Column({ type: 'timestamptz', nullable: true })
   advisory_view_token_expires_at: Date | null;
 
+
   @CreateDateColumn({ type: 'timestamptz' })
   created_at: Date;
 

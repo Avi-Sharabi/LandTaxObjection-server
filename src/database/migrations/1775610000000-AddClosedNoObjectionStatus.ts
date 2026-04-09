@@ -1,7 +1,7 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class AddClosedNoObjectionStatus1775600000000 implements MigrationInterface {
-  name = 'AddClosedNoObjectionStatus1775600000000';
+export class AddClosedNoObjectionStatus1775610000000 implements MigrationInterface {
+  name = 'AddClosedNoObjectionStatus1775610000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`
