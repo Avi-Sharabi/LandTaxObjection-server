@@ -121,39 +121,24 @@ export class DisputeCasesService {
       );
     }
 
-    const fmtCurrency = (val: number) =>
-      `$${val.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-
-    const property = disputeCase.property;
-    const propertyAddress = property
-      ? `${property.address}, ${property.suburb} ${property.state} ${property.postcode}`
-      : 'Address not available';
-
     const closedAtDate = new Date();
+    const token = randomUUID();
+    const tokenExpiry = new Date(closedAtDate);
+    tokenExpiry.setDate(tokenExpiry.getDate() + THREE_DAY_WINDOW_DAYS);
+    const frontendUrl = this.config.get<string>('FRONTEND_URL') ?? '';
+    const viewReportUrl = `${frontendUrl}/advisory-view?token=${token}`;
 
     // Persist status transition before sending email
     disputeCase.status = DisputeStatus.CLOSED_NO_OBJECTION;
     disputeCase.closed_at = closedAtDate;
+    disputeCase.advisory_view_token = token;
+    disputeCase.advisory_view_token_expires_at = tokenExpiry;
     if (dto.assessorNotes !== undefined) {
       disputeCase.notes = dto.assessorNotes;
     }
 
     const saved = await this.disputeCasesRepository.save(disputeCase);
 
-    // Send notification email (fire-and-forget — do not block the response)
-    const notifyEmail = this.config.get<string>('NOTIFY_EMAIL') ?? this.config.get<string>('CONTACT_EMAIL') ?? '';
-    if (notifyEmail) {
-      this.azureEmailService.sendAdvisoryLetterNotification({
-        sendTo: notifyEmail,
-        caseReference: disputeCase.case_reference,
-        clientName: disputeCase.client?.name ?? 'Client',
-        clientEmail: disputeCase.client?.email ?? '',
-        propertyAddress,
-        vgAssessedValue: fmtCurrency(vgAssessedValue),
-        internalAssessedValue: fmtCurrency(dto.internalAssessmentValue),
-        assessorFullName: disputeCase.assigned_accountant?.fullName ?? 'YML Assessor',
-      }).catch(() => { /* email failure is non-fatal */ });
-    }
     this.azureEmailService
       .sendAdvisoryLetterNotification(
         this.buildAdvisoryEmailPayload(disputeCase, dto, vgAssessedValue, closedAtDate, viewReportUrl),
@@ -413,6 +398,7 @@ export class DisputeCasesService {
     );
 
     return saved;
+  }
 
   async findAdvisoryView(token: string): Promise<AnalysisReportResponseDto> {
     const disputeCase = await this.disputeCasesRepository.findOne({

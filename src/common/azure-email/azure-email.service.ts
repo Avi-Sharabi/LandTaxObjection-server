@@ -168,41 +168,6 @@ export class AzureEmailService implements OnModuleInit {
         await poller.pollUntilDone();
     }
 
-    async sendAdvisoryLetterNotification(params: {
-        sendTo: string;
-        caseReference: string;
-        clientName: string;
-        clientEmail: string;
-        propertyAddress: string;
-        vgAssessedValue: string;
-        internalAssessedValue: string;
-        assessorFullName: string;
-    }): Promise<void> {
-        const html = this.loadTemplate('advisory-letter-notification', {
-            caseReference: params.caseReference,
-            clientName: params.clientName,
-            clientEmail: params.clientEmail,
-            propertyAddress: params.propertyAddress,
-            vgAssessedValue: params.vgAssessedValue,
-            internalAssessedValue: params.internalAssessedValue,
-            assessorFullName: params.assessorFullName,
-        });
-
-        const message = {
-            senderAddress: this.sender,
-            recipients: {
-                to: [{ address: params.sendTo, displayName: 'YML Land Tax Dispute' }],
-            },
-            content: {
-                subject: `[${params.caseReference}] Case Closed — No Objection`,
-                html,
-            },
-        };
-
-        const poller = await this.emailClient.beginSend(message);
-        await poller.pollUntilDone();
-    }
-
     async sendObjectionPackageReminder(params: {
         sendTo: string;
         clientName: string;
