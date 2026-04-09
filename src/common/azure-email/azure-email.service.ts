@@ -54,6 +54,12 @@ export class AzureEmailService implements OnModuleInit {
                     value.map((item) => body.replaceAll('{{this}}', item)).join(''),
                 );
             } else {
+                // Render {{#if key}}...{{/if}} blocks: include content when value is truthy, omit when falsy.
+                const ifRegex = new RegExp(
+                    `\\{\\{#if ${key}\\}\\}([\\s\\S]*?)\\{\\{/if\\}\\}`,
+                    'g',
+                );
+                html = html.replace(ifRegex, value ? '$1' : '');
                 html = html.replaceAll(`{{${key}}}`, value);
             }
         });
@@ -95,7 +101,7 @@ export class AzureEmailService implements OnModuleInit {
         closedAt: string;
         viewReportUrl?: string;
     }): Promise<void> {
-        const contactEmail = this.config.get('CONTACT_EMAIL') || '';
+        const contactEmail = this.config.getOrThrow<string>('CONTACT_EMAIL');
 
         const html = this.loadTemplate('advisory-letter-notification', {
             caseReference: data.caseReference,

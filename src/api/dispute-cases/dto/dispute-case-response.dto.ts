@@ -1,6 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { DisputeStatus, Jurisdiction, OutcomeResult } from '../entities/dispute-case.entity';
-import { DecisionOutcome } from '../../valuation-notices/entities/valuation-notice.entity';
+import { ValuationNoticeNestedDto } from './valuation-notice-nested.dto';
 
 export class DisputeCaseResponseDto {
   @ApiProperty()
@@ -90,25 +90,8 @@ export class DisputeCaseResponseDto {
   @ApiPropertyOptional()
   closed_at: Date | null;
 
-  @ApiPropertyOptional()
-  analysis_report_blob_path?: string | null;
-
-  @ApiPropertyOptional()
-  analysis_report_url?: string | null;
-
-  @ApiPropertyOptional()
-  valuation_notice: {
-    id: string;
-    valuation_date: Date;
-    assessed_land_value: number | null;
-    appraised_value: number | null;
-    valuation_delta: number | null;
-    decision_outcome: DecisionOutcome | null;
-    analyst_notes: string | null;
-    notice_reference: string | null;
-    benchmark_uplift_pct: number | null;
-    is_exempt: boolean;
-  } | null;
+  @ApiPropertyOptional({ nullable: true, type: () => ValuationNoticeNestedDto })
+  valuation_notice: ValuationNoticeNestedDto | null;
 
   @ApiProperty()
   created_at: Date;

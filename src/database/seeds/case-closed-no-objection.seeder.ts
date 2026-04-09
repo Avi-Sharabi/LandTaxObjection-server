@@ -3,8 +3,8 @@ import { DataSource } from 'typeorm';
 import { User } from 'src/api/users/entities/user.entity';
 import { Client, ClientStatus } from 'src/api/clients/entities/client.entity';
 
-const APRIL_EMAIL = 'april.clemente@ymlgroup.com.au';
-const ARVIN_EMAIL  = 'arvin.bermudez@ymlgroup.com.au';
+const APRIL_EMAIL = 'pol.imbing@ymlgroup.com.au';
+const ARVIN_EMAIL = APRIL_EMAIL;
 
 // ── ID pattern ────────────────────────────────────────────────────────────────
 // April  → c11, c12, c13, c14, c15  (prefix 1 = April)
@@ -331,15 +331,11 @@ export async function seedCaseClosedNoObjection(dataSource: DataSource): Promise
 
     // ── Seed April's 5 cases ───────────────────────────────────────────────────
     logger.log('\n── April Clemente ───────────────────────────────────');
-    for (const c of APRIL_CASES) {
-        await seedCase(dataSource, c, april.id);
-    }
+    await Promise.all(APRIL_CASES.map((c) => seedCase(dataSource, c, april.id)));
 
     // ── Seed Arvin's 5 cases ───────────────────────────────────────────────────
     logger.log('\n── Arvin Bermudez ───────────────────────────────────');
-    for (const c of ARVIN_CASES) {
-        await seedCase(dataSource, c, arvin.id);
-    }
+    await Promise.all(ARVIN_CASES.map((c) => seedCase(dataSource, c, arvin.id)));
 
     // ── Summary ────────────────────────────────────────────────────────────────
     logger.log('\n── Test endpoints ───────────────────────────────────');

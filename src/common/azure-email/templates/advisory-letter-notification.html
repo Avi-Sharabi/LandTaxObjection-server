@@ -95,7 +95,8 @@
                 </tr>
               </table>
 
-              <!-- View Report Button -->
+              {{#if viewReportUrl}}
+              <!-- View Report Button — only rendered when a signed URL is available -->
               <div style="text-align: center; margin: 0 0 28px 0;">
                 <a href="{{viewReportUrl}}"
                   style="display: inline-block; background-color: #1976d2; color: #ffffff; padding: 13px 36px; border-radius: 6px; font-size: 14px; font-weight: bold; text-decoration: none; letter-spacing: 0.3px;">
@@ -104,11 +105,16 @@
                 <p style="margin: 10px 0 0 0; font-size: 11px; color: #e65100;">
                   &#9888; This link expires in 72 hours. Please view or save your report promptly.
                 </p>
+                <p style="margin: 10px 0 0 0; font-size: 12px; color: #999999; line-height: 1.6;">
+                  If the button above does not work, copy and paste the following link into your browser:<br />
+                  <a href="{{viewReportUrl}}" style="color: #1976d2; word-break: break-all;">{{viewReportUrl}}</a>
+                </p>
               </div>
+              {{/if}}
 
               <!-- Contact -->
               <p style="margin: 0 0 4px 0; font-size: 13px; color: #555555; text-align: center;">
-                If you have any questions, contact us at
+                If you have any questions or the link has expired, contact us at
                 <a href="mailto:{{contactEmail}}" style="color: #1976d2; text-decoration: none;">{{contactEmail}}</a>
               </p>
 

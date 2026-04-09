@@ -137,6 +137,12 @@ export class DisputeCase {
   @Column({ type: 'text', nullable: true })
   analysis_report_blob_path: string | null;
 
+  @Column({ type: 'uuid', nullable: true })
+  advisory_view_token: string | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  advisory_view_token_expires_at: Date | null;
+
   @CreateDateColumn({ type: 'timestamptz' })
   created_at: Date;
 
