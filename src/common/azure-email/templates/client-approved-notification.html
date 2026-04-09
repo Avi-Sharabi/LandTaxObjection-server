@@ -3,14 +3,12 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Advisory Letter Ready — Action Required</title>
+    <title>Client Approved — Action Required</title>
   </head>
   <body style="margin: 0; padding: 0; background-color: #f5f5f5; font-family: Arial, sans-serif; color: #333333;">
     <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f5f5f5; padding: 40px 0;">
       <tr>
         <td align="center">
-
-          <!-- Card -->
           <table width="560" cellpadding="0" cellspacing="0" style="background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
 
             <!-- Header -->
@@ -26,17 +24,13 @@
             <tr>
               <td style="padding: 40px 40px 32px 40px;">
 
-                <!-- Icon + Title -->
                 <div style="text-align: center; margin-bottom: 28px;">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="56" height="56" viewBox="0 0 24 24" fill="#f57c00">
-                    <path d="M14 2H6c-1.1 0-2 .9-2 2v16c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/>
-                  </svg>
-                  <h2 style="margin: 12px 0 4px 0; font-size: 20px; font-weight: 600; color: #1a1a1a;">
-                    Advisory Letter Ready for Dispatch
+                  <h2 style="margin: 0 0 8px 0; font-size: 20px; font-weight: 600; color: #1a1a1a;">
+                    Objection Package Approved by Client
                   </h2>
                   <p style="margin: 0; font-size: 14px; color: #666666;">
-                    A dispute case has been closed with no objection grounds.<br/>
-                    Please review the case summary and send an advisory letter to the client.
+                    The client has approved the objection package.<br/>
+                    Please proceed to manually submit the documents to the Valuer-General.
                   </p>
                 </div>
 
@@ -54,53 +48,40 @@
                 <table width="100%" cellpadding="0" cellspacing="0" style="border: 1px solid #e0e0e0; border-radius: 6px; overflow: hidden; margin-bottom: 28px;">
                   <tr style="background-color: #f5f5f5;">
                     <td colspan="2" style="padding: 10px 16px; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #1976d2; font-weight: bold; border-bottom: 1px solid #e0e0e0;">
-                      Client &amp; Property Information
+                      Case Details
                     </td>
                   </tr>
                   <tr>
-                    <td width="40%" style="padding: 10px 16px; font-size: 13px; color: #777777; border-bottom: 1px solid #f0f0f0;">Client Name</td>
+                    <td width="40%" style="padding: 10px 16px; font-size: 13px; color: #777777; border-bottom: 1px solid #f0f0f0;">Client</td>
                     <td width="60%" style="padding: 10px 16px; font-size: 13px; color: #1a1a1a; font-weight: bold; border-bottom: 1px solid #f0f0f0;">{{clientName}}</td>
                   </tr>
                   <tr style="background-color: #fafafa;">
-                    <td style="padding: 10px 16px; font-size: 13px; color: #777777; border-bottom: 1px solid #f0f0f0;">Client Email</td>
-                    <td style="padding: 10px 16px; font-size: 13px; color: #1a1a1a; border-bottom: 1px solid #f0f0f0;">{{clientEmail}}</td>
-                  </tr>
-                  <tr>
-                    <td style="padding: 10px 16px; font-size: 13px; color: #777777; border-bottom: 1px solid #f0f0f0;">Property Address</td>
+                    <td style="padding: 10px 16px; font-size: 13px; color: #777777; border-bottom: 1px solid #f0f0f0;">Property</td>
                     <td style="padding: 10px 16px; font-size: 13px; color: #1a1a1a; border-bottom: 1px solid #f0f0f0;">{{propertyAddress}}</td>
                   </tr>
-                  <tr style="background-color: #fafafa;">
-                    <td style="padding: 10px 16px; font-size: 13px; color: #777777; border-bottom: 1px solid #f0f0f0;">VG Assessed Value</td>
-                    <td style="padding: 10px 16px; font-size: 13px; color: #1a1a1a; font-weight: bold; border-bottom: 1px solid #f0f0f0;">{{vgAssessedValue}}</td>
-                  </tr>
                   <tr>
-                    <td style="padding: 10px 16px; font-size: 13px; color: #777777; border-bottom: 1px solid #f0f0f0;">Internal Assessed Value</td>
-                    <td style="padding: 10px 16px; font-size: 13px; color: #1a1a1a; font-weight: bold; border-bottom: 1px solid #f0f0f0;">{{internalAssessedValue}}</td>
+                    <td style="padding: 10px 16px; font-size: 13px; color: #777777; border-bottom: 1px solid #f0f0f0;">Jurisdiction</td>
+                    <td style="padding: 10px 16px; font-size: 13px; color: #1a1a1a; border-bottom: 1px solid #f0f0f0;">{{jurisdiction}}</td>
                   </tr>
                   <tr style="background-color: #fafafa;">
-                    <td style="padding: 10px 16px; font-size: 13px; color: #777777;">Assessor</td>
-                    <td style="padding: 10px 16px; font-size: 13px; color: #1a1a1a;">{{assessorFullName}}</td>
+                    <td style="padding: 10px 16px; font-size: 13px; color: #777777;">Approved On</td>
+                    <td style="padding: 10px 16px; font-size: 13px; color: #1a1a1a;">{{approvedAt}}</td>
                   </tr>
                 </table>
 
                 <!-- Action note -->
-                <p style="margin: 0; font-size: 13px; color: #555555; text-align: center; background-color: #fff8e1; border: 1px solid #ffe082; border-radius: 6px; padding: 12px 20px;">
-                  Please contact the client directly to discuss the outcome and issue the advisory letter.
-                </p>
+                <div style="background-color: #fff8e1; border: 1px solid #ffe082; border-radius: 6px; padding: 16px 20px; text-align: center;">
+                  <p style="margin: 0; font-size: 13px; color: #555555; font-weight: 600;">
+                    Action Required: Please submit the objection package to the Valuer-General and mark the case as submitted in the platform.
+                  </p>
+                </div>
 
-              </td>
-            </tr>
-
-            <!-- Divider -->
-            <tr>
-              <td style="padding: 0 40px;">
-                <hr style="border: none; border-top: 1px solid #eeeeee; margin: 0;" />
               </td>
             </tr>
 
             <!-- Footer -->
             <tr>
-              <td style="padding: 20px 40px; text-align: center;">
+              <td style="padding: 20px 40px; text-align: center; border-top: 1px solid #eeeeee;">
                 <p style="margin: 0; font-size: 12px; color: #999999;">
                   This is an automated notification from the YML Group Land Tax Dispute platform.<br/>
                   Please do not reply to this email.
@@ -109,8 +90,6 @@
             </tr>
 
           </table>
-          <!-- End Card -->
-
         </td>
       </tr>
     </table>

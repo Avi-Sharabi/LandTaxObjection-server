@@ -134,11 +134,11 @@ export class DisputeCase {
   @Column({ type: 'timestamptz', nullable: true })
   closed_at: Date | null;
 
-  @Column({ type: 'text', nullable: true })
-  advisory_letter_url: string | null;
-
   @Column({ type: 'timestamptz', nullable: true })
   vg_response_received_at: Date | null;
+
+  @Column({ type: 'text', nullable: true })
+  vg_response_notes: string | null;
 
   @Column({ type: 'text', nullable: true })
   lodgment_reference_number: string | null;

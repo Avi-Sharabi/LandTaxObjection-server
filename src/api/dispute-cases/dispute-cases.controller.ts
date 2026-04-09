@@ -10,6 +10,7 @@ import {
   UseGuards,
   HttpCode,
   Query,
+  Req,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -25,6 +26,8 @@ import { DisputeCasesService } from './dispute-cases.service';
 import { UpdateDisputeCaseDto } from './dto/update-dispute-case.dto';
 import { CreateDisputeIntakeDto } from './dto/create-dispute-intake.dto';
 import { CloseNoObjectionDto } from './dto/close-no-objection.dto';
+import { SubmitToVgDto } from './dto/submit-to-vg.dto';
+import { RecordVgResponseDto } from './dto/record-vg-response.dto';
 import { ApproveObjectionPackageDto } from './dto/approve-objection-package.dto';
 import { DisputeCaseResponseDto } from './dto/dispute-case-response.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -179,6 +182,57 @@ export class DisputeCasesController {
   @ApiResponse({ status: 409, description: 'Package has already been approved by the client' })
   sendObjectionPackage(@Param('id') id: string): Promise<DisputeCaseResponseDto> {
     return this.disputeCasesService.sendObjectionPackage(id);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ACCOUNTANT, UserRole.ADMIN)
+  @ApiBearerAuth()
+  @Post(':id/submit-to-vg')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Submit an approved objection package to the Valuer-General',
+    description:
+      'Sets status to SUBMITTED_TO_VG, generates a lodgment reference number, records the submission timestamp, ' +
+      'and sends a notification email. Returns 409 if already submitted or client approval is missing.',
+  })
+  @ApiParam({ name: 'id', description: 'Dispute case UUID' })
+  @ApiBody({ type: SubmitToVgDto })
+  @ApiResponse({ status: 200, description: 'Case submitted to VG', type: DisputeCaseResponseDto })
+  @ApiResponse({ status: 401, description: 'Unauthorised' })
+  @ApiResponse({ status: 403, description: 'Forbidden — Internal Assessor role required' })
+  @ApiResponse({ status: 404, description: 'Dispute case not found' })
+  @ApiResponse({ status: 409, description: 'Already submitted or client approval missing' })
+  submitToVg(
+    @Param('id') id: string,
+    @Body() dto: SubmitToVgDto,
+  ): Promise<DisputeCaseResponseDto> {
+    return this.disputeCasesService.submitToVg(id, dto);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ACCOUNTANT, UserRole.ADMIN)
+  @ApiBearerAuth()
+  @Post(':id/record-vg-response')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Record the VG response for a submitted dispute case',
+    description:
+      'Sets status to VG_RESPONSE_RECEIVED, records the response date, and writes an immutable audit log entry. ' +
+      'Returns 409 if a response has already been recorded.',
+  })
+  @ApiParam({ name: 'id', description: 'Dispute case UUID' })
+  @ApiBody({ type: RecordVgResponseDto })
+  @ApiResponse({ status: 200, description: 'VG response recorded', type: DisputeCaseResponseDto })
+  @ApiResponse({ status: 401, description: 'Unauthorised' })
+  @ApiResponse({ status: 403, description: 'Forbidden — Internal Assessor role required' })
+  @ApiResponse({ status: 404, description: 'Dispute case not found' })
+  @ApiResponse({ status: 409, description: 'VG response already recorded' })
+  recordVgResponse(
+    @Param('id') id: string,
+    @Body() dto: RecordVgResponseDto,
+    @Req() req: { user: { id: string } },
+  ): Promise<DisputeCaseResponseDto> {
+    return this.disputeCasesService.recordVgResponse(id, dto, req.user.id);
   }
 
   @UseGuards(JwtAuthGuard)

@@ -16,6 +16,9 @@ const TEMPLATE_NAMES = [
     'dispute-application-submitted',
     'objection-package-approval',
     'objection-package-reminder',
+    'advisory-letter-notification',
+    'submit-to-vg-notification',
+    'client-approved-notification',
 ] as const;
 
 type TemplateName = (typeof TEMPLATE_NAMES)[number];
@@ -118,6 +121,41 @@ export class AzureEmailService implements OnModuleInit {
         await poller.pollUntilDone();
     }
 
+    async sendAdvisoryLetterNotification(params: {
+        sendTo: string;
+        caseReference: string;
+        clientName: string;
+        clientEmail: string;
+        propertyAddress: string;
+        vgAssessedValue: string;
+        internalAssessedValue: string;
+        assessorFullName: string;
+    }): Promise<void> {
+        const html = this.loadTemplate('advisory-letter-notification', {
+            caseReference: params.caseReference,
+            clientName: params.clientName,
+            clientEmail: params.clientEmail,
+            propertyAddress: params.propertyAddress,
+            vgAssessedValue: params.vgAssessedValue,
+            internalAssessedValue: params.internalAssessedValue,
+            assessorFullName: params.assessorFullName,
+        });
+
+        const message = {
+            senderAddress: this.sender,
+            recipients: {
+                to: [{ address: params.sendTo, displayName: 'YML Land Tax Dispute' }],
+            },
+            content: {
+                subject: `[${params.caseReference}] Case Closed — No Objection`,
+                html,
+            },
+        };
+
+        const poller = await this.emailClient.beginSend(message);
+        await poller.pollUntilDone();
+    }
+
     async sendObjectionPackageReminder(params: {
         sendTo: string;
         clientName: string;
@@ -147,6 +185,72 @@ export class AzureEmailService implements OnModuleInit {
                 html,
             },
             ...(params.attachments?.length && { attachments: params.attachments }),
+        };
+
+        const poller = await this.emailClient.beginSend(message);
+        await poller.pollUntilDone();
+    }
+
+    async sendSubmitToVgNotification(params: {
+        sendTo: string;
+        caseReference: string;
+        clientName: string;
+        propertyAddress: string;
+        jurisdiction: string;
+        lodgmentReferenceNumber: string;
+        submittedAt: string;
+        assessorFullName: string;
+    }): Promise<void> {
+        const html = this.loadTemplate('submit-to-vg-notification', {
+            caseReference: params.caseReference,
+            clientName: params.clientName,
+            propertyAddress: params.propertyAddress,
+            jurisdiction: params.jurisdiction,
+            lodgmentReferenceNumber: params.lodgmentReferenceNumber,
+            submittedAt: params.submittedAt,
+            assessorFullName: params.assessorFullName,
+        });
+
+        const message = {
+            senderAddress: this.sender,
+            recipients: {
+                to: [{ address: params.sendTo, displayName: 'YML Land Tax Dispute' }],
+            },
+            content: {
+                subject: `[${params.caseReference}] Objection Submitted to Valuer-General`,
+                html,
+            },
+        };
+
+        const poller = await this.emailClient.beginSend(message);
+        await poller.pollUntilDone();
+    }
+
+    async sendClientApprovedNotification(params: {
+        sendTo: string;
+        caseReference: string;
+        clientName: string;
+        propertyAddress: string;
+        jurisdiction: string;
+        approvedAt: string;
+    }): Promise<void> {
+        const html = this.loadTemplate('client-approved-notification', {
+            caseReference: params.caseReference,
+            clientName: params.clientName,
+            propertyAddress: params.propertyAddress,
+            jurisdiction: params.jurisdiction,
+            approvedAt: params.approvedAt,
+        });
+
+        const message = {
+            senderAddress: this.sender,
+            recipients: {
+                to: [{ address: params.sendTo, displayName: 'YML Land Tax Assessor' }],
+            },
+            content: {
+                subject: `[${params.caseReference}] Action Required — Client Approved Objection Package`,
+                html,
+            },
         };
 
         const poller = await this.emailClient.beginSend(message);

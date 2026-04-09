@@ -28,6 +28,13 @@ const CLOSED_STATUSES: DisputeStatus[] = [
   DisputeStatus.CLOSED_NO_OBJECTION,
 ];
 
+const LODGMENT_REF_PREFIX = 'VG';
+
+const VG_SUBMITTABLE_STATUSES: DisputeStatus[] = [
+  DisputeStatus.SUBMITTED_TO_VG,
+  DisputeStatus.AWAITING_VG_RESPONSE,
+];
+
 @Injectable()
 export class DisputeCasesService {
   constructor(
@@ -41,6 +48,8 @@ export class DisputeCasesService {
     private disputeCasesRepository: Repository<DisputeCase>,
     @InjectRepository(PackageDocument)
     private readonly packageDocumentRepo: Repository<PackageDocument>,
+    @InjectRepository(CaseAuditLog)
+    private readonly auditLogRepo: Repository<CaseAuditLog>,
   ) { }
 
   async submitIntakeApplication(intakeDto: CreateDisputeIntakeDto): Promise<unknown> {
@@ -98,73 +107,41 @@ export class DisputeCasesService {
       );
     }
 
-    const originalStatus = disputeCase.status;
+    const fmtCurrency = (val: number) =>
+      `$${val.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
-    // Build property address string
     const property = disputeCase.property;
     const propertyAddress = property
       ? `${property.address}, ${property.suburb} ${property.state} ${property.postcode}`
       : 'Address not available';
 
-    // Format currency values
-    const fmtCurrency = (val: number) =>
-      `$${val.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-
-    // Format assessment date
-    const assessmentDate = disputeCase.valuation_notice?.valuation_date
-      ? new Date(disputeCase.valuation_notice.valuation_date).toLocaleDateString('en-AU', {
-          day: '2-digit',
-          month: 'long',
-          year: 'numeric',
-        })
-      : 'N/A';
-
     const closedAtDate = new Date();
-    const closedAtFormatted = closedAtDate.toLocaleString('en-AU', {
-      day: '2-digit',
-      month: 'long',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
 
-    // Generate case summary HTML
-    const letterHtml = this.letterService.generateAdvisoryLetter({
-      caseReference: disputeCase.case_reference,
-      clientName: disputeCase.client?.name ?? 'Client',
-      clientEmail: disputeCase.client?.email ?? '',
-      propertyAddress,
-      vgAssessedValue: fmtCurrency(vgAssessedValue),
-      internalAssessedValue: fmtCurrency(dto.internalAssessmentValue),
-      assessmentDate,
-      assessorFullName: disputeCase.assigned_accountant?.fullName ?? 'YML Assessor',
-      closedAt: closedAtFormatted,
-    });
-
-    // Upload case summary to Blob Storage
-    const blobName = `cases/${caseId}/letters/advisory-${Date.now()}.html`;
-    const base64Html = Buffer.from(letterHtml, 'utf-8').toString('base64');
-    const blobPath = await this.blobService.uploadFile(blobName, base64Html);
-    if (!blobPath) {
-      throw new InternalServerErrorException('Failed to upload advisory letter to Blob Storage.');
-    }
-
-    // Generate SAS URL now (needed in the notification email body)
-    const sasUrl = this.blobService.getFileUrl(blobPath, 1440); // 24-hour expiry
-    if (!sasUrl) {
-      await this.blobService.deleteFile(blobPath);
-      throw new InternalServerErrorException('Failed to generate advisory letter download URL.');
-    }
-
-    // Persist status transition
+    // Persist status transition before sending email
     disputeCase.status = DisputeStatus.CLOSED_NO_OBJECTION;
     disputeCase.closed_at = closedAtDate;
-    disputeCase.advisory_letter_url = blobPath;
     if (dto.assessorNotes !== undefined) {
       disputeCase.notes = dto.assessorNotes;
     }
 
-    return await this.disputeCasesRepository.save(disputeCase);
+    const saved = await this.disputeCasesRepository.save(disputeCase);
+
+    // Send notification email (fire-and-forget — do not block the response)
+    const notifyEmail = this.config.get<string>('NOTIFY_EMAIL') ?? this.config.get<string>('CONTACT_EMAIL') ?? '';
+    if (notifyEmail) {
+      this.azureEmailService.sendAdvisoryLetterNotification({
+        sendTo: notifyEmail,
+        caseReference: disputeCase.case_reference,
+        clientName: disputeCase.client?.name ?? 'Client',
+        clientEmail: disputeCase.client?.email ?? '',
+        propertyAddress,
+        vgAssessedValue: fmtCurrency(vgAssessedValue),
+        internalAssessedValue: fmtCurrency(dto.internalAssessmentValue),
+        assessorFullName: disputeCase.assigned_accountant?.fullName ?? 'YML Assessor',
+      }).catch(() => { /* email failure is non-fatal */ });
+    }
+
+    return saved;
   }
 
   async sendObjectionPackage(caseId: string): Promise<DisputeCaseResponseDto> {
@@ -250,12 +227,27 @@ export class DisputeCasesService {
       // so relations are safe to join here.
       const withProperty = await this.disputeCasesRepository.findOne({
         where: { id: disputeCase.id },
-        relations: ['property'],
+        relations: ['property', 'client'],
       });
 
       const propertyAddress = [withProperty?.property?.address, withProperty?.property?.suburb]
         .filter(Boolean)
         .join(', ');
+
+      // Notify assessor that the client has approved — fire-and-forget
+      const assessorEmail = this.config.get<string>('ASSESSOR_EMAIL') ?? '';
+      if (assessorEmail) {
+        this.azureEmailService.sendClientApprovedNotification({
+          sendTo: assessorEmail,
+          caseReference: disputeCase.case_reference,
+          clientName: withProperty?.client?.name ?? 'Client',
+          propertyAddress,
+          jurisdiction: disputeCase.jurisdiction,
+          approvedAt: disputeCase.client_approved_at!.toLocaleString('en-AU', {
+            day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit',
+          }),
+        }).catch(() => { /* email failure is non-fatal */ });
+      }
 
       return { alreadyApproved: false, propertyAddress };
     } catch (err) {
@@ -305,6 +297,105 @@ export class DisputeCasesService {
           viewUrl: this.azureBlobService.getFileUrl(doc.blob_name, 30),
         })),
     };
+  }
+
+  async submitToVg(
+    caseId: string,
+    dto: SubmitToVgDto,
+  ): Promise<DisputeCaseResponseDto> {
+    const disputeCase = await this.disputeCasesRepository.findOne({
+      where: { id: caseId },
+      relations: ['client', 'property', 'valuation_notice', 'assigned_accountant', 'assigned_lawyer', 'legal_grounds', 'dispute_constraints'],
+    });
+
+    if (!disputeCase) {
+      throw new NotFoundException(`Dispute case #${caseId} not found`);
+    }
+
+    if (disputeCase.status === DisputeStatus.SUBMITTED_TO_VG || disputeCase.status === DisputeStatus.AWAITING_VG_RESPONSE) {
+      throw new ConflictException(`Dispute case #${caseId} has already been submitted to the VG`);
+    }
+
+    if (!disputeCase.client_approved_at) {
+      throw new ConflictException(`Dispute case #${caseId} has not been approved by the client`);
+    }
+
+    const submittedAt = new Date();
+    const lodgmentReferenceNumber = `${LODGMENT_REF_PREFIX}-${disputeCase.case_reference}-${Date.now()}`;
+
+    disputeCase.status = DisputeStatus.SUBMITTED_TO_VG;
+    disputeCase.submitted_at = submittedAt;
+    disputeCase.lodgment_reference_number = lodgmentReferenceNumber;
+    if (dto.submissionNotes) {
+      disputeCase.notes = dto.submissionNotes;
+    }
+
+    const saved = await this.disputeCasesRepository.save(disputeCase);
+
+    // Notify assessor — fire-and-forget
+    const notifyEmail = this.config.get<string>('ASSESSOR_EMAIL') ?? this.config.get<string>('CONTACT_EMAIL') ?? '';
+    if (notifyEmail) {
+      const property = disputeCase.property;
+      const propertyAddress = property
+        ? [property.address, property.suburb, property.state, property.postcode].filter(Boolean).join(', ')
+        : 'Address not available';
+
+      this.azureEmailService.sendSubmitToVgNotification({
+        sendTo: notifyEmail,
+        caseReference: disputeCase.case_reference,
+        clientName: disputeCase.client?.name ?? 'Client',
+        propertyAddress,
+        jurisdiction: disputeCase.jurisdiction,
+        lodgmentReferenceNumber,
+        submittedAt: submittedAt.toLocaleString('en-AU', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
+        assessorFullName: disputeCase.assigned_accountant?.fullName ?? 'YML Assessor',
+      }).catch(() => { /* email failure is non-fatal */ });
+    }
+
+    return saved;
+  }
+
+  async recordVgResponse(
+    caseId: string,
+    dto: RecordVgResponseDto,
+    assessorId: string,
+  ): Promise<DisputeCaseResponseDto> {
+    const disputeCase = await this.disputeCasesRepository.findOne({
+      where: { id: caseId },
+      relations: ['client', 'property', 'valuation_notice', 'assigned_accountant', 'assigned_lawyer', 'legal_grounds', 'dispute_constraints'],
+    });
+
+    if (!disputeCase) {
+      throw new NotFoundException(`Dispute case #${caseId} not found`);
+    }
+
+    if (!VG_SUBMITTABLE_STATUSES.includes(disputeCase.status) && disputeCase.status !== DisputeStatus.VG_RESPONSE_RECEIVED) {
+      throw new ConflictException(`Dispute case #${caseId} is not in a state that allows recording a VG response`);
+    }
+
+    if (disputeCase.status === DisputeStatus.VG_RESPONSE_RECEIVED) {
+      throw new ConflictException(`VG response has already been recorded for dispute case #${caseId}`);
+    }
+
+    disputeCase.status = DisputeStatus.VG_RESPONSE_RECEIVED;
+    disputeCase.vg_response_received_at = new Date(dto.responseDate);
+    disputeCase.vg_response_notes = dto.responseNotes ?? null;
+    if (dto.lodgmentReferenceNumber !== undefined) {
+      disputeCase.lodgment_reference_number = dto.lodgmentReferenceNumber;
+    }
+
+    const saved = await this.disputeCasesRepository.save(disputeCase);
+
+    await this.auditLogRepo.save(
+      this.auditLogRepo.create({
+        case_id: caseId,
+        action: AuditAction.VG_RESPONSE_RECORDED,
+        performed_by: assessorId,
+        response_notes: dto.responseNotes ?? null,
+      }),
+    );
+
+    return saved;
   }
 
   async remove(id: string): Promise<{ message: string }> {
