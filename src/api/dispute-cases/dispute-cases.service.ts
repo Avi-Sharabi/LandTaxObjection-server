@@ -23,17 +23,15 @@ import { AzureBlobService } from 'src/common/azure-blob/azure-blob.service';
 import { PackageDocument, PackageDocumentStatus } from '../objection-package/entities/package-document.entity';
 import { ClientEmailMissingException } from './exceptions/client-email-missing.exception';
 
-const ADVISORY_REPORT_LINK_EXPIRY_MINUTES = 3 * 24 * 60; // 3-day signed URL for advisory report
-const REPORT_LINK_EXPIRY_MINUTES = 60;                    // 60-minute signed URL for accountant report view
-const APPROVAL_TOKEN_EXPIRY_DAYS = 3;                     // 3-day client approval window
-const DOCUMENT_VIEW_URL_EXPIRY_MINUTES = 30;              // short-lived signed URL for approval docs
+const THREE_DAY_WINDOW_DAYS = 3;
+const THREE_DAY_WINDOW_MINUTES = THREE_DAY_WINDOW_DAYS * 24 * 60;
+const THREE_DAY_WINDOW_HOURS = THREE_DAY_WINDOW_DAYS * 24;
 
 const CLOSED_STATUSES: DisputeStatus[] = [
   DisputeStatus.CLOSED,
   DisputeStatus.CLOSED_NO_OBJECTION,
 ];
 
-const ADVISORY_TOKEN_TTL_HOURS = 3 * 24; // 3-day advisory view token
 
 @Injectable()
 export class DisputeCasesService {
@@ -121,7 +119,7 @@ export class DisputeCasesService {
 
     const advisoryToken = randomUUID();
     const advisoryTokenExpires = new Date(
-      closedAtDate.getTime() + ADVISORY_TOKEN_TTL_HOURS * 60 * 60 * 1000,
+      closedAtDate.getTime() + THREE_DAY_WINDOW_HOURS * 60 * 60 * 1000,
     );
 
     const frontendUrl = this.config.get<string>('FRONTEND_URL') ?? '';
@@ -169,7 +167,7 @@ export class DisputeCasesService {
 
     const token = randomUUID();
     const expires = new Date();
-    expires.setDate(expires.getDate() + APPROVAL_TOKEN_EXPIRY_DAYS);
+    expires.setDate(expires.getDate() + THREE_DAY_WINDOW_DAYS);
 
     const frontendUrl = this.config.get<string>('FRONTEND_URL') ?? '';
     const approvalLink = `${frontendUrl}/approve-package?token=${token}`;
@@ -282,7 +280,7 @@ export class DisputeCasesService {
         .map((doc) => ({
           id: doc.id,
           name: doc.name,
-          viewUrl: this.azureBlobService.getFileUrl(doc.blob_name, DOCUMENT_VIEW_URL_EXPIRY_MINUTES),
+          viewUrl: this.azureBlobService.getFileUrl(doc.blob_name, THREE_DAY_WINDOW_MINUTES),
         })),
     };
   }
@@ -309,7 +307,7 @@ export class DisputeCasesService {
     return {
       id: disputeCase.id,
       case_reference: disputeCase.case_reference,
-      analysis_report_url: this.azureBlobService.getFileUrl(disputeCase.analysis_report_blob_path, ADVISORY_REPORT_LINK_EXPIRY_MINUTES),
+      analysis_report_url: this.azureBlobService.getFileUrl(disputeCase.analysis_report_blob_path, THREE_DAY_WINDOW_MINUTES),
     };
   }
 
@@ -325,7 +323,7 @@ export class DisputeCasesService {
     return {
       id: disputeCase.id,
       case_reference: disputeCase.case_reference,
-      analysis_report_url: this.azureBlobService.getFileUrl(disputeCase.analysis_report_blob_path, REPORT_LINK_EXPIRY_MINUTES),
+      analysis_report_url: this.azureBlobService.getFileUrl(disputeCase.analysis_report_blob_path, THREE_DAY_WINDOW_MINUTES),
     };
   }
 
