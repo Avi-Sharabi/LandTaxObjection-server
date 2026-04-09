@@ -91,6 +91,12 @@ export class DisputeCase {
   @Column({ type: 'smallint', nullable: false, default: 0 })
   reminder_count: number;
 
+  @Column({ type: 'smallint', nullable: false, default: 0 })
+  vg_follow_up_count: number;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  last_vg_follow_up_sent_at: Date | null;
+
   @Column({ type: 'boolean', nullable: false, default: false })
   flag_heritage: boolean;
 

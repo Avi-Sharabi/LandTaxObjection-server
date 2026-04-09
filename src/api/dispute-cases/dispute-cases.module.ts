@@ -19,6 +19,8 @@ import { XpmClientHandler } from './intake/xpm-client.handler';
 import { PdfStorageHandler } from './intake/pdf-storage.handler';
 import { fyiStorageService } from 'src/common/fyi-storage/fyi-storage.service';
 import { ApprovalReminderTask } from './approval-reminder.task';
+import { VGResponseMonitorTask } from './vg-response-monitor.task';
+import { CaseAuditLog } from './entities/case-audit-log.entity';
 
 @Module({
   imports: [
@@ -35,6 +37,7 @@ import { ApprovalReminderTask } from './approval-reminder.task';
       ValuationNotice,
       User,
       PackageDocument,
+      CaseAuditLog,
     ]),
   ],
   controllers: [DisputeCasesController],
@@ -45,6 +48,7 @@ import { ApprovalReminderTask } from './approval-reminder.task';
     PdfStorageHandler,
     fyiStorageService,
     ApprovalReminderTask,
+    VGResponseMonitorTask,
   ],
 })
 export class DisputeCasesModule {}

@@ -17,6 +17,7 @@ const TEMPLATE_NAMES = [
     'advisory-letter-notification',
     'objection-package-approval',
     'objection-package-reminder',
+    'vg-follow-up-enquiry',
 ] as const;
 
 type TemplateName = (typeof TEMPLATE_NAMES)[number];
@@ -159,6 +160,39 @@ export class AzureEmailService implements OnModuleInit {
                 html,
             },
             ...(params.attachments?.length && { attachments: params.attachments }),
+        };
+
+        const poller = await this.emailClient.beginSend(message);
+        await poller.pollUntilDone();
+    }
+
+    async sendVGFollowUpEnquiry(params: {
+        sendTo: string;
+        lodgmentReference: string;
+        propertyAddress: string;
+        submissionDate: string;
+        followUpCount: string;
+        firmName: string;
+        contactEmail: string;
+    }): Promise<void> {
+        const html = this.loadTemplate('vg-follow-up-enquiry', {
+            lodgment_reference: params.lodgmentReference,
+            property_address: params.propertyAddress,
+            submission_date: params.submissionDate,
+            follow_up_count: params.followUpCount,
+            firm_name: params.firmName,
+            contact_email: params.contactEmail,
+        });
+
+        const message = {
+            senderAddress: this.sender,
+            recipients: {
+                to: [{ address: params.sendTo, displayName: 'Valuer-General Office' }],
+            },
+            content: {
+                subject: `[${params.lodgmentReference}] VG Response Follow-Up Enquiry #${params.followUpCount}`,
+                html,
+            },
         };
 
         const poller = await this.emailClient.beginSend(message);
