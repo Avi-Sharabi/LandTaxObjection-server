@@ -22,7 +22,7 @@ const CASES = [
       valuationNotice: 'a3000000-0000-0000-0000-000000000001',
       disputeCase:     'a4000000-0000-0000-0000-000000000001',
     },
-    client:   { name: 'James Harrington',    email: 'pol.imbing@ymlgroup.com.au' },
+    client:   { name: 'James Harrington',    email: 'arvin.bermudez@ymlgroup.com.au' },
     property: { address: '42 Mock Street',   suburb: 'Sydney',       state: Jurisdiction.NSW,  postcode: '2000' },
     notice:   { valuation_date: '2024-07-01', assessed_land_value: 1_200_000, appraised_value: 950_000,   valuation_delta: -250_000 },
     case:     { case_reference: 'SEED-OBJ-001', status: DisputeStatus.OBJECTION_PACKAGE_PREPARED, statutory_deadline: '2025-12-31', jurisdiction: Jurisdiction.NSW },

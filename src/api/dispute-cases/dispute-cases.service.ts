@@ -22,6 +22,12 @@ import { AzureEmailService } from 'src/common/azure-email/azure-email.service';
 import { AzureBlobService } from 'src/common/azure-blob/azure-blob.service';
 import { PackageDocument, PackageDocumentStatus } from '../objection-package/entities/package-document.entity';
 import { ClientEmailMissingException } from './exceptions/client-email-missing.exception';
+import { AdvisoryLetterEmailFailedException } from './exceptions/advisory-letter-email-failed.exception';
+
+const ADVISORY_REPORT_LINK_EXPIRY_MINUTES = 72 * 60;  // 72-hour signed URL for advisory report
+const REPORT_LINK_EXPIRY_MINUTES = 60;                 // 60-minute signed URL for accountant report view
+const APPROVAL_TOKEN_EXPIRY_DAYS = 30;                 // client approval window
+const DOCUMENT_VIEW_URL_EXPIRY_MINUTES = 30;           // short-lived signed URL for approval docs
 
 const CLOSED_STATUSES: DisputeStatus[] = [
   DisputeStatus.CLOSED,
@@ -169,9 +175,7 @@ export class DisputeCasesService {
     const frontendUrl = this.config.get<string>('FRONTEND_URL') ?? '';
     const approvalLink = `${frontendUrl}/approve-package?token=${token}`;
     const clientName = disputeCase.client.name;
-    const propertyAddress = [disputeCase.property.address, disputeCase.property.suburb]
-      .filter(Boolean)
-      .join(', ');
+    const propertyAddress = this.formatPropertyAddress(disputeCase.property);
     const taxYear = String(new Date(disputeCase.valuation_notice.valuation_date).getFullYear());
 
     // Send email first — only persist state if the send succeeds.
@@ -234,9 +238,7 @@ export class DisputeCasesService {
         relations: ['property'],
       });
 
-      const propertyAddress = [withProperty?.property?.address, withProperty?.property?.suburb]
-        .filter(Boolean)
-        .join(', ');
+      const propertyAddress = this.formatPropertyAddress(withProperty?.property);
 
       return { alreadyApproved: false, propertyAddress };
     } catch (err) {
@@ -269,9 +271,7 @@ export class DisputeCasesService {
       where: { dispute_case_id: disputeCase.id, status: PackageDocumentStatus.READY },
     });
 
-    const propertyAddress = [disputeCase.property.address, disputeCase.property.suburb]
-      .filter(Boolean)
-      .join(', ');
+    const propertyAddress = this.formatPropertyAddress(disputeCase.property);
     const taxYear = String(new Date(disputeCase.valuation_notice.valuation_date).getFullYear());
 
     return {
@@ -283,7 +283,7 @@ export class DisputeCasesService {
         .map((doc) => ({
           id: doc.id,
           name: doc.name,
-          viewUrl: this.azureBlobService.getFileUrl(doc.blob_name, 30),
+          viewUrl: this.azureBlobService.getFileUrl(doc.blob_name, DOCUMENT_VIEW_URL_EXPIRY_MINUTES),
         })),
     };
   }
@@ -310,7 +310,7 @@ export class DisputeCasesService {
     return {
       id: disputeCase.id,
       case_reference: disputeCase.case_reference,
-      analysis_report_url: this.azureBlobService.getFileUrl(disputeCase.analysis_report_blob_path, 60),
+      analysis_report_url: this.azureBlobService.getFileUrl(disputeCase.analysis_report_blob_path, expiryMinutes),
     };
   }
 
