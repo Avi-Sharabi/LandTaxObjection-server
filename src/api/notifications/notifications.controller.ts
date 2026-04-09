@@ -1,8 +1,11 @@
 import {
+  Body,
   Controller,
   Get,
   Patch,
+  Post,
   Param,
+  Query,
   UseGuards,
   Request,
   Sse,
@@ -21,6 +24,9 @@ import { Observable } from 'rxjs';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { NotificationsService } from './notifications.service';
 import { NotificationResponseDto } from './dto/notification-response.dto';
+import { CreateNotificationDto } from './dto/create-notification.dto';
+import { GetNotificationsQueryDto } from './dto/get-notifications-query.dto';
+import { PaginatedNotificationsResponseDto } from './dto/paginated-notifications-response.dto';
 import { AuthResponseDto } from '../auth/dto/auth-response.dto';
 
 interface AuthenticatedRequest extends ExpressRequest {
@@ -41,11 +47,33 @@ export class NotificationsController implements OnModuleDestroy {
 
   constructor(private readonly notificationsService: NotificationsService) {}
 
+  @Post()
+  @ApiOperation({ summary: 'Create a notification and push it to all active SSE streams for the target user' })
+  @ApiResponse({ status: 201, type: NotificationResponseDto })
+  @ApiResponse({ status: 401, description: 'Unauthorised' })
+  create(@Body() dto: CreateNotificationDto): Promise<NotificationResponseDto> {
+    return this.notificationsService.create(dto.userId, dto.type, dto.message, dto.caseId);
+  }
+
   @Get()
   @ApiOperation({ summary: 'Get all unread notifications for the authenticated user' })
   @ApiResponse({ status: 200, type: [NotificationResponseDto] })
   getUnread(@Request() req: AuthenticatedRequest): Promise<NotificationResponseDto[]> {
     return this.notificationsService.getUnread(req.user.id);
+  }
+
+  @Get('feed')
+  @ApiOperation({
+    summary: 'Get paginated notifications for infinite scrolling',
+    description:
+      'Returns notifications newest-first. Pass `cursor` (the `nextCursor` from the previous response) to fetch the next page.',
+  })
+  @ApiResponse({ status: 200, type: PaginatedNotificationsResponseDto })
+  getFeed(
+    @Request() req: AuthenticatedRequest,
+    @Query() query: GetNotificationsQueryDto,
+  ): Promise<PaginatedNotificationsResponseDto> {
+    return this.notificationsService.findPaginated(req.user.id, query);
   }
 
   @Patch(':id/read')

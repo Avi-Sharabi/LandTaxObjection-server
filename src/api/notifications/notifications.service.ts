@@ -1,11 +1,13 @@
 import { Injectable, MessageEvent, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { FindOptionsWhere, LessThan, Repository } from 'typeorm';
 import { plainToInstance } from 'class-transformer';
 import { Subject, Observable, merge, interval } from 'rxjs';
 import { map } from 'rxjs/operators';
-import { Notification } from './entities/notification.entity';
+import { Notification, NotificationType } from './entities/notification.entity';
 import { NotificationResponseDto } from './dto/notification-response.dto';
+import { GetNotificationsQueryDto } from './dto/get-notifications-query.dto';
+import { PaginatedNotificationsResponseDto } from './dto/paginated-notifications-response.dto';
 
 @Injectable()
 export class NotificationsService {
@@ -21,10 +23,42 @@ export class NotificationsService {
     private readonly notificationRepo: Repository<Notification>,
   ) {}
 
+  async findPaginated(
+    userId: string,
+    { cursor, limit = 20 }: GetNotificationsQueryDto,
+  ): Promise<PaginatedNotificationsResponseDto> {
+    const where: FindOptionsWhere<Notification> = { userId };
+    if (cursor) {
+      where.createdAt = LessThan(new Date(cursor));
+    }
+
+    // Fetch one extra to determine whether a next page exists, and count unread in parallel
+    const [rows, totalUnread] = await Promise.all([
+      this.notificationRepo.find({
+        where,
+        order: { createdAt: 'DESC' },
+        take: limit + 1,
+      }),
+      this.notificationRepo.count({ where: { userId, read: false } }),
+    ]);
+
+    const hasMore = rows.length > limit;
+    const data = rows.slice(0, limit);
+
+    const dtos = plainToInstance(NotificationResponseDto, data, {
+      excludeExtraneousValues: true,
+    });
+
+    const nextCursor = hasMore ? data[data.length - 1].createdAt.toISOString() : null;
+
+    return { data: dtos, nextCursor, hasMore, totalUnread };
+  }
+
   async getUnread(userId: string): Promise<NotificationResponseDto[]> {
     const notifications = await this.notificationRepo.find({
       where: { userId, read: false },
       order: { createdAt: 'DESC' },
+      take: 50,
     });
 
     return plainToInstance(NotificationResponseDto, notifications, {
@@ -58,7 +92,7 @@ export class NotificationsService {
    */
   async create(
     userId: string,
-    type: string,
+    type: NotificationType,
     message: string,
     caseId?: string,
   ): Promise<NotificationResponseDto> {
@@ -100,15 +134,16 @@ export class NotificationsService {
     if (!this.streams.has(userId)) {
       this.streams.set(userId, new Set());
     }
-    const userStreams = this.streams.get(userId)!;
+    // get() is guaranteed non-null: set() was called above if the key was absent
+    const userStreams = this.streams.get(userId) as Set<Subject<NotificationResponseDto>>;
     userStreams.add(subject);
 
     const notifications$: Observable<MessageEvent> = subject.pipe(
-      map((dto) => ({ event: 'notification', data: dto }) as MessageEvent),
+      map((dto) => ({ type: 'notification', data: dto }) as MessageEvent),
     );
 
     const heartbeat$: Observable<MessageEvent> = interval(30_000).pipe(
-      map(() => ({ event: 'heartbeat', data: '' }) as MessageEvent),
+      map(() => ({ type: 'heartbeat', data: '' }) as MessageEvent),
     );
 
     const observable = merge(notifications$, heartbeat$);

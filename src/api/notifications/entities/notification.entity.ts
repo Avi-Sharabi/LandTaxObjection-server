@@ -8,6 +8,12 @@ import {
 } from 'typeorm';
 import { User } from '../../users/entities/user.entity';
 
+export enum NotificationType {
+  APPROVAL_REQUESTED = 'approval_requested',
+  APPROVAL_REMINDER = 'approval_reminder',
+  APPROVAL_REMINDER_MAX_REACHED = 'approval_reminder_max_reached',
+}
+
 @Entity('notifications')
 export class Notification {
   @PrimaryGeneratedColumn('uuid')
@@ -17,7 +23,7 @@ export class Notification {
   userId: string;
 
   @Column({ type: 'text', nullable: false })
-  type: string;
+  type: NotificationType;
 
   @Column({ type: 'text', nullable: false })
   message: string;
