@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { DisputeStatus, Jurisdiction, OutcomeResult } from '../entities/dispute-case.entity';
+import { ValuationNoticeNestedDto } from './valuation-notice-nested.dto';
 
 export class DisputeCaseResponseDto {
   @ApiProperty()
@@ -94,6 +95,8 @@ export class DisputeCaseResponseDto {
 
   @ApiPropertyOptional()
   lodgment_reference_number: string | null;
+  @ApiPropertyOptional({ nullable: true, type: () => ValuationNoticeNestedDto })
+  valuation_notice: ValuationNoticeNestedDto | null;
 
   @ApiProperty()
   created_at: Date;

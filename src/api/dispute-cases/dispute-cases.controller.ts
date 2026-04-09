@@ -30,6 +30,7 @@ import { SubmitToVgDto } from './dto/submit-to-vg.dto';
 import { RecordVgResponseDto } from './dto/record-vg-response.dto';
 import { ApproveObjectionPackageDto } from './dto/approve-objection-package.dto';
 import { DisputeCaseResponseDto } from './dto/dispute-case-response.dto';
+import { AnalysisReportResponseDto } from './dto/analysis-report-response.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -104,6 +105,20 @@ export class DisputeCasesController {
     return this.disputeCasesService.findAll();
   }
 
+  // Public endpoint — no auth guard. Accessed via time-limited token link in the advisory letter email.
+  @Get('advisory-view')
+  @ApiOperation({
+    summary: 'Public advisory document view — validates token and returns case summary with a signed PDF URL',
+    description: 'Token is single-use per link and expires 72 hours after the case is closed.',
+  })
+  @ApiQuery({ name: 'token', required: true, description: 'Advisory view token UUID from the email link' })
+  @ApiResponse({ status: 200, description: 'Case summary and signed report URL', type: AnalysisReportResponseDto })
+  @ApiResponse({ status: 404, description: 'Token not found or invalid' })
+  @ApiResponse({ status: 410, description: 'Token has expired' })
+  findAdvisoryView(@Query('token') token: string): Promise<AnalysisReportResponseDto> {
+    return this.disputeCasesService.findAdvisoryView(token);
+  }
+
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @Get(':id')
@@ -114,6 +129,18 @@ export class DisputeCasesController {
   @ApiResponse({ status: 404, description: 'Dispute case not found' })
   findOne(@Param('id') id: string): Promise<DisputeCaseResponseDto> {
     return this.disputeCasesService.findOne(id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @Get(':id/no-objection-report-url')
+  @ApiOperation({ summary: 'Get signed URL for the no-objection analysis report' })
+  @ApiParam({ name: 'id', description: 'Dispute case UUID' })
+  @ApiResponse({ status: 200, description: 'Case ID, reference, and signed report URL', type: AnalysisReportResponseDto })
+  @ApiResponse({ status: 401, description: 'Unauthorised' })
+  @ApiResponse({ status: 404, description: 'Dispute case not found' })
+  getNoObjectionReportUrl(@Param('id') id: string): Promise<AnalysisReportResponseDto> {
+    return this.disputeCasesService.findNoObjectionReportUrl(id);
   }
 
   @UseGuards(JwtAuthGuard)
@@ -157,6 +184,7 @@ export class DisputeCasesController {
   @ApiResponse({ status: 200, description: 'Case closed — no objection warranted', type: DisputeCaseResponseDto })
   @ApiResponse({ status: 401, description: 'Unauthorised' })
   @ApiResponse({ status: 409, description: 'Case is already closed, or internal value is below VG value' })
+  @ApiResponse({ status: 422, description: 'Client has no email address on record' })
   closeNoObjection(
     @Param('id') id: string,
     @Body() dto: CloseNoObjectionDto,

@@ -3,12 +3,16 @@ import { DataSource } from 'typeorm';
 import { AppDataSource } from '../data-source';
 import { seedUsers } from './user.seeder';
 import { seedObjectionPackage } from './objection-package.seeder';
+import { seedCaseClosedNoObjection } from './case-closed-no-objection.seeder';
+import { seedNotifications } from './notification.seeder';
 
 const logger = new Logger('Seed');
 
 async function runSeeders(dataSource: DataSource): Promise<void> {
     await seedUsers(dataSource);
     await seedObjectionPackage(dataSource);
+    await seedCaseClosedNoObjection(dataSource);
+    await seedNotifications(dataSource);
 }
 
 AppDataSource.initialize()
