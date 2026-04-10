@@ -130,6 +130,9 @@ export class DisputeCase {
   @Column({ type: 'timestamptz', nullable: true })
   submitted_at: Date | null;
 
+  @Column({ type: 'text', nullable: true })
+  lodgment_reference_number: string | null;
+
   @Column({ type: 'timestamptz', nullable: true })
   closed_at: Date | null;
 

@@ -17,6 +17,7 @@ const TEMPLATE_NAMES = [
     'advisory-letter-notification',
     'objection-package-approval',
     'objection-package-reminder',
+    'vg-submission-confirmation',
 ] as const;
 
 type TemplateName = (typeof TEMPLATE_NAMES)[number];
@@ -194,6 +195,41 @@ export class AzureEmailService implements OnModuleInit {
                 html,
             },
             ...(params.attachments?.length && { attachments: params.attachments }),
+        };
+
+        const poller = await this.emailClient.beginSend(message);
+        await poller.pollUntilDone();
+    }
+
+    async sendVgSubmissionConfirmation(params: {
+        sendTo: string;
+        clientName: string;
+        caseReference: string;
+        propertyAddress: string;
+        lodgmentReferenceNumber: string;
+        submittedAt: string;
+        assessorFullName: string;
+    }): Promise<void> {
+        const contactEmail = this.config.getOrThrow<string>('CONTACT_EMAIL');
+
+        const html = this.loadTemplate('vg-submission-confirmation', {
+            caseReference: params.caseReference,
+            propertyAddress: params.propertyAddress,
+            lodgmentReferenceNumber: params.lodgmentReferenceNumber,
+            submittedAt: params.submittedAt,
+            assessorFullName: params.assessorFullName,
+            contactEmail,
+        });
+
+        const message = {
+            senderAddress: this.sender,
+            recipients: {
+                to: [{ address: params.sendTo, displayName: params.clientName }],
+            },
+            content: {
+                subject: `[${params.caseReference}] Objection Package Submitted to Valuer-General`,
+                html,
+            },
         };
 
         const poller = await this.emailClient.beginSend(message);
