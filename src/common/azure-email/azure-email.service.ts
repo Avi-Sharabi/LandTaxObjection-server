@@ -17,9 +17,9 @@ const TEMPLATE_NAMES = [
     'advisory-letter-notification',
     'objection-package-approval',
     'objection-package-reminder',
-    'advisory-letter-notification',
     'submit-to-vg-notification',
     'client-approved-notification',
+    'vg-response-detected',
 ] as const;
 
 type TemplateName = (typeof TEMPLATE_NAMES)[number];
@@ -230,6 +230,41 @@ export class AzureEmailService implements OnModuleInit {
             },
             content: {
                 subject: `[${params.caseReference}] Objection Submitted to Valuer-General`,
+                html,
+            },
+        };
+
+        const poller = await this.emailClient.beginSend(message);
+        await poller.pollUntilDone();
+    }
+
+    async sendVgResponseDetectedNotification(params: {
+        sendTo: string;
+        caseReference: string;
+        clientName: string;
+        propertyAddress: string;
+        jurisdiction: string;
+        receivedAt: string;
+        senderEmail: string;
+        emailSubject: string;
+    }): Promise<void> {
+        const html = this.loadTemplate('vg-response-detected', {
+            caseReference: params.caseReference,
+            clientName: params.clientName,
+            propertyAddress: params.propertyAddress,
+            jurisdiction: params.jurisdiction,
+            receivedAt: params.receivedAt,
+            senderEmail: params.senderEmail,
+            emailSubject: params.emailSubject,
+        });
+
+        const message = {
+            senderAddress: this.sender,
+            recipients: {
+                to: [{ address: params.sendTo, displayName: 'YML Land Tax Assessor' }],
+            },
+            content: {
+                subject: `[${params.caseReference}] Action Required \u2013 VG Response Detected`,
                 html,
             },
         };

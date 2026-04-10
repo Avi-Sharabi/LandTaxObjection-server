@@ -10,6 +10,7 @@ import { DisputeCase } from './dispute-case.entity';
 
 export enum AuditAction {
   VG_RESPONSE_RECORDED = 'VG_RESPONSE_RECORDED',
+  VG_EMAIL_RESPONSE_DETECTED = 'VG_EMAIL_RESPONSE_DETECTED',
 }
 
 @Entity('case_audit_logs')
@@ -23,8 +24,11 @@ export class CaseAuditLog {
   @Column({ type: 'text' })
   action: string;
 
-  @Column({ type: 'uuid', name: 'performed_by' })
-  performed_by: string;
+  @Column({ type: 'uuid', name: 'performed_by', nullable: true })
+  performed_by: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  source: string | null;
 
   @Column({ type: 'text', nullable: true })
   response_notes: string | null;

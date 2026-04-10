@@ -20,6 +20,8 @@ import { XpmClientHandler } from './intake/xpm-client.handler';
 import { PdfStorageHandler } from './intake/pdf-storage.handler';
 import { fyiStorageService } from 'src/common/fyi-storage/fyi-storage.service';
 import { ApprovalReminderTask } from './approval-reminder.task';
+import { VgEmailMonitorTask } from './vg-email-monitor.task';
+import { MsGraphModule } from 'src/common/ms-graph/ms-graph.module';
 
 @Module({
   imports: [
@@ -27,6 +29,7 @@ import { ApprovalReminderTask } from './approval-reminder.task';
     AzureBlobModule,
     AzureEmailModule,
     ComparablesModule,
+    MsGraphModule,
     TypeOrmModule.forFeature([
       DisputeCase,
       AssessmentDocument,
@@ -47,6 +50,7 @@ import { ApprovalReminderTask } from './approval-reminder.task';
     PdfStorageHandler,
     fyiStorageService,
     ApprovalReminderTask,
+    VgEmailMonitorTask,
   ],
 })
 export class DisputeCasesModule {}
