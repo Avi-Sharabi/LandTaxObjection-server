@@ -238,7 +238,7 @@ export class AzureEmailService implements OnModuleInit {
     }
 
     async sendVgFollowUpEnquiry(params: {
-        sendTo: string;
+        sendTo: string;ss
         caseReference: string;
         propertyAddress: string;
         lodgmentReferenceNumber: string;
