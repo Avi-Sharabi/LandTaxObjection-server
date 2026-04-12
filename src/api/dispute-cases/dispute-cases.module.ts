@@ -19,6 +19,9 @@ import { XpmClientHandler } from './intake/xpm-client.handler';
 import { PdfStorageHandler } from './intake/pdf-storage.handler';
 import { fyiStorageService } from 'src/common/fyi-storage/fyi-storage.service';
 import { ApprovalReminderTask } from './approval-reminder.task';
+import { VGResponseMonitorScheduler } from './vg-response-monitor.scheduler';
+import { AuditLogModule } from '../audit-log/audit-log.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
@@ -26,6 +29,8 @@ import { ApprovalReminderTask } from './approval-reminder.task';
     AzureBlobModule,
     AzureEmailModule,
     ComparablesModule,
+    AuditLogModule,
+    NotificationsModule,
     TypeOrmModule.forFeature([
       DisputeCase,
       AssessmentDocument,
@@ -45,6 +50,7 @@ import { ApprovalReminderTask } from './approval-reminder.task';
     PdfStorageHandler,
     fyiStorageService,
     ApprovalReminderTask,
+    VGResponseMonitorScheduler,
   ],
 })
 export class DisputeCasesModule {}
