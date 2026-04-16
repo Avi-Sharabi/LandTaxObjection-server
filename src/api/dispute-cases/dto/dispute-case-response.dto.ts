@@ -1,5 +1,6 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { DisputeCase, DisputeStatus, Jurisdiction, OutcomeResult } from '../entities/dispute-case.entity';
+import { DisputeStatus, Jurisdiction, OutcomeResult } from '../entities/dispute-case.entity';
+import { ValuationNoticeNestedDto } from './valuation-notice-nested.dto';
 
 export class DisputeCaseResponseDto {
   @ApiProperty()
@@ -35,6 +36,24 @@ export class DisputeCaseResponseDto {
   @ApiProperty()
   no_legal_ground_flagged: boolean;
 
+  @ApiProperty()
+  flag_heritage: boolean;
+
+  @ApiProperty()
+  flag_easement: boolean;
+
+  @ApiProperty()
+  flag_flood_zone: boolean;
+
+  @ApiProperty()
+  flag_environmental: boolean;
+
+  @ApiProperty()
+  flag_zoning: boolean;
+
+  @ApiPropertyOptional()
+  evidence_strength_score: number | null;
+
   @ApiPropertyOptional()
   original_assessed_value: number | null;
 
@@ -54,40 +73,29 @@ export class DisputeCaseResponseDto {
   notes: string | null;
 
   @ApiPropertyOptional()
+  reminder_count: number | null;
+
+  @ApiPropertyOptional()
+  client_approval_requested_at: Date | null;
+
+  @ApiPropertyOptional()
+  client_approved_at: Date | null;
+
+  @ApiPropertyOptional()
+  last_reminder_sent_at: Date | null;
+
+  @ApiPropertyOptional()
   submitted_at: Date | null;
 
   @ApiPropertyOptional()
   closed_at: Date | null;
+
+  @ApiPropertyOptional({ nullable: true, type: () => ValuationNoticeNestedDto })
+  valuation_notice: ValuationNoticeNestedDto | null;
 
   @ApiProperty()
   created_at: Date;
 
   @ApiProperty()
   updated_at: Date;
-
-  static fromEntity(entity: DisputeCase): DisputeCaseResponseDto {
-    const dto = new DisputeCaseResponseDto();
-    dto.id = entity.id;
-    dto.case_reference = entity.case_reference;
-    dto.client_id = entity.client_id;
-    dto.property_id = entity.property_id;
-    dto.valuation_notice_id = entity.valuation_notice_id;
-    dto.assigned_accountant_id = entity.assigned_accountant_id;
-    dto.assigned_lawyer_id = entity.assigned_lawyer_id;
-    dto.jurisdiction = entity.jurisdiction;
-    dto.status = entity.status;
-    dto.statutory_deadline = entity.statutory_deadline;
-    dto.no_legal_ground_flagged = entity.no_legal_ground_flagged;
-    dto.original_assessed_value = entity.original_assessed_value;
-    dto.final_agreed_value = entity.final_agreed_value;
-    dto.tax_saving_achieved = entity.tax_saving_achieved;
-    dto.invoice_amount = entity.invoice_amount;
-    dto.outcome = entity.outcome;
-    dto.notes = entity.notes;
-    dto.submitted_at = entity.submitted_at;
-    dto.closed_at = entity.closed_at;
-    dto.created_at = entity.created_at;
-    dto.updated_at = entity.updated_at;
-    return dto;
-  }
 }

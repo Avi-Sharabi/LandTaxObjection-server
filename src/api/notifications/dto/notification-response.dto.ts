@@ -1,14 +1,15 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Expose } from 'class-transformer';
+import { NotificationType } from '../entities/notification.entity';
 
 export class NotificationResponseDto {
   @ApiProperty({ example: 'a1b2c3d4-e5f6-7890-abcd-ef1234567890' })
   @Expose()
   id: string;
 
-  @ApiProperty({ example: 'deadline_alert' })
+  @ApiProperty({ enum: NotificationType, example: NotificationType.APPROVAL_REMINDER })
   @Expose()
-  type: string;
+  type: NotificationType;
 
   @ApiProperty({ example: 'Statutory deadline in 7 days for LTD-2024-003' })
   @Expose()
