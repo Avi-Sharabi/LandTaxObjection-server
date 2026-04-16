@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { ConfigService } from '@nestjs/config';
 import {
   CreateDisputeIntakeDto,
   IntakePropertyDto,
@@ -31,6 +32,7 @@ export class DisputeIntakeOrchestrator {
   private readonly logger = new Logger(DisputeIntakeOrchestrator.name);
 
   constructor(
+    private readonly config: ConfigService,
     private readonly xpmClientHandler: XpmClientHandler,
     private readonly pdfStorageHandler: PdfStorageHandler,
     private readonly azureEmailService: AzureEmailService,
@@ -49,9 +51,11 @@ export class DisputeIntakeOrchestrator {
   ) { }
 
   async submitIntakeApplication(intakeDto: CreateDisputeIntakeDto): Promise<{ case_references: string[] }> {
-    const accountant = await this.usersRepository.findOne({ where: { id: intakeDto.accountantId } });
-    if (!accountant) {
-      throw new AccountantNotFoundException(intakeDto.accountantId);
+    if (intakeDto.accountantId) {
+      const accountant = await this.usersRepository.findOne({ where: { id: intakeDto.accountantId } });
+      if (!accountant) {
+        throw new AccountantNotFoundException(intakeDto.accountantId);
+      }
     }
 
     const xpmClient = await this.xpmClientHandler.findClientInXpm(intakeDto.fullName);
@@ -91,12 +95,19 @@ export class DisputeIntakeOrchestrator {
       const notice = await this.createValuationNotice(property.id, prop.valuation_notice, intakeDto.valuationYear, assessmentDocument.id);
       const disputeCase = await this.createDisputeCase(client, property.id, notice.id, caseReference, prop.state, prop.valuation_notice.assessed_land_value, intakeDto, flags);
 
-      await this.createLegalGrounds(disputeCase.id, prop.grounds);
+      await this.createLegalGrounds(disputeCase.id, prop.grounds ?? []);
       caseReferences.push(caseReference);
     }
 
     if (caseReferences.length > 0) {
-      await this.notifyInternalAssessor(caseReferences, intakeDto.accountantId);
+      if (intakeDto.accountantId) {
+        await this.notifyInternalAssessor(caseReferences, intakeDto.accountantId);
+      } else {
+        const assessorEmail = this.config.get<string>('ASSESSOR_EMAIL');
+        if (assessorEmail) {
+          await this.azureEmailService.sendDisputeApplication(caseReferences, assessorEmail);
+        }
+      }
     }
 
     return { case_references: caseReferences };
