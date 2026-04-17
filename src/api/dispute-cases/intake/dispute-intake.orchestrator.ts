@@ -51,12 +51,7 @@ export class DisputeIntakeOrchestrator {
   ) { }
 
   async submitIntakeApplication(intakeDto: CreateDisputeIntakeDto): Promise<{ case_references: string[] }> {
-    if (intakeDto.accountantId) {
-      const accountant = await this.usersRepository.findOne({ where: { id: intakeDto.accountantId } });
-      if (!accountant) {
-        throw new AccountantNotFoundException(intakeDto.accountantId);
-      }
-    }
+    await this.validateAccountant(intakeDto.accountantId);
 
     const xpmClient = await this.xpmClientHandler.findClientInXpm(intakeDto.fullName);
 
@@ -100,14 +95,7 @@ export class DisputeIntakeOrchestrator {
     }
 
     if (caseReferences.length > 0) {
-      if (intakeDto.accountantId) {
-        await this.notifyInternalAssessor(caseReferences, intakeDto.accountantId);
-      } else {
-        const assessorEmail = this.config.get<string>('ASSESSOR_EMAIL');
-        if (assessorEmail) {
-          await this.azureEmailService.sendDisputeApplication(caseReferences, assessorEmail);
-        }
-      }
+      await this.notifyAssessors(caseReferences, intakeDto.accountantId);
     }
 
     return { case_references: caseReferences };
@@ -201,6 +189,22 @@ export class DisputeIntakeOrchestrator {
       this.legalGroundsRepository.create({ dispute_id: disputeId, ground, validated: false }),
     );
     await this.legalGroundsRepository.save(legalGrounds);
+  }
+
+  private async validateAccountant(accountantId?: string): Promise<void> {
+    if (!accountantId) return;
+    const accountant = await this.usersRepository.findOne({ where: { id: accountantId } });
+    if (!accountant) throw new AccountantNotFoundException(accountantId);
+  }
+
+  private async notifyAssessors(caseReferences: string[], accountantId?: string): Promise<void> {
+    if (accountantId) {
+      await this.notifyInternalAssessor(caseReferences, accountantId);
+      return;
+    }
+    const assessorEmail = this.config.get<string>('ASSESSOR_EMAIL');
+    if (!assessorEmail) return;
+    await this.azureEmailService.sendDisputeApplication(caseReferences, assessorEmail);
   }
 
   private async notifyInternalAssessor(caseReferences: string[], accountantId: string): Promise<void> {
