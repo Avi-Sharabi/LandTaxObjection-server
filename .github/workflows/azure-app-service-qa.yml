@@ -30,9 +30,22 @@ jobs:
       - name: Build NestJS
         run: npm run build
 
+      - name: Prepare deployment package
+        run: |
+          mkdir -p deployment
+          cp -r dist deployment/dist
+          cp package.json deployment/package.json
+          cp package-lock.json deployment/package-lock.json
+
+      - name: Install production dependencies
+        run: |
+          cd deployment
+          npm ci --omit=dev
+
       - name: Deploy to Azure App Service
         uses: azure/webapps-deploy@v2
         with:
           app-name: landtaxdispute-server-qa
           publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE_QA }}
-          package: .
+          package: deployment
+          startup-command: node dist/main.js
