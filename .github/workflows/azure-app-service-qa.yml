@@ -1,0 +1,50 @@
+# Repo:    https://github.com/YML-AIDev/LandTaxObjection-server
+# Branch:  qa
+# Target:  landtaxdispute-server-qa.azurewebsites.net
+
+name: Deploy NestJS Backend to Azure App Service (QA)
+
+on:
+  push:
+    branches:
+      - qa
+
+jobs:
+  build_and_deploy:
+    runs-on: ubuntu-latest
+    name: Build and Deploy (QA)
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build NestJS
+        run: npm run build
+
+      - name: Prepare deployment package
+        run: |
+          mkdir -p deployment
+          cp -r dist deployment/dist
+          cp package.json deployment/package.json
+          cp package-lock.json deployment/package-lock.json
+
+      - name: Install production dependencies
+        run: |
+          cd deployment
+          npm ci --omit=dev
+
+      - name: Deploy to Azure App Service
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: landtaxdispute-server-qa
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE_QA }}
+          package: deployment

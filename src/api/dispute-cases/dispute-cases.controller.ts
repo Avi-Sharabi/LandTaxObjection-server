@@ -11,6 +11,7 @@ import {
   HttpCode,
   Query,
   Req,
+  Version,
 } from '@nestjs/common';
 import type { Request } from 'express';
 import {
@@ -26,6 +27,7 @@ import { ApprovalDocumentsResponseDto } from './dto/approval-documents-response.
 import { DisputeCasesService } from './dispute-cases.service';
 import { UpdateDisputeCaseDto } from './dto/update-dispute-case.dto';
 import { CreateDisputeIntakeDto } from './dto/create-dispute-intake.dto';
+import { CreateDisputeIntakeV2Dto } from './dto/create-dispute-intake-v2.dto';
 import { CloseNoObjectionDto } from './dto/close-no-objection.dto';
 import { ApproveObjectionPackageDto } from './dto/approve-objection-package.dto';
 import { DisputeCaseResponseDto } from './dto/dispute-case-response.dto';
@@ -55,6 +57,21 @@ export class DisputeCasesController {
   @Post('intake/submit')
   async submitIntake(@Body() intakeDto: CreateDisputeIntakeDto): Promise<unknown> {
     return this.disputeCasesService.submitIntakeApplication(intakeDto);
+  }
+
+  /**
+   * v2 — simplified intake: accountantId is optional, legal grounds not required at submission
+   * Used by the new single-step SubmitDisputePage frontend
+   */
+  @Version('2')
+  @Post('intake/submit')
+  @ApiOperation({ summary: 'Submit a new dispute intake application (v2)', description: 'Simplified intake — no legal grounds or YML contact required at submission time' })
+  @ApiBody({ type: CreateDisputeIntakeV2Dto })
+  @ApiResponse({ status: 201, description: 'Dispute case successfully created' })
+  @ApiResponse({ status: 400, description: 'Validation error' })
+  @ApiResponse({ status: 500, description: 'Internal server error' })
+  async submitIntakeV2(@Body() intakeDto: CreateDisputeIntakeV2Dto): Promise<unknown> {
+    return this.disputeCasesService.submitIntakeApplication(intakeDto as unknown as CreateDisputeIntakeDto);
   }
 
   @Post('approve')

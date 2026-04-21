@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { ConfigService } from '@nestjs/config';
 import {
   CreateDisputeIntakeDto,
   IntakePropertyDto,
@@ -31,6 +32,7 @@ export class DisputeIntakeOrchestrator {
   private readonly logger = new Logger(DisputeIntakeOrchestrator.name);
 
   constructor(
+    private readonly config: ConfigService,
     private readonly xpmClientHandler: XpmClientHandler,
     private readonly pdfStorageHandler: PdfStorageHandler,
     private readonly azureEmailService: AzureEmailService,
@@ -49,10 +51,7 @@ export class DisputeIntakeOrchestrator {
   ) { }
 
   async submitIntakeApplication(intakeDto: CreateDisputeIntakeDto): Promise<{ case_references: string[] }> {
-    const accountant = await this.usersRepository.findOne({ where: { id: intakeDto.accountantId } });
-    if (!accountant) {
-      throw new AccountantNotFoundException(intakeDto.accountantId);
-    }
+    await this.validateAccountant(intakeDto.accountantId);
 
     const xpmClient = await this.xpmClientHandler.findClientInXpm(intakeDto.fullName);
 
@@ -91,12 +90,12 @@ export class DisputeIntakeOrchestrator {
       const notice = await this.createValuationNotice(property.id, prop.valuation_notice, intakeDto.valuationYear, assessmentDocument.id);
       const disputeCase = await this.createDisputeCase(client, property.id, notice.id, caseReference, prop.state, prop.valuation_notice.assessed_land_value, intakeDto, flags);
 
-      await this.createLegalGrounds(disputeCase.id, prop.grounds);
+      await this.createLegalGrounds(disputeCase.id, prop.grounds ?? []);
       caseReferences.push(caseReference);
     }
 
     if (caseReferences.length > 0) {
-      await this.notifyInternalAssessor(caseReferences, intakeDto.accountantId);
+      await this.notifyAssessors(caseReferences, intakeDto.accountantId);
     }
 
     return { case_references: caseReferences };
@@ -190,6 +189,22 @@ export class DisputeIntakeOrchestrator {
       this.legalGroundsRepository.create({ dispute_id: disputeId, ground, validated: false }),
     );
     await this.legalGroundsRepository.save(legalGrounds);
+  }
+
+  private async validateAccountant(accountantId?: string): Promise<void> {
+    if (!accountantId) return;
+    const accountant = await this.usersRepository.findOne({ where: { id: accountantId } });
+    if (!accountant) throw new AccountantNotFoundException(accountantId);
+  }
+
+  private async notifyAssessors(caseReferences: string[], accountantId?: string): Promise<void> {
+    if (accountantId) {
+      await this.notifyInternalAssessor(caseReferences, accountantId);
+      return;
+    }
+    const assessorEmail = this.config.get<string>('ASSESSOR_EMAIL');
+    if (!assessorEmail) return;
+    await this.azureEmailService.sendDisputeApplication(caseReferences, assessorEmail);
   }
 
   private async notifyInternalAssessor(caseReferences: string[], accountantId: string): Promise<void> {
