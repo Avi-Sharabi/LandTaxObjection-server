@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { ClientsModule } from './clients/clients.module';
+import { ComparableSalesModule } from './comparable-sales/comparable-sales.module';
 import { ComparablesModule } from './comparables/comparables.module';
 import { DisputeCasesModule } from './dispute-cases/dispute-cases.module';
 import { DisputeConstraintsModule } from './dispute-constraints/dispute-constraints.module';
@@ -16,6 +17,7 @@ import { NotificationsModule } from './notifications/notifications.module';
   imports: [
     AuthModule,
     ClientsModule,
+    ComparableSalesModule,
     ComparablesModule,
     PropertiesModule,
     DisputeCasesModule,

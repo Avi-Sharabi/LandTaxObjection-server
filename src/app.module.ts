@@ -4,6 +4,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { ScheduleModule } from '@nestjs/schedule';
 
 import { TypeOrmConfigService } from './config/typeorm.config';
+import { AnthropicModule } from './anthropic/anthropic.module';
 import { APIModule } from './api/api.module';
 
 @Module({
@@ -22,6 +23,7 @@ import { APIModule } from './api/api.module';
 
     ScheduleModule.forRoot(),
 
+    AnthropicModule,
     APIModule
   ],
 })
