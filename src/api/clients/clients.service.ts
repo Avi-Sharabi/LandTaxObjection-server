@@ -1,12 +1,14 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { AzureBlobService } from 'src/common/azure-blob/azure-blob.service';
-import { Repository } from 'typeorm';
+import { FindOptionsWhere, ILike, Repository } from 'typeorm';
 import { DisputeCase } from '../dispute-cases/entities/dispute-case.entity';
 import { AcceptTCDto } from './dto/accept-tc.dto';
 import { AcceptTcResponseDto } from './dto/accept-tc-response.dto';
 import { CreateClientDto } from './dto/create-client.dto';
 import { UpdateClientDto } from './dto/update-client.dto';
+import { GetClientsQueryDto } from './dto/get-clients-query.dto';
+import { PaginatedClientsResponseDto } from './dto/paginated-clients-response.dto';
 import { Client, ClientStatus } from './entities/client.entity';
 import { ValuationNotice } from '../valuation-notices/entities/valuation-notice.entity';
 import { fyiStorageService } from 'src/common/fyi-storage/fyi-storage.service';
@@ -42,6 +44,32 @@ export class ClientsService {
     return this.clientsRepository.find({
       relations: ['assigned_accountant', 'properties', 'dispute_cases'],
     });
+  }
+
+  async findPaginated(query: GetClientsQueryDto): Promise<PaginatedClientsResponseDto> {
+    const { page, limit, search, status, region } = query;
+    const skip = (page - 1) * limit;
+
+    const where: FindOptionsWhere<Client>[] = [];
+
+    if (search) {
+      where.push(
+        { ...(status && { status }), ...(region && { region }), name: ILike(`%${search}%`) },
+        { ...(status && { status }), ...(region && { region }), email: ILike(`%${search}%`) },
+      );
+    } else {
+      where.push({ ...(status && { status }), ...(region && { region }) });
+    }
+
+    const [data, total] = await this.clientsRepository.findAndCount({
+      where,
+      relations: ['assigned_accountant', 'properties', 'dispute_cases'],
+      order: { created_at: 'DESC' },
+      skip,
+      take: limit,
+    });
+
+    return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
   }
 
   async findOne(id: string): Promise<Client> {

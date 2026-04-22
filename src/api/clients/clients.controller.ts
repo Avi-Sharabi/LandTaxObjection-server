@@ -1,8 +1,9 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, ParseUUIDPipe, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, ParseUUIDPipe, Query, UseGuards } from '@nestjs/common';
 import { ClientsService } from './clients.service';
 import { CreateClientDto } from './dto/create-client.dto';
 import { UpdateClientDto } from './dto/update-client.dto';
 import { AcceptTCDto } from './dto/accept-tc.dto';
+import { GetClientsQueryDto } from './dto/get-clients-query.dto';
 import { ApiOperation, ApiParam, ApiResponse } from '@nestjs/swagger';
 import { AcceptTcResponseDto } from './dto/accept-tc-response.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -37,6 +38,11 @@ export class ClientsController {
   @Get()
   findAll() {
     return this.clientsService.findAll();
+  }
+
+  @Get('paginated')
+  findPaginated(@Query() query: GetClientsQueryDto) {
+    return this.clientsService.findPaginated(query);
   }
 
   @Get(':id')
