@@ -152,6 +152,11 @@ export class DisputeCase {
   @Column({ type: 'timestamptz', nullable: true })
   advisory_view_token_expires_at: Date | null;
 
+  @Column({ type: 'timestamptz', nullable: true })
+  xpm_logged_at: Date | null;
+
+  @Column({ type: 'text', nullable: true })
+  closure_notes: string | null;
 
   @CreateDateColumn({ type: 'timestamptz' })
   created_at: Date;
