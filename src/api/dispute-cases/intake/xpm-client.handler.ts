@@ -7,6 +7,13 @@ import { Repository } from 'typeorm';
 import { Client, ClientStatus } from '../../clients/entities/client.entity';
 import { CreateDisputeIntakeDto } from '../dto/create-dispute-intake.dto';
 
+export interface XpmClosureNoteData {
+  clientXpmUuid: string;
+  caseReference: string;
+  closureDate: Date;
+  assessorName: string;
+}
+
 @Injectable()
 export class XpmClientHandler {
   constructor(
@@ -16,20 +23,80 @@ export class XpmClientHandler {
     private clientsRepository: Repository<Client>,
   ) { }
 
+  async logCaseClosure(data: XpmClosureNoteData): Promise<boolean> {
+    const baseUrl = this.config.get<string>('XPM_BASE_URL');
+    const subscriptionKey = this.config.get<string>('XPM_SUBSCRIPTION_KEY');
+    const appId = this.config.get<string>('XPM_APP_ID');
+    const tenantId = this.config.get<string>('XPM_TENANT_ID');
+
+    if (!baseUrl || !subscriptionKey || !appId || !tenantId) {
+      console.warn('XPM config incomplete — skipping closure note for case', data.caseReference);
+      return false;
+    }
+
+    try {
+      const closureDateStr = data.closureDate.toLocaleDateString('en-AU', {
+        day: '2-digit',
+        month: 'long',
+        year: 'numeric',
+      });
+      const noteText =
+        `Case closed — VG assessment confirmed accurate. Advisory letter sent to client.\n\n` +
+        `Case Reference: ${data.caseReference}\n` +
+        `Closure Date: ${closureDateStr}\n` +
+        `Assessor: ${data.assessorName}`;
+
+      const response = await firstValueFrom(
+        this.httpService.put(
+          `${baseUrl}/practicemanager/clients`,
+          {
+            uuid: data.clientXpmUuid,
+            notes: [{ text: noteText }],
+          },
+          {
+            headers: {
+              'Ocp-Apim-Subscription-Key': subscriptionKey,
+              'X-Tenant-Id': tenantId,
+              'X-App-Id': appId,
+            },
+          },
+        ),
+      );
+      console.log('[XPM] PUT /practicemanager/clients response status:', response.status);
+      console.log('[XPM] PUT /practicemanager/clients response body:', JSON.stringify(response.data));
+      return true;
+    } catch (error: unknown) {
+      const axiosError = error as any;
+      const status = axiosError?.response?.status;
+      const body = axiosError?.response?.data;
+      if (status === 403) {
+        console.warn(
+          `[XPM] closure note skipped for case ${data.caseReference}: subscription key lacks write access to this endpoint.`,
+          body,
+        );
+      } else {
+        console.warn(
+          `[XPM] closure note failed for case ${data.caseReference}: HTTP ${status ?? 'unknown'}`,
+          body,
+        );
+      }
+      return false;
+    }
+  }
+
   async findClientInXpm(name: string): Promise<any | null> {
     try {
       const baseUrl = this.config.get('XPM_BASE_URL');
-      const code = this.config.get('XPM_CODE');
 
       const { data } = await firstValueFrom(
         this.httpService.get(
-          `${baseUrl}/api/practicemanager/clients/search`,
+          `${baseUrl}/practicemanager/clients/search`,
           {
-            params: { code, query: name },
+            params: { query: name },
             headers: {
-              'X-App-Id': this.config.get('XPM_APP_ID'),
+              'Ocp-Apim-Subscription-Key': this.config.get('XPM_SUBSCRIPTION_KEY'),
               'X-Tenant-Id': this.config.get('XPM_TENANT_ID'),
-              'X-Application-Name': this.config.get('XPM_APP_NAME'),
+              'X-App-Id': this.config.get('XPM_APP_ID'),
             },
           },
         ),
@@ -37,9 +104,8 @@ export class XpmClientHandler {
 
       const results: any[] = data?.data ?? [];
       return results[0] ?? null;
-    } catch (error) {
-      console.log(error)
-      console.error('XPM lookup failed:', error.message);
+    } catch (error: unknown) {
+      console.error('XPM lookup failed:', String(error));
       return null;
     }
   }
