@@ -43,7 +43,7 @@ import { UserRole } from '../users/entities/user.entity';
   version: '1',
 })
 export class DisputeCasesController {
-  constructor(private readonly disputeCasesService: DisputeCasesService) {}
+  constructor(private readonly disputeCasesService: DisputeCasesService) { }
 
   /**
    * Submit a new dispute case via intake form
@@ -252,29 +252,6 @@ export class DisputeCasesController {
     return this.disputeCasesService.submitToVg(id, req.user.id, req.user.fullName);
   }
 
-  @UseGuards(JwtAuthGuard)
-  @ApiBearerAuth()
-  @Post(':id/submit-to-vg')
-  @HttpCode(200)
-  @ApiOperation({
-    summary: 'Submit an approved objection package to the Valuer-General',
-    description:
-      'Generates a lodgment reference number, records the submission, sends a confirmation ' +
-      'email to the VG submission address, and writes an audit log entry. ' +
-      'The DB update and audit log are rolled back if the email send fails.',
-  })
-  @ApiParam({ name: 'id', description: 'Dispute case UUID' })
-  @ApiResponse({ status: 200, description: 'Case submitted — lodgmentReferenceNumber and submittedAt returned', type: DisputeCaseResponseDto })
-  @ApiResponse({ status: 401, description: 'Unauthorised' })
-  @ApiResponse({ status: 403, description: 'Case is not in CLIENT_APPROVED status, or caller is not an Internal Assessor' })
-  @ApiResponse({ status: 404, description: 'Dispute case not found' })
-  @ApiResponse({ status: 409, description: 'Case has already been submitted to VG' })
-  submitToVg(
-    @Param('id') id: string,
-    @Req() req: Request & { user: { id: string; fullName: string } },
-  ): Promise<DisputeCaseResponseDto> {
-    return this.disputeCasesService.submitToVg(id, req.user.id, req.user.fullName);
-  }
 
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
