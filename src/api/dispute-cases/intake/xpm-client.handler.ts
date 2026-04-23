@@ -19,17 +19,16 @@ export class XpmClientHandler {
   async findClientInXpm(name: string): Promise<any | null> {
     try {
       const baseUrl = this.config.get('XPM_BASE_URL');
-      const code = this.config.get('XPM_CODE');
 
       const { data } = await firstValueFrom(
         this.httpService.get(
-          `${baseUrl}/api/practicemanager/clients/search`,
+          `${baseUrl}/practicemanager/clients/search`,
           {
-            params: { code, query: name },
+            params: { query: name },
             headers: {
-              'X-App-Id': this.config.get('XPM_APP_ID'),
+              'Ocp-Apim-Subscription-Key': this.config.get('XPM_SUBSCRIPTION_KEY'),
               'X-Tenant-Id': this.config.get('XPM_TENANT_ID'),
-              'X-Application-Name': this.config.get('XPM_APP_NAME'),
+              'X-App-Id': this.config.get('XPM_APP_ID'),
             },
           },
         ),
