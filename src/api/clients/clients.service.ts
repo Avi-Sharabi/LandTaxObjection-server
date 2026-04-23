@@ -63,7 +63,16 @@ export class ClientsService {
 
     const [data, total] = await this.clientsRepository.findAndCount({
       where,
-      relations: ['assigned_accountant', 'properties', 'dispute_cases'],
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        phone: true,
+        city: true,
+        region: true,
+        status: true,
+        created_at: true,
+      },
       order: { created_at: 'DESC' },
       skip,
       take: limit,

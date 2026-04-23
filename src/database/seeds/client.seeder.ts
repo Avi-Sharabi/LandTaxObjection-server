@@ -1,0 +1,178 @@
+import { Logger } from '@nestjs/common';
+import { Client, ClientStatus } from 'src/api/clients/entities/client.entity';
+import { DataSource } from 'typeorm';
+
+const logger = new Logger('ClientSeeder');
+
+const CLIENTS: Partial<Client>[] = [
+    {
+        name: 'Harrison Property Group',
+        email: 'harrison.pg@gmail.com',
+        phone: '+61 2 9001 1001',
+        status: ClientStatus.ACTIVE,
+        address: '12 Phillip Street',
+        city: 'Sydney',
+        region: 'NSW',
+        postcode: '2000',
+        country: 'Australia',
+        business_number: '11 222 333 444',
+        source: 'referral',
+    },
+    {
+        name: 'Nguyen Family Trust',
+        email: 'nguyen.trust@outlook.com',
+        phone: '+61 3 9001 2002',
+        status: ClientStatus.ACTIVE,
+        address: '45 Collins Street',
+        city: 'Melbourne',
+        region: 'VIC',
+        postcode: '3000',
+        country: 'Australia',
+        source: 'xpm',
+    },
+    {
+        name: 'Patel Commercial Holdings',
+        email: 'patel.commercial@yahoo.com.au',
+        phone: '+61 7 9001 3003',
+        status: ClientStatus.PROSPECT,
+        address: '88 Queen Street',
+        city: 'Brisbane',
+        region: 'QLD',
+        postcode: '4000',
+        country: 'Australia',
+        business_number: '22 333 444 555',
+        source: 'direct',
+    },
+    {
+        name: 'Marino & Associates Pty Ltd',
+        email: 'marino.assoc@marino.com.au',
+        phone: '+61 8 9001 4004',
+        status: ClientStatus.TC_NEGOTIATION,
+        address: '3 St Georges Terrace',
+        city: 'Perth',
+        region: 'WA',
+        postcode: '6000',
+        country: 'Australia',
+        business_number: '33 444 555 666',
+        company_number: 'ACN 123 456 789',
+        source: 'referral',
+    },
+    {
+        name: 'Kowalski Investments',
+        email: 'kowalski.invest@gmail.com',
+        phone: '+61 2 9001 5005',
+        status: ClientStatus.ACTIVE,
+        address: '22 Pitt Street',
+        city: 'Parramatta',
+        region: 'NSW',
+        postcode: '2150',
+        country: 'Australia',
+        source: 'xpm',
+    },
+    {
+        name: 'Chen Land Holdings',
+        email: 'chen.land@chenholdings.com.au',
+        phone: '+61 3 9001 6006',
+        status: ClientStatus.ACTIVE,
+        address: '101 Bourke Street',
+        city: 'Melbourne',
+        region: 'VIC',
+        postcode: '3000',
+        country: 'Australia',
+        business_number: '44 555 666 777',
+        company_number: 'ACN 234 567 890',
+        source: 'direct',
+    },
+    {
+        name: "O'Brien Rural Properties",
+        email: 'obrien.rural@ruralprops.com.au',
+        phone: '+61 7 9001 7007',
+        status: ClientStatus.REJECTED,
+        address: '55 Ann Street',
+        city: 'Brisbane',
+        region: 'QLD',
+        postcode: '4000',
+        country: 'Australia',
+        source: 'referral',
+    },
+    {
+        name: 'Singh & Singh Enterprises',
+        email: 's.singh@singhenterprises.net',
+        phone: '+61 8 9001 8008',
+        status: ClientStatus.PROSPECT,
+        address: '7 Murray Street',
+        city: 'Perth',
+        region: 'WA',
+        postcode: '6000',
+        country: 'Australia',
+        business_number: '55 666 777 888',
+        source: 'direct',
+    },
+    {
+        name: 'Thomasson Industrial Pty Ltd',
+        email: 'admin@thomassonindustrial.com.au',
+        phone: '+61 2 9001 9009',
+        status: ClientStatus.TC_NEGOTIATION,
+        address: '300 George Street',
+        city: 'Sydney',
+        region: 'NSW',
+        postcode: '2000',
+        country: 'Australia',
+        business_number: '66 777 888 999',
+        company_number: 'ACN 345 678 901',
+        source: 'xpm',
+    },
+    {
+        name: 'Vasquez Capital Group',
+        email: 'vcapital@vasquezcg.com.au',
+        phone: '+61 3 9001 0010',
+        status: ClientStatus.ACTIVE,
+        address: '80 Flinders Street',
+        city: 'Melbourne',
+        region: 'VIC',
+        postcode: '3000',
+        country: 'Australia',
+        business_number: '77 888 999 000',
+        company_number: 'ACN 456 789 012',
+        source: 'referral',
+    },
+    {
+        name: 'Adams Strata Management',
+        email: 'info@adamsstrata.com.au',
+        phone: '+61 2 9001 1011',
+        status: ClientStatus.ACTIVE,
+        address: '9 Hunter Street',
+        city: 'Newcastle',
+        region: 'NSW',
+        postcode: '2300',
+        country: 'Australia',
+        source: 'direct',
+    },
+    {
+        name: 'Lindqvist Developments',
+        email: 'lind.dev@lindqvistdev.com.au',
+        phone: '+61 7 9001 2012',
+        status: ClientStatus.PROSPECT,
+        address: '17 Eagle Street',
+        city: 'Gold Coast',
+        region: 'QLD',
+        postcode: '4217',
+        country: 'Australia',
+        business_number: '88 999 000 111',
+        source: 'xpm',
+    },
+];
+
+export async function seedClients(dataSource: DataSource): Promise<void> {
+    const clientRepository = dataSource.getRepository(Client);
+
+    for (const clientData of CLIENTS) {
+        const exists = await clientRepository.findOne({ where: { email: clientData.email ?? undefined } });
+        if (!exists) {
+            await clientRepository.save(clientRepository.create(clientData));
+            logger.log(`Seeded client: ${clientData.name}`);
+        } else {
+            logger.log(`Skipped (already exists): ${clientData.name}`);
+        }
+    }
+}
