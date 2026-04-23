@@ -6,9 +6,11 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { Between, DataSource, FindOptionsWhere, ILike, In, LessThan, Not, Repository } from 'typeorm';
 import { randomUUID, randomInt } from 'crypto';
 import { ConfigService } from '@nestjs/config';
+import { GetDisputeCasesQueryDto } from './dto/get-dispute-cases-query.dto';
+import { PaginatedDisputeCasesResponseDto } from './dto/paginated-dispute-cases-response.dto';
 import { UpdateDisputeCaseDto } from './dto/update-dispute-case.dto';
 import { CreateDisputeIntakeDto } from './dto/create-dispute-intake.dto';
 import { CloseNoObjectionDto } from './dto/close-no-objection.dto';
@@ -65,8 +67,66 @@ export class DisputeCasesService {
     return this.intakeOrchestrator.submitIntakeApplication(intakeDto);
   }
 
-  async findAll(): Promise<DisputeCaseResponseDto[]> {
-    return await this.disputeCasesRepository.find()
+  async findAll(clientId?: string): Promise<DisputeCaseResponseDto[]> {
+    return await this.disputeCasesRepository.find({
+      where: clientId ? { client_id: clientId } : {},
+    });
+  }
+
+  async findPaginated(query: GetDisputeCasesQueryDto): Promise<PaginatedDisputeCasesResponseDto> {
+    const { page, limit, search, status, jurisdiction, clientId, dashboardFilter } = query;
+    const skip = (page - 1) * limit;
+
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    const endOf7Days = new Date(startOfToday);
+    endOf7Days.setDate(endOf7Days.getDate() + 7);
+    endOf7Days.setHours(23, 59, 59, 999);
+
+    const statusWhere =
+      dashboardFilter === 'active' && !status
+        ? { status: Not(In(CLOSED_STATUSES)) }
+        : status
+          ? { status }
+          : {};
+
+    const deadlineWhere =
+      dashboardFilter === 'due_this_week'
+        ? { statutory_deadline: Between(startOfToday, endOf7Days) }
+        : dashboardFilter === 'overdue'
+          ? { statutory_deadline: LessThan(startOfToday) }
+          : {};
+
+    const baseWhere: FindOptionsWhere<DisputeCase> = {
+      ...(clientId && { client_id: clientId }),
+      ...statusWhere,
+      ...(jurisdiction && { jurisdiction }),
+      ...deadlineWhere,
+    };
+
+    const where: FindOptionsWhere<DisputeCase>[] = search
+      ? [{ ...baseWhere, case_reference: ILike(`%${search}%`) }]
+      : [baseWhere];
+
+    const [data, total] = await this.disputeCasesRepository.findAndCount({
+      where,
+      select: {
+        id: true,
+        case_reference: true,
+        jurisdiction: true,
+        status: true,
+        statutory_deadline: true,
+        original_assessed_value: true,
+        vg_follow_up_count: true,
+        reminder_count: true,
+        created_at: true,
+      },
+      order: { created_at: 'DESC' },
+      skip,
+      take: limit,
+    });
+
+    return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
   }
 
   async findOne(id: string): Promise<DisputeCaseResponseDto> {
