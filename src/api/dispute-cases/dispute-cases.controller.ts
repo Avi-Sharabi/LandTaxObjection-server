@@ -42,7 +42,7 @@ import { UserRole } from '../users/entities/user.entity';
   version: '1',
 })
 export class DisputeCasesController {
-  constructor(private readonly disputeCasesService: DisputeCasesService) {}
+  constructor(private readonly disputeCasesService: DisputeCasesService) { }
 
   /**
    * Submit a new dispute case via intake form
@@ -250,6 +250,7 @@ export class DisputeCasesController {
   ): Promise<DisputeCaseResponseDto> {
     return this.disputeCasesService.submitToVg(id, req.user.id, req.user.fullName);
   }
+
 
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
