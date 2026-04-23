@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
-import { randomUUID } from 'crypto';
+import { randomUUID, randomInt } from 'crypto';
 import { ConfigService } from '@nestjs/config';
 import { UpdateDisputeCaseDto } from './dto/update-dispute-case.dto';
 import { CreateDisputeIntakeDto } from './dto/create-dispute-intake.dto';
@@ -22,6 +22,16 @@ import { AzureEmailService } from 'src/common/azure-email/azure-email.service';
 import { AzureBlobService } from 'src/common/azure-blob/azure-blob.service';
 import { PackageDocument, PackageDocumentStatus } from '../objection-package/entities/package-document.entity';
 import { ClientEmailMissingException } from './exceptions/client-email-missing.exception';
+import { CaseNotClientApprovedException } from './exceptions/case-not-client-approved.exception';
+import { CaseAlreadySubmittedException } from './exceptions/case-already-submitted.exception';
+import { AuditLog, AuditAction } from '../audit-log/entities/audit-log.entity';
+import { NotificationsService } from '../notifications/notifications.service';
+import { NotificationType } from '../notifications/entities/notification.entity';
+
+/** Nil UUID used as the actor ID for system-initiated audit log entries (e.g. cron jobs). */
+const SYSTEM_ACTOR_ID = '00000000-0000-0000-0000-000000000000';
+
+const MAX_VG_FOLLOW_UPS = 3;
 
 const THREE_DAY_WINDOW_DAYS = 3;
 const THREE_DAY_WINDOW_MINUTES = THREE_DAY_WINDOW_DAYS * 24 * 60;
@@ -44,6 +54,7 @@ export class DisputeCasesService {
     private readonly azureEmailService: AzureEmailService,
     private readonly azureBlobService: AzureBlobService,
     private readonly config: ConfigService,
+    private readonly notificationsService: NotificationsService,
     @InjectRepository(DisputeCase)
     private disputeCasesRepository: Repository<DisputeCase>,
     @InjectRepository(PackageDocument)
@@ -365,6 +376,161 @@ export class DisputeCasesService {
       }),
       viewReportUrl,
     };
+  }
+
+  async submitToVg(id: string, assessorId: string, assessorFullName: string): Promise<DisputeCaseResponseDto> {
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      const disputeCase = await queryRunner.manager.findOne(DisputeCase, {
+        where: { id },
+        relations: ['client', 'property', 'valuation_notice'],
+        lock: { mode: 'pessimistic_write' },
+      });
+
+      if (!disputeCase) {
+        throw new NotFoundException(`Dispute case #${id} not found`);
+      }
+
+      if (disputeCase.status === DisputeStatus.SUBMITTED_TO_VG) {
+        throw new CaseAlreadySubmittedException(id);
+      }
+
+      if (disputeCase.status !== DisputeStatus.CLIENT_APPROVED) {
+        throw new CaseNotClientApprovedException(id);
+      }
+
+      const year = new Date().getFullYear();
+      const caseIdPrefix = id.replace(/-/g, '').slice(0, 4).toUpperCase();
+      const randomDigits = randomInt(1000, 10000).toString();
+      const lodgmentRef = `LR-${year}-${caseIdPrefix}-${randomDigits}`;
+      const submittedAt = new Date();
+
+      disputeCase.status = DisputeStatus.SUBMITTED_TO_VG;
+      disputeCase.submitted_at = submittedAt;
+      disputeCase.lodgment_reference_number = lodgmentRef;
+
+      await queryRunner.manager.save(DisputeCase, disputeCase);
+
+      const auditEntry = queryRunner.manager.create(AuditLog, {
+        action: AuditAction.SUBMITTED_TO_VG,
+        performedBy: assessorId,
+        caseId: id,
+        lodgmentReferenceNumber: lodgmentRef,
+      });
+      await queryRunner.manager.save(AuditLog, auditEntry);
+
+      const vgEmail = this.config.getOrThrow<string>('VG_SUBMISSION_EMAIL');
+      await this.azureEmailService.sendVgSubmissionConfirmation({
+        sendTo: vgEmail,
+        clientName: disputeCase.client?.name ?? '',
+        caseReference: disputeCase.case_reference,
+        propertyAddress: this.buildPropertyAddress(disputeCase.property),
+        lodgmentReferenceNumber: lodgmentRef,
+        submittedAt: submittedAt.toLocaleString('en-AU', {
+          timeZone: 'Australia/Melbourne',
+          day: '2-digit',
+          month: 'long',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+        }),
+        assessorFullName,
+      });
+
+      await queryRunner.commitTransaction();
+
+      return disputeCase;
+    } catch (err) {
+      await queryRunner.rollbackTransaction();
+      throw err;
+    } finally {
+      await queryRunner.release();
+    }
+  }
+
+  async findCasesDueForVGFollowUp(): Promise<DisputeCase[]> {
+    const fiveDaysAgo = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000);
+    return this.disputeCasesRepository
+      .createQueryBuilder('dc')
+      .leftJoinAndSelect('dc.property', 'property')
+      .leftJoinAndSelect('dc.valuation_notice', 'valuation_notice')
+      .where('dc.status = :status', { status: DisputeStatus.SUBMITTED_TO_VG })
+      .andWhere('COALESCE(dc.last_vg_follow_up_sent_at, dc.submitted_at) <= :threshold', { threshold: fiveDaysAgo })
+      .andWhere('dc.vg_follow_up_count < :max', { max: MAX_VG_FOLLOW_UPS })
+      .getMany();
+  }
+
+  async sendVGFollowUp(caseId: string): Promise<void> {
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    let resolvedCase: DisputeCase | null = null;
+    let newFollowUpCount = 0;
+
+    try {
+      resolvedCase = await queryRunner.manager.findOne(DisputeCase, {
+        where: { id: caseId },
+        relations: ['property'],
+        lock: { mode: 'pessimistic_write' },
+      });
+
+      if (!resolvedCase) {
+        throw new NotFoundException(`Dispute case #${caseId} not found`);
+      }
+
+      newFollowUpCount = resolvedCase.vg_follow_up_count + 1;
+      const now = new Date();
+
+      resolvedCase.vg_follow_up_count = newFollowUpCount;
+      resolvedCase.last_vg_follow_up_sent_at = now;
+      await queryRunner.manager.save(DisputeCase, resolvedCase);
+
+      const auditEntry = queryRunner.manager.create(AuditLog, {
+        action: AuditAction.VG_FOLLOW_UP_SENT,
+        performedBy: SYSTEM_ACTOR_ID,
+        caseId,
+        lodgmentReferenceNumber: resolvedCase.lodgment_reference_number,
+      });
+      await queryRunner.manager.save(AuditLog, auditEntry);
+
+      const vgEmail = this.config.getOrThrow<string>('VG_SUBMISSION_EMAIL');
+      await this.azureEmailService.sendVgFollowUpEnquiry({
+        sendTo: vgEmail,
+        caseReference: resolvedCase.case_reference,
+        propertyAddress: this.buildPropertyAddress(resolvedCase.property),
+        lodgmentReferenceNumber: resolvedCase.lodgment_reference_number ?? '',
+        submittedAt: (resolvedCase.submitted_at ?? now).toLocaleString('en-AU', {
+          timeZone: 'Australia/Melbourne',
+          day: '2-digit',
+          month: 'long',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+        }),
+        followUpCount: String(newFollowUpCount),
+      });
+
+      await queryRunner.commitTransaction();
+    } catch (err) {
+      await queryRunner.rollbackTransaction();
+      throw err;
+    } finally {
+      await queryRunner.release();
+    }
+
+    // Notification fires only after a successful commit; failure here is non-critical
+    if (resolvedCase?.assigned_accountant_id) {
+      await this.notificationsService.create(
+        resolvedCase.assigned_accountant_id,
+        NotificationType.VG_FOLLOW_UP_SENT,
+        `Follow-up #${newFollowUpCount} sent to Valuer-General for case ${resolvedCase.case_reference} (${this.buildPropertyAddress(resolvedCase.property)}).`,
+        caseId,
+      );
+    }
   }
 
   async remove(id: string): Promise<{ message: string }> {

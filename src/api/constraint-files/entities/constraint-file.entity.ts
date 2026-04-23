@@ -8,7 +8,7 @@ import {
 } from 'typeorm';
 import { DisputeConstraint } from '../../dispute-constraints/entities/dispute-constraint.entity';
 import { ConstraintType } from '../../dispute-constraints/entities/constraint-type.enum';
-import { UploadStatus, UploadedByRole } from '../../valuation-notices/entities/valuation-notice-file.entity';
+import { UploadStatus, UploadedByRole } from '../../valuation-notices/entities/upload-status.enum';
 import { User } from '../../users/entities/user.entity';
 
 @Entity('constraint_files')

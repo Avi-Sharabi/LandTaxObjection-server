@@ -10,8 +10,10 @@ import {
   UseGuards,
   HttpCode,
   Query,
+  Req,
   Version,
 } from '@nestjs/common';
+import type { Request } from 'express';
 import {
   ApiBearerAuth,
   ApiBody,
@@ -31,6 +33,9 @@ import { ApproveObjectionPackageDto } from './dto/approve-objection-package.dto'
 import { DisputeCaseResponseDto } from './dto/dispute-case-response.dto';
 import { AnalysisReportResponseDto } from './dto/analysis-report-response.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from 'src/common/guards/roles.guard';
+import { Roles } from 'src/common/decorators/roles.decorator';
+import { UserRole } from '../users/entities/user.entity';
 
 @ApiTags('dispute-cases')
 @Controller({
@@ -38,7 +43,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
   version: '1',
 })
 export class DisputeCasesController {
-  constructor(private readonly disputeCasesService: DisputeCasesService) {}
+  constructor(private readonly disputeCasesService: DisputeCasesService) { }
 
   /**
    * Submit a new dispute case via intake form
@@ -221,6 +226,32 @@ export class DisputeCasesController {
   sendObjectionPackage(@Param('id') id: string): Promise<DisputeCaseResponseDto> {
     return this.disputeCasesService.sendObjectionPackage(id);
   }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.INTERNAL_Assessor)
+  @ApiBearerAuth()
+  @Post(':id/submit-to-vg')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Submit an approved objection package to the Valuer-General',
+    description:
+      'Generates a lodgment reference number, records the submission, sends a confirmation ' +
+      'email to the VG submission address, and writes an audit log entry. ' +
+      'The DB update and audit log are rolled back if the email send fails.',
+  })
+  @ApiParam({ name: 'id', description: 'Dispute case UUID' })
+  @ApiResponse({ status: 200, description: 'Case submitted — lodgmentReferenceNumber and submittedAt returned', type: DisputeCaseResponseDto })
+  @ApiResponse({ status: 401, description: 'Unauthorised' })
+  @ApiResponse({ status: 403, description: 'Case is not in CLIENT_APPROVED status, or caller is not an Internal Assessor' })
+  @ApiResponse({ status: 404, description: 'Dispute case not found' })
+  @ApiResponse({ status: 409, description: 'Case has already been submitted to VG' })
+  submitToVg(
+    @Param('id') id: string,
+    @Req() req: { user: { id: string; fullName: string } },
+  ): Promise<DisputeCaseResponseDto> {
+    return this.disputeCasesService.submitToVg(id, req.user.id, req.user.fullName);
+  }
+
 
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
