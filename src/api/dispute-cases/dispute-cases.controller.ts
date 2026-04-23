@@ -113,10 +113,11 @@ export class DisputeCasesController {
   @ApiBearerAuth()
   @Get()
   @ApiOperation({ summary: 'List all dispute cases' })
+  @ApiQuery({ name: 'clientId', required: false, description: 'Filter by client UUID' })
   @ApiResponse({ status: 200, description: 'List of dispute cases', type: [DisputeCaseResponseDto] })
   @ApiResponse({ status: 401, description: 'Unauthorised' })
-  findAll(): Promise<DisputeCaseResponseDto[]> {
-    return this.disputeCasesService.findAll();
+  findAll(@Query('clientId') clientId?: string): Promise<DisputeCaseResponseDto[]> {
+    return this.disputeCasesService.findAll(clientId);
   }
 
   // Public endpoint — no auth guard. Accessed via time-limited token link in the advisory letter email.

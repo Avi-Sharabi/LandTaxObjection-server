@@ -65,8 +65,10 @@ export class DisputeCasesService {
     return this.intakeOrchestrator.submitIntakeApplication(intakeDto);
   }
 
-  async findAll(): Promise<DisputeCaseResponseDto[]> {
-    return await this.disputeCasesRepository.find()
+  async findAll(clientId?: string): Promise<DisputeCaseResponseDto[]> {
+    return await this.disputeCasesRepository.find({
+      where: clientId ? { client_id: clientId } : {},
+    });
   }
 
   async findOne(id: string): Promise<DisputeCaseResponseDto> {
