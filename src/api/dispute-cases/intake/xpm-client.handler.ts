@@ -38,7 +38,7 @@ export class XpmClientHandler {
       return results[0] ?? null;
     } catch (error) {
       console.log(error)
-      console.error('XPM lookup failed:', error instanceof Error ? error.message : String(error));
+      console.error('XPM lookup failed:', error.message);
       return null;
     }
   }
