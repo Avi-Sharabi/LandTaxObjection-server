@@ -17,7 +17,6 @@ import { AnalysisReportResponseDto } from './dto/analysis-report-response.dto';
 import { ApprovalDocumentsResponseDto } from './dto/approval-documents-response.dto';
 import { DisputeCase, DisputeStatus } from './entities/dispute-case.entity';
 import { DisputeIntakeOrchestrator } from './intake/dispute-intake.orchestrator';
-import { XpmClientHandler } from './intake/xpm-client.handler';
 import { ComparablesService } from '../comparables/comparables.service';
 import { AzureEmailService } from 'src/common/azure-email/azure-email.service';
 import { AzureBlobService } from 'src/common/azure-blob/azure-blob.service';
@@ -56,7 +55,6 @@ export class DisputeCasesService {
     private readonly azureBlobService: AzureBlobService,
     private readonly config: ConfigService,
     private readonly notificationsService: NotificationsService,
-    private readonly xpmClientHandler: XpmClientHandler,
     @InjectRepository(DisputeCase)
     private disputeCasesRepository: Repository<DisputeCase>,
     @InjectRepository(PackageDocument)
@@ -141,22 +139,10 @@ export class DisputeCasesService {
     // Persist status transition first — email is sent after a successful save.
     // If the email subsequently fails, the case is already correctly closed in
     // the DB and the advisory email can be re-triggered manually.
-    const assessorName = disputeCase.assigned_accountant?.fullName ?? 'YML Assessor';
-    const closureDateStr = closedAtDate.toLocaleDateString('en-AU', {
-      day: '2-digit',
-      month: 'long',
-      year: 'numeric',
-    });
-
     disputeCase.status = DisputeStatus.CLOSED_NO_OBJECTION;
     disputeCase.closed_at = closedAtDate;
     disputeCase.advisory_view_token = advisoryToken;
     disputeCase.advisory_view_token_expires_at = advisoryTokenExpires;
-    disputeCase.closure_notes =
-      `Case closed — VG assessment confirmed accurate. Advisory letter sent to client.\n\n` +
-      `Case Reference: ${disputeCase.case_reference}\n` +
-      `Closure Date: ${closureDateStr}\n` +
-      `Assessor: ${assessorName}`;
     if (dto.assessorNotes !== undefined) {
       disputeCase.notes = dto.assessorNotes;
     }
@@ -172,29 +158,6 @@ export class DisputeCasesService {
           `Advisory letter email failed for case ${disputeCase.case_reference}: ${String(err)}`,
         );
       });
-
-    if (saved.client?.xpm_uuid) {
-      try {
-        const logged = await this.xpmClientHandler.logCaseClosure({
-          clientXpmUuid: saved.client.xpm_uuid,
-          caseReference: saved.case_reference,
-          closureDate: closedAtDate,
-          assessorName,
-        });
-        if (logged) {
-          saved.xpm_logged_at = new Date();
-          await this.disputeCasesRepository.save(saved);
-        }
-      } catch (err: unknown) {
-        this.logger.warn(
-          `XPM closure note failed for case ${saved.case_reference}: ${String(err)}`,
-        );
-      }
-    } else {
-      this.logger.warn(
-        `Skipping XPM closure note for case ${saved.case_reference}: client has no xpm_uuid`,
-      );
-    }
 
     return saved;
   }
