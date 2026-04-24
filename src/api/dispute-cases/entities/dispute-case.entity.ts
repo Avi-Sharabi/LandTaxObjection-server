@@ -8,6 +8,7 @@ import { ComparableSale } from '../../comparables/entities/comparable-sale.entit
 import { DisputeConstraint } from '../../dispute-constraints/entities/dispute-constraint.entity';
 
 export enum DisputeStatus {
+  PENDING_TNC = 'pending_tnc',
   DRAFT = 'draft',
   GROUNDS_SELECTION = 'grounds_selection',
   EVIDENCE_COMPILATION = 'evidence_compilation',
