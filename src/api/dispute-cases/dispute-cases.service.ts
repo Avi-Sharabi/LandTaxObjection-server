@@ -77,25 +77,19 @@ export class DisputeCasesService {
     const { page, limit, search, status, jurisdiction, clientId, dashboardFilter } = query;
     const skip = (page - 1) * limit;
 
-    const startOfToday = new Date();
-    startOfToday.setHours(0, 0, 0, 0);
-    const endOf7Days = new Date(startOfToday);
-    endOf7Days.setDate(endOf7Days.getDate() + 7);
-    endOf7Days.setHours(23, 59, 59, 999);
+    const { startOfToday, endOf7Days } = DisputeCasesService.getDueThisWeekWindow();
 
-    const statusWhere =
-      dashboardFilter === 'active' && !status
-        ? { status: Not(In(CLOSED_STATUSES)) }
-        : status
-          ? { status }
-          : {};
+    const statusWhere = (() => {
+      if (status) {
+        return { status };
+      }
+      if (dashboardFilter) {
+        return { status: Not(In(CLOSED_STATUSES)) };
+      }
+      return {};
+    })();
 
-    const deadlineWhere =
-      dashboardFilter === 'due_this_week'
-        ? { statutory_deadline: Between(startOfToday, endOf7Days) }
-        : dashboardFilter === 'overdue'
-          ? { statutory_deadline: LessThan(startOfToday) }
-          : {};
+    const deadlineWhere = DisputeCasesService.resolveDeadlineWhere(dashboardFilter, startOfToday, endOf7Days);
 
     const baseWhere: FindOptionsWhere<DisputeCase> = {
       ...(clientId && { client_id: clientId }),
@@ -113,6 +107,7 @@ export class DisputeCasesService {
       select: {
         id: true,
         case_reference: true,
+        client_id: true,
         jurisdiction: true,
         status: true,
         statutory_deadline: true,
@@ -396,6 +391,29 @@ export class DisputeCasesService {
       case_reference: disputeCase.case_reference,
       analysis_report_url: this.azureBlobService.getFileUrl(disputeCase.analysis_report_blob_path, THREE_DAY_WINDOW_MINUTES),
     };
+  }
+
+  private static resolveDeadlineWhere(
+    dashboardFilter: string | undefined,
+    startOfToday: Date,
+    endOf7Days: Date,
+  ): object {
+    if (dashboardFilter === 'due_this_week') {
+      return { statutory_deadline: Between(startOfToday, endOf7Days) };
+    }
+    if (dashboardFilter === 'overdue') {
+      return { statutory_deadline: LessThan(startOfToday) };
+    }
+    return {};
+  }
+
+  private static getDueThisWeekWindow(): { startOfToday: Date; endOf7Days: Date } {
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    const endOf7Days = new Date(startOfToday);
+    endOf7Days.setDate(endOf7Days.getDate() + 7);
+    endOf7Days.setHours(23, 59, 59, 999);
+    return { startOfToday, endOf7Days };
   }
 
   private static isExpired(expiresAt: Date | null | undefined): boolean {

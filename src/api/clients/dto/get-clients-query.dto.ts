@@ -1,4 +1,4 @@
-import { IsOptional, IsInt, Min, Max, IsString, IsEnum } from 'class-validator';
+import { IsOptional, IsInt, Min, Max, IsString, MaxLength, IsEnum } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ClientStatus } from '../entities/client.entity';
 
@@ -18,6 +18,7 @@ export class GetClientsQueryDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(100)
   search?: string;
 
   @IsOptional()

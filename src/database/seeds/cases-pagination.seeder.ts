@@ -20,12 +20,14 @@ const CLIENTS = [
 
 // ─── 30 cases ──────────────────────────────────────────────────────────────────
 //
-// Deadlines (relative to seed date 2026-04-23):
-//   Future      → 2026-05 onward          (passes dashboardFilter=active)
-//   Overdue     → before 2026-04-23       (passes dashboardFilter=overdue)
-//   Due this wk → 2026-04-23 to 2026-04-30 (passes dashboardFilter=due_this_week)
+// Groups 1–5 (cases 01–25) use fixed deadlines:
+//   Future  → 2026-06 onward          (passes dashboardFilter=active)
+//   Overdue → 2025-11 to 2026-03      (passes dashboardFilter=overdue)
+//
+// Group 6 (cases 26–30) deadlines are computed at seed time so the
+// "due_this_week" test coverage never becomes stale (see seedCasesPagination).
 
-const CASES = [
+const STATIC_CASES = [
   // ── Group 1: NSW — future deadlines (cases 01–05) ──────────────────────────
   {
     clientId: 'b1000000-0000-0000-0000-000000000001',
@@ -261,53 +263,15 @@ const CASES = [
     case:     { case_reference: 'SEED-PAG-025', status: DisputeStatus.APPRAISAL,              statutory_deadline: '2026-03-01', jurisdiction: Jurisdiction.QLD },
   },
 
-  // ── Group 6: Mixed jurisdictions — DUE THIS WEEK (cases 26–30) ─────────────
-  {
-    clientId: 'b1000000-0000-0000-0000-000000000006',
-    propertyId: 'b2000000-0000-0000-0000-000000000026',
-    noticeId:   'b3000000-0000-0000-0000-000000000026',
-    caseId:     'b4000000-0000-0000-0000-000000000026',
-    property: { address: '15 Bridge Street',    suburb: 'Sydney',     state: Jurisdiction.NSW, postcode: '2000' },
-    notice:   { valuation_date: '2026-02-22', assessed_land_value: 3_250_000 },
-    case:     { case_reference: 'SEED-PAG-026', status: DisputeStatus.APPRAISAL,              statutory_deadline: '2026-04-24', jurisdiction: Jurisdiction.NSW },
-  },
-  {
-    clientId: 'b1000000-0000-0000-0000-000000000006',
-    propertyId: 'b2000000-0000-0000-0000-000000000027',
-    noticeId:   'b3000000-0000-0000-0000-000000000027',
-    caseId:     'b4000000-0000-0000-0000-000000000027',
-    property: { address: '72 Swanston Street',  suburb: 'Melbourne',  state: Jurisdiction.VIC, postcode: '3000' },
-    notice:   { valuation_date: '2026-02-24', assessed_land_value: 1_900_000 },
-    case:     { case_reference: 'SEED-PAG-027', status: DisputeStatus.AWAITING_CLIENT_APPROVAL, statutory_deadline: '2026-04-26', jurisdiction: Jurisdiction.VIC },
-  },
-  {
-    clientId: 'b1000000-0000-0000-0000-000000000006',
-    propertyId: 'b2000000-0000-0000-0000-000000000028',
-    noticeId:   'b3000000-0000-0000-0000-000000000028',
-    caseId:     'b4000000-0000-0000-0000-000000000028',
-    property: { address: '55 Adelaide Street',  suburb: 'Brisbane',   state: Jurisdiction.QLD, postcode: '4000' },
-    notice:   { valuation_date: '2026-02-26', assessed_land_value: 4_100_000 },
-    case:     { case_reference: 'SEED-PAG-028', status: DisputeStatus.GROUNDS_SELECTION,       statutory_deadline: '2026-04-28', jurisdiction: Jurisdiction.QLD },
-  },
-  {
-    clientId: 'b1000000-0000-0000-0000-000000000006',
-    propertyId: 'b2000000-0000-0000-0000-000000000029',
-    noticeId:   'b3000000-0000-0000-0000-000000000029',
-    caseId:     'b4000000-0000-0000-0000-000000000029',
-    property: { address: '9 Wellington Street', suburb: 'Perth',      state: Jurisdiction.WA,  postcode: '6000' },
-    notice:   { valuation_date: '2026-02-28', assessed_land_value: 2_350_000 },
-    case:     { case_reference: 'SEED-PAG-029', status: DisputeStatus.DRAFT,                   statutory_deadline: '2026-04-29', jurisdiction: Jurisdiction.WA },
-  },
-  {
-    clientId: 'b1000000-0000-0000-0000-000000000006',
-    propertyId: 'b2000000-0000-0000-0000-000000000030',
-    noticeId:   'b3000000-0000-0000-0000-000000000030',
-    caseId:     'b4000000-0000-0000-0000-000000000030',
-    property: { address: '42 Castlereagh Street', suburb: 'Sydney',   state: Jurisdiction.NSW, postcode: '2000' },
-    notice:   { valuation_date: '2026-02-28', assessed_land_value: 7_800_000 },
-    case:     { case_reference: 'SEED-PAG-030', status: DisputeStatus.EVIDENCE_COMPILATION,   statutory_deadline: '2026-04-30', jurisdiction: Jurisdiction.NSW },
-  },
 ];
+
+// ─── Helpers ───────────────────────────────────────────────────────────────────
+
+function isoDatePlusDays(base: Date, days: number): string {
+  const d = new Date(base);
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+}
 
 // ─── Seeder ────────────────────────────────────────────────────────────────────
 
@@ -316,6 +280,58 @@ export async function seedCasesPagination(dataSource: DataSource): Promise<void>
   const propertyRepo        = dataSource.getRepository(Property);
   const valuationNoticeRepo = dataSource.getRepository(ValuationNotice);
   const disputeCaseRepo     = dataSource.getRepository(DisputeCase);
+
+  // ── Group 6: DUE THIS WEEK — deadlines relative to today ─────────────────────
+  const today = new Date();
+  const DUE_THIS_WEEK_CASES = [
+    {
+      clientId: 'b1000000-0000-0000-0000-000000000006',
+      propertyId: 'b2000000-0000-0000-0000-000000000026',
+      noticeId:   'b3000000-0000-0000-0000-000000000026',
+      caseId:     'b4000000-0000-0000-0000-000000000026',
+      property: { address: '15 Bridge Street',      suburb: 'Sydney',    state: Jurisdiction.NSW, postcode: '2000' },
+      notice:   { valuation_date: '2026-02-22', assessed_land_value: 3_250_000 },
+      case:     { case_reference: 'SEED-PAG-026', status: DisputeStatus.APPRAISAL,                 statutory_deadline: isoDatePlusDays(today, 0), jurisdiction: Jurisdiction.NSW },
+    },
+    {
+      clientId: 'b1000000-0000-0000-0000-000000000006',
+      propertyId: 'b2000000-0000-0000-0000-000000000027',
+      noticeId:   'b3000000-0000-0000-0000-000000000027',
+      caseId:     'b4000000-0000-0000-0000-000000000027',
+      property: { address: '72 Swanston Street',    suburb: 'Melbourne', state: Jurisdiction.VIC, postcode: '3000' },
+      notice:   { valuation_date: '2026-02-24', assessed_land_value: 1_900_000 },
+      case:     { case_reference: 'SEED-PAG-027', status: DisputeStatus.AWAITING_CLIENT_APPROVAL,  statutory_deadline: isoDatePlusDays(today, 2), jurisdiction: Jurisdiction.VIC },
+    },
+    {
+      clientId: 'b1000000-0000-0000-0000-000000000006',
+      propertyId: 'b2000000-0000-0000-0000-000000000028',
+      noticeId:   'b3000000-0000-0000-0000-000000000028',
+      caseId:     'b4000000-0000-0000-0000-000000000028',
+      property: { address: '55 Adelaide Street',   suburb: 'Brisbane',  state: Jurisdiction.QLD, postcode: '4000' },
+      notice:   { valuation_date: '2026-02-26', assessed_land_value: 4_100_000 },
+      case:     { case_reference: 'SEED-PAG-028', status: DisputeStatus.GROUNDS_SELECTION,         statutory_deadline: isoDatePlusDays(today, 4), jurisdiction: Jurisdiction.QLD },
+    },
+    {
+      clientId: 'b1000000-0000-0000-0000-000000000006',
+      propertyId: 'b2000000-0000-0000-0000-000000000029',
+      noticeId:   'b3000000-0000-0000-0000-000000000029',
+      caseId:     'b4000000-0000-0000-0000-000000000029',
+      property: { address: '9 Wellington Street',  suburb: 'Perth',     state: Jurisdiction.WA,  postcode: '6000' },
+      notice:   { valuation_date: '2026-02-28', assessed_land_value: 2_350_000 },
+      case:     { case_reference: 'SEED-PAG-029', status: DisputeStatus.DRAFT,                     statutory_deadline: isoDatePlusDays(today, 5), jurisdiction: Jurisdiction.WA  },
+    },
+    {
+      clientId: 'b1000000-0000-0000-0000-000000000006',
+      propertyId: 'b2000000-0000-0000-0000-000000000030',
+      noticeId:   'b3000000-0000-0000-0000-000000000030',
+      caseId:     'b4000000-0000-0000-0000-000000000030',
+      property: { address: '42 Castlereagh Street', suburb: 'Sydney',   state: Jurisdiction.NSW, postcode: '2000' },
+      notice:   { valuation_date: '2026-02-28', assessed_land_value: 7_800_000 },
+      case:     { case_reference: 'SEED-PAG-030', status: DisputeStatus.EVIDENCE_COMPILATION,      statutory_deadline: isoDatePlusDays(today, 6), jurisdiction: Jurisdiction.NSW },
+    },
+  ];
+
+  const CASES = [...STATIC_CASES, ...DUE_THIS_WEEK_CASES];
 
   // ── Clients ──────────────────────────────────────────────────────────────────
   for (const c of CLIENTS) {

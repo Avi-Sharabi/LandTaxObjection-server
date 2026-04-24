@@ -1,4 +1,4 @@
-import { IsOptional, IsInt, Min, Max, IsString, IsEnum, IsIn, IsUUID } from 'class-validator';
+import { IsOptional, IsInt, Min, Max, IsString, MaxLength, IsEnum, IsIn, IsUUID } from 'class-validator';
 import { Type } from 'class-transformer';
 import { DisputeStatus, Jurisdiction } from '../entities/dispute-case.entity';
 
@@ -18,6 +18,7 @@ export class GetDisputeCasesQueryDto {
 
   @IsOptional()
   @IsString()
+  @MaxLength(100)
   search?: string;
 
   @IsOptional()

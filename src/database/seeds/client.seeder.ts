@@ -7,7 +7,7 @@ const logger = new Logger('ClientSeeder');
 const CLIENTS: Partial<Client>[] = [
     {
         name: 'Harrison Property Group',
-        email: 'harrison.pg@gmail.com',
+        email: 'harrison.pg@clientseed.test',
         phone: '+61 2 9001 1001',
         status: ClientStatus.ACTIVE,
         address: '12 Phillip Street',
@@ -20,7 +20,7 @@ const CLIENTS: Partial<Client>[] = [
     },
     {
         name: 'Nguyen Family Trust',
-        email: 'nguyen.trust@outlook.com',
+        email: 'nguyen.trust@clientseed.test',
         phone: '+61 3 9001 2002',
         status: ClientStatus.ACTIVE,
         address: '45 Collins Street',
@@ -32,7 +32,7 @@ const CLIENTS: Partial<Client>[] = [
     },
     {
         name: 'Patel Commercial Holdings',
-        email: 'patel.commercial@yahoo.com.au',
+        email: 'patel.commercial@clientseed.test',
         phone: '+61 7 9001 3003',
         status: ClientStatus.PROSPECT,
         address: '88 Queen Street',
@@ -45,7 +45,7 @@ const CLIENTS: Partial<Client>[] = [
     },
     {
         name: 'Marino & Associates Pty Ltd',
-        email: 'marino.assoc@marino.com.au',
+        email: 'marino.assoc@clientseed.test',
         phone: '+61 8 9001 4004',
         status: ClientStatus.TC_NEGOTIATION,
         address: '3 St Georges Terrace',
@@ -59,7 +59,7 @@ const CLIENTS: Partial<Client>[] = [
     },
     {
         name: 'Kowalski Investments',
-        email: 'kowalski.invest@gmail.com',
+        email: 'kowalski.invest@clientseed.test',
         phone: '+61 2 9001 5005',
         status: ClientStatus.ACTIVE,
         address: '22 Pitt Street',
@@ -71,7 +71,7 @@ const CLIENTS: Partial<Client>[] = [
     },
     {
         name: 'Chen Land Holdings',
-        email: 'chen.land@chenholdings.com.au',
+        email: 'chen.land@clientseed.test',
         phone: '+61 3 9001 6006',
         status: ClientStatus.ACTIVE,
         address: '101 Bourke Street',
@@ -85,7 +85,7 @@ const CLIENTS: Partial<Client>[] = [
     },
     {
         name: "O'Brien Rural Properties",
-        email: 'obrien.rural@ruralprops.com.au',
+        email: 'obrien.rural@clientseed.test',
         phone: '+61 7 9001 7007',
         status: ClientStatus.REJECTED,
         address: '55 Ann Street',
@@ -97,7 +97,7 @@ const CLIENTS: Partial<Client>[] = [
     },
     {
         name: 'Singh & Singh Enterprises',
-        email: 's.singh@singhenterprises.net',
+        email: 's.singh@clientseed.test',
         phone: '+61 8 9001 8008',
         status: ClientStatus.PROSPECT,
         address: '7 Murray Street',
@@ -110,7 +110,7 @@ const CLIENTS: Partial<Client>[] = [
     },
     {
         name: 'Thomasson Industrial Pty Ltd',
-        email: 'admin@thomassonindustrial.com.au',
+        email: 'admin@clientseed.test',
         phone: '+61 2 9001 9009',
         status: ClientStatus.TC_NEGOTIATION,
         address: '300 George Street',
@@ -124,7 +124,7 @@ const CLIENTS: Partial<Client>[] = [
     },
     {
         name: 'Vasquez Capital Group',
-        email: 'vcapital@vasquezcg.com.au',
+        email: 'vcapital@clientseed.test',
         phone: '+61 3 9001 0010',
         status: ClientStatus.ACTIVE,
         address: '80 Flinders Street',
@@ -138,7 +138,7 @@ const CLIENTS: Partial<Client>[] = [
     },
     {
         name: 'Adams Strata Management',
-        email: 'info@adamsstrata.com.au',
+        email: 'info@clientseed.test',
         phone: '+61 2 9001 1011',
         status: ClientStatus.ACTIVE,
         address: '9 Hunter Street',
@@ -150,7 +150,7 @@ const CLIENTS: Partial<Client>[] = [
     },
     {
         name: 'Lindqvist Developments',
-        email: 'lind.dev@lindqvistdev.com.au',
+        email: 'lind.dev@clientseed.test',
         phone: '+61 7 9001 2012',
         status: ClientStatus.PROSPECT,
         address: '17 Eagle Street',
