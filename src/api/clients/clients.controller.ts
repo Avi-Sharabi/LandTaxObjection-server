@@ -3,7 +3,7 @@ import { ClientsService } from './clients.service';
 import { CreateClientDto } from './dto/create-client.dto';
 import { UpdateClientDto } from './dto/update-client.dto';
 import { AcceptTCDto } from './dto/accept-tc.dto';
-import { GetClientsQueryDto } from './dto/get-clients-query.dto';
+import { GetClientsQueryDto } from '../../common/dto/paginated-query.dto';
 import { ApiOperation, ApiParam, ApiResponse } from '@nestjs/swagger';
 import { AcceptTcResponseDto } from './dto/accept-tc-response.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
