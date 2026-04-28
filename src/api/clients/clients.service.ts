@@ -8,7 +8,7 @@ import { AcceptTcResponseDto } from './dto/accept-tc-response.dto';
 import { CreateClientDto } from './dto/create-client.dto';
 import { UpdateClientDto } from './dto/update-client.dto';
 import { GetClientsQueryDto } from '../../common/dto/paginated-query.dto';
-import { PaginatedClientsResponseDto } from '../../common/dto/paginated-query.dto';
+import { PaginatedClientsResponseDto } from '../../common/dto/paginated-response.dto';
 import { Client, ClientStatus } from './entities/client.entity';
 import { ValuationNotice } from '../valuation-notices/entities/valuation-notice.entity';
 import { fyiStorageService } from 'src/common/fyi-storage/fyi-storage.service';
