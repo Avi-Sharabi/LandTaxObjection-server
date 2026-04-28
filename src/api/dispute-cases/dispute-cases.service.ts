@@ -6,9 +6,11 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { DataSource, Repository } from 'typeorm';
+import { Between, DataSource, FindOptionsWhere, ILike, In, LessThan, Not, Repository } from 'typeorm';
 import { randomUUID, randomInt } from 'crypto';
 import { ConfigService } from '@nestjs/config';
+import { GetDisputeCasesQueryDto } from '../../common/dto/paginated-query.dto';
+import { PaginatedDisputeCasesResponseDto } from '../../common/dto/paginated-response.dto';
 import { UpdateDisputeCaseDto } from './dto/update-dispute-case.dto';
 import { CreateDisputeIntakeDto } from './dto/create-dispute-intake.dto';
 import { CloseNoObjectionDto } from './dto/close-no-objection.dto';
@@ -65,8 +67,61 @@ export class DisputeCasesService {
     return this.intakeOrchestrator.submitIntakeApplication(intakeDto);
   }
 
-  async findAll(): Promise<DisputeCaseResponseDto[]> {
-    return await this.disputeCasesRepository.find()
+  async findAll(clientId?: string): Promise<DisputeCaseResponseDto[]> {
+    return await this.disputeCasesRepository.find({
+      where: clientId ? { client_id: clientId } : {},
+    });
+  }
+
+  async findPaginated(query: GetDisputeCasesQueryDto): Promise<PaginatedDisputeCasesResponseDto> {
+    const { page, limit, search, status, jurisdiction, clientId, dashboardFilter } = query;
+    const skip = (page - 1) * limit;
+
+    const { startOfToday, endOf7Days } = DisputeCasesService.getDueThisWeekWindow();
+
+    const statusWhere = (() => {
+      if (status) {
+        return { status };
+      }
+      if (dashboardFilter) {
+        return { status: Not(In(CLOSED_STATUSES)) };
+      }
+      return {};
+    })();
+
+    const deadlineWhere = DisputeCasesService.resolveDeadlineWhere(dashboardFilter, startOfToday, endOf7Days);
+
+    const baseWhere: FindOptionsWhere<DisputeCase> = {
+      ...(clientId && { client_id: clientId }),
+      ...statusWhere,
+      ...(jurisdiction && { jurisdiction }),
+      ...deadlineWhere,
+    };
+
+    const where: FindOptionsWhere<DisputeCase>[] = search
+      ? [{ ...baseWhere, case_reference: ILike(`%${search}%`) }]
+      : [baseWhere];
+
+    const [data, total] = await this.disputeCasesRepository.findAndCount({
+      where,
+      select: {
+        id: true,
+        case_reference: true,
+        client_id: true,
+        jurisdiction: true,
+        status: true,
+        statutory_deadline: true,
+        original_assessed_value: true,
+        vg_follow_up_count: true,
+        reminder_count: true,
+        created_at: true,
+      },
+      order: { created_at: 'DESC' },
+      skip,
+      take: limit,
+    });
+
+    return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
   }
 
   async findOne(id: string): Promise<DisputeCaseResponseDto> {
@@ -336,6 +391,29 @@ export class DisputeCasesService {
       case_reference: disputeCase.case_reference,
       analysis_report_url: this.azureBlobService.getFileUrl(disputeCase.analysis_report_blob_path, THREE_DAY_WINDOW_MINUTES),
     };
+  }
+
+  private static resolveDeadlineWhere(
+    dashboardFilter: string | undefined,
+    startOfToday: Date,
+    endOf7Days: Date,
+  ): object {
+    if (dashboardFilter === 'due_this_week') {
+      return { statutory_deadline: Between(startOfToday, endOf7Days) };
+    }
+    if (dashboardFilter === 'overdue') {
+      return { statutory_deadline: LessThan(startOfToday) };
+    }
+    return {};
+  }
+
+  private static getDueThisWeekWindow(): { startOfToday: Date; endOf7Days: Date } {
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    const endOf7Days = new Date(startOfToday);
+    endOf7Days.setDate(endOf7Days.getDate() + 7);
+    endOf7Days.setHours(23, 59, 59, 999);
+    return { startOfToday, endOf7Days };
   }
 
   private static isExpired(expiresAt: Date | null | undefined): boolean {
