@@ -23,7 +23,7 @@ export class VGResponseMonitorScheduler implements OnApplicationBootstrap {
 
     const job = new CronJob(schedule, () => void this.runVGFollowUpCheck());
     this.schedulerRegistry.addCronJob('vg-response-monitor', job);
-    job.start();
+    // job.start();
 
     this.logger.log(`[VG-FOLLOW-UP] Scheduled with cron: "${schedule}"`);
   }

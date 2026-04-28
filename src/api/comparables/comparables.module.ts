@@ -1,16 +1,21 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { BullModule } from '@nestjs/bullmq';
 import { ComparableSale } from './entities/comparable-sale.entity';
 import { ComparablesController } from './comparables.controller';
 import { ComparablesService } from './comparables.service';
+import { ComparablesProcessor, COMPARABLE_GENERATION_QUEUE } from './comparables.processor';
 import { DisputeCase } from '../dispute-cases/entities/dispute-case.entity';
+import { McpModule } from '../../mcp/mcp.module';
 
 @Module({
   imports: [
     TypeOrmModule.forFeature([ComparableSale, DisputeCase]),
+    BullModule.registerQueue({ name: COMPARABLE_GENERATION_QUEUE }),
+    McpModule,
   ],
   controllers: [ComparablesController],
-  providers: [ComparablesService],
+  providers: [ComparablesService, ComparablesProcessor],
   exports: [ComparablesService],
 })
 export class ComparablesModule {}

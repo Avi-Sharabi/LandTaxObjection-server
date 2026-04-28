@@ -9,7 +9,7 @@ export class TypeOrmConfigService implements TypeOrmOptionsFactory {
 
   public createTypeOrmOptions(): TypeOrmModuleOptions {
     const ENV = this.config.get<string>('NODE_ENV') || 'development';
-    const isProduction = ENV !== 'development';
+    const isProduction = ENV == 'development';
 
     return {
       type: 'postgres',
