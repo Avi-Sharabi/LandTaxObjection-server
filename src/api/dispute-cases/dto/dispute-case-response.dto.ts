@@ -88,6 +88,9 @@ export class DisputeCaseResponseDto {
   submitted_at: Date | null;
 
   @ApiPropertyOptional()
+  lodgment_reference_number: string | null;
+
+  @ApiPropertyOptional()
   closed_at: Date | null;
 
   @ApiPropertyOptional({ nullable: true, type: () => ValuationNoticeNestedDto })
