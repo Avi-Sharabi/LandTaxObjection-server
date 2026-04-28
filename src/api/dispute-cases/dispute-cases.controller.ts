@@ -12,8 +12,8 @@ import {
   Query,
   Req,
   Version,
+  ParseUUIDPipe,
 } from '@nestjs/common';
-import type { Request } from 'express';
 import {
   ApiBearerAuth,
   ApiBody,
@@ -25,6 +25,8 @@ import {
 } from '@nestjs/swagger';
 import { ApprovalDocumentsResponseDto } from './dto/approval-documents-response.dto';
 import { DisputeCasesService } from './dispute-cases.service';
+import { GetDisputeCasesQueryDto } from '../../common/dto/paginated-query.dto';
+import { PaginatedDisputeCasesResponseDto } from '../../common/dto/paginated-response.dto';
 import { UpdateDisputeCaseDto } from './dto/update-dispute-case.dto';
 import { CreateDisputeIntakeDto } from './dto/create-dispute-intake.dto';
 import { CreateDisputeIntakeV2Dto } from './dto/create-dispute-intake-v2.dto';
@@ -114,10 +116,21 @@ export class DisputeCasesController {
   @ApiBearerAuth()
   @Get()
   @ApiOperation({ summary: 'List all dispute cases' })
+  @ApiQuery({ name: 'clientId', required: false, description: 'Filter by client UUID' })
   @ApiResponse({ status: 200, description: 'List of dispute cases', type: [DisputeCaseResponseDto] })
   @ApiResponse({ status: 401, description: 'Unauthorised' })
-  findAll(): Promise<DisputeCaseResponseDto[]> {
-    return this.disputeCasesService.findAll();
+  findAll(@Query('clientId', new ParseUUIDPipe({ optional: true })) clientId?: string): Promise<DisputeCaseResponseDto[]> {
+    return this.disputeCasesService.findAll(clientId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @Get('paginated')
+  @ApiOperation({ summary: 'List dispute cases with pagination, search, and filtering' })
+  @ApiResponse({ status: 200, description: 'Paginated list of dispute cases', type: PaginatedDisputeCasesResponseDto })
+  @ApiResponse({ status: 401, description: 'Unauthorised' })
+  findPaginated(@Query() query: GetDisputeCasesQueryDto): Promise<PaginatedDisputeCasesResponseDto> {
+    return this.disputeCasesService.findPaginated(query);
   }
 
   // Public endpoint — no auth guard. Accessed via time-limited token link in the advisory letter email.
