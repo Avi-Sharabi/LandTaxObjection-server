@@ -26,7 +26,7 @@ import { GenerateComparableSalesDto } from './dto/generate-comparable-sales.dto'
 import { EnqueueGenerateResponseDto } from './dto/enqueue-generate-response.dto';
 import { JobStatusResponseDto, JobStatus } from './dto/job-status-response.dto';
 import { COMPARABLE_GENERATION_QUEUE, ComparableGenerationJobData, ComparableGenerationJobResult } from './comparables.processor';
-import { AuthResponseDto } from '../auth/dto/auth-response.dto';
+import type { AuthenticatedRequest } from '../../common/types/authenticated-request.type';
 
 @ApiTags('comparables')
 @ApiBearerAuth()
@@ -48,7 +48,7 @@ export class ComparablesController {
   @ApiResponse({ status: 404, description: 'Dispute case not found' })
   async create(
     @Body() dto: CreateComparableDto,
-    @Request() req: { user: AuthResponseDto },
+    @Request() req: { user: AuthenticatedRequest['user'] },
   ): Promise<ComparableResponseDto> {
     return this.comparablesService.create(dto.dispute_case_id, dto, req.user.id);
   }
@@ -57,18 +57,13 @@ export class ComparablesController {
   @HttpCode(202)
   @ApiOperation({ summary: 'Enqueue AI generation of comparable sales — poll GET /comparables/jobs/:jobId/status for progress' })
   @ApiResponse({ status: 202, type: EnqueueGenerateResponseDto })
-  @ApiResponse({ status: 404, description: 'Dispute case not found' })
   async generateComparableSales(
     @Body() dto: GenerateComparableSalesDto,
-    @Request() req: { user: AuthResponseDto; protocol: string; get: (h: string) => string; correlationId?: string },
+    @Request() req: AuthenticatedRequest,
   ): Promise<EnqueueGenerateResponseDto> {
-    const proto = req.get('x-forwarded-proto') || req.protocol;
-    const serverUrl = `${proto}://${req.get('host')}`;
-
     const job = await this.generationQueue.add('generate', {
       dto,
       createdById: req.user.id,
-      serverUrl,
       correlationId: req.correlationId,
     }, { jobId: dto.dispute_case_id });
 

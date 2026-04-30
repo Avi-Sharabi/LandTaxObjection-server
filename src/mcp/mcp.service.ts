@@ -32,13 +32,18 @@ export class McpService implements OnModuleInit {
 
   constructor(@InjectDataSource() private dataSource: DataSource) {}
 
-  onModuleInit(): void {
+  async onModuleInit(): Promise<void> {
     const skillsDir = path.join(process.cwd(), 'src', 'skills');
-    if (!fs.existsSync(skillsDir)) return;
-    for (const file of fs.readdirSync(skillsDir)) {
+    try {
+      await fs.promises.access(skillsDir);
+    } catch {
+      return;
+    }
+    const files = await fs.promises.readdir(skillsDir);
+    for (const file of files) {
       if (!file.endsWith('.md')) continue;
       const name = file.replace(/\.md$/, '');
-      const content = fs.readFileSync(path.join(skillsDir, file), 'utf-8');
+      const content = await fs.promises.readFile(path.join(skillsDir, file), 'utf-8');
       this.skills.set(name, content);
       this.logEvent('MCP.skills.loaded', { skill: name, length: content.length });
     }

@@ -150,6 +150,16 @@ export class CreateComparableDto {
   @IsNumber()
   adjusted_rate_per_sqm?: number | null;
 
+  @ApiProperty({ example: 6201189, required: false, nullable: true, description: "This comparable's own land value in dollars after improvement stripping and adjustments: adjusted_rate_per_sqm × comparable area" })
+  @IsOptional()
+  @IsNumber()
+  adjusted_land_value?: number | null;
+
+  @ApiProperty({ example: 3856554, required: false, nullable: true, description: 'Implied land value of the subject property derived from this comparable: adjusted_rate_per_sqm × subject land area' })
+  @IsOptional()
+  @IsNumber()
+  suggested_land_value?: number | null;
+
   @ApiProperty({ required: false, nullable: true })
   @IsOptional()
   @IsString()

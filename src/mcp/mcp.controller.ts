@@ -11,7 +11,7 @@ export class McpController {
   constructor(private mcpService: McpService) {}
 
   @Post()
-  async handle(@Req() req: Request, @Res() res: Response) {
+  async handle(@Req() req: Request, @Res() res: Response): Promise<void> {
     res.setHeader('X-MCP-Version', '1.0');
     await this.mcpService.handleRequest(req, res);
   }

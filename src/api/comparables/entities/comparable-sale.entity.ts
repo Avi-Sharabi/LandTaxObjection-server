@@ -106,6 +106,12 @@ export class ComparableSale {
   @Column({ type: 'numeric', precision: 15, scale: 2, nullable: true })
   adjusted_rate_per_sqm: number | null;
 
+  @Column({ type: 'numeric', precision: 20, scale: 2, nullable: true })
+  adjusted_land_value: number | null;
+
+  @Column({ type: 'numeric', precision: 20, scale: 2, nullable: true })
+  suggested_land_value: number | null;
+
   @Column({ type: 'text', nullable: true })
   explanation: string | null;
 

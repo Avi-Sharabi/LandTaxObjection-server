@@ -35,5 +35,7 @@ export class ComparableResponseDto {
   @Expose() @ApiProperty({ nullable: true }) dealing_number: string | null;
   @Expose() @ApiProperty({ nullable: true }) owner_type: string | null;
   @Expose() @ApiProperty({ nullable: true }) adjusted_rate_per_sqm: number | null;
+  @Expose() @ApiProperty({ nullable: true, description: "This comparable's own land value in dollars after improvement stripping and adjustments: adjusted_rate_per_sqm × comparable area" }) adjusted_land_value: number | null;
+  @Expose() @ApiProperty({ nullable: true, description: 'Implied land value of the subject property derived from this comparable: adjusted_rate_per_sqm × subject land area' }) suggested_land_value: number | null;
   @Expose() @ApiProperty({ nullable: true }) explanation: string | null;
 }

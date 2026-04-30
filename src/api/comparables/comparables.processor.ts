@@ -9,7 +9,6 @@ export const COMPARABLE_GENERATION_QUEUE = 'comparable-generation';
 export interface ComparableGenerationJobData {
   dto: GenerateComparableSalesDto;
   createdById: string;
-  serverUrl: string;
   correlationId?: string;
 }
 
@@ -26,7 +25,7 @@ export class ComparablesProcessor extends WorkerHost {
   }
 
   async process(job: Job<ComparableGenerationJobData>): Promise<ComparableGenerationJobResult> {
-    const { dto, createdById, serverUrl, correlationId } = job.data;
+    const { dto, createdById, correlationId } = job.data;
     this.logger.log(
       JSON.stringify({
         context: 'PROCESSOR.start',
@@ -36,13 +35,24 @@ export class ComparablesProcessor extends WorkerHost {
       }),
     );
 
-    const results = await this.comparablesService.generateComparableSales(
-      dto,
-      createdById,
-      serverUrl,
-      correlationId,
-    );
-
-    return { savedCount: results.length };
+    try {
+      const results = await this.comparablesService.generateComparableSales(
+        dto,
+        createdById,
+        correlationId,
+      );
+      return { savedCount: results.length };
+    } catch (err: unknown) {
+      this.logger.error(
+        JSON.stringify({
+          context: 'PROCESSOR.failed',
+          jobId: job.id,
+          disputeCaseId: dto.dispute_case_id,
+          error: err instanceof Error ? err.message : String(err),
+          ts: new Date().toISOString(),
+        }),
+      );
+      throw err;
+    }
   }
 }
