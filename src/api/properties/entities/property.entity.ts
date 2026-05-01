@@ -42,6 +42,15 @@ export class Property {
   @Column({ type: 'text', nullable: true })
   zoning: string;
 
+  @Column({ type: 'text', nullable: true })
+  lot_dp: string | null;
+
+  @Column({ type: 'text', nullable: true })
+  dimensions: string | null;
+
+  @Column({ type: 'numeric', precision: 6, scale: 2, nullable: true })
+  height_limit_m: number | null;
+
   @CreateDateColumn({ type: 'timestamptz' })
   created_at: Date;
 
