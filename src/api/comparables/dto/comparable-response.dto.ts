@@ -1,49 +1,41 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { Exclude, Expose, Type } from 'class-transformer';
+import { Exclude, Expose } from 'class-transformer';
 
 @Exclude()
 export class ComparableResponseDto {
-  @Expose()
-  @ApiProperty()
-  id: string;
+  @Expose() @ApiProperty() id: string;
+  @Expose() @ApiProperty() dispute_case_id: string;
+  @Expose() @ApiProperty() created_by_id: string;
+  @Expose() @ApiProperty() created_at: Date;
 
-  @Expose()
-  @ApiProperty()
-  dispute_case_id: string;
-
-  @Expose()
-  @ApiProperty()
-  address: string;
-
-  @Expose()
-  @ApiProperty()
-  sale_date: Date;
-
-  @Expose()
-  @ApiProperty()
-  sale_price: number;
-
-  @Expose()
-  @ApiProperty({ description: 'Estimated value of improvements (buildings, structures) in AUD' })
-  estimated_improvements_value: number;
-
-  @Expose()
-  @ApiProperty({ description: 'Adjusted land-only value: Sale Price − Improvements' })
-  adjusted_land_value: number;
-
-  @Expose()
-  @ApiProperty({ nullable: true })
-  land_area_sqm: number | null;
-
-  @Expose()
-  @ApiProperty({ nullable: true })
-  notes: string | null;
-
-  @Expose()
-  @ApiProperty()
-  created_by_id: string;
-
-  @Expose()
-  @ApiProperty()
-  created_at: Date;
+  @Expose() @ApiProperty({ nullable: true }) sale_id: string | null;
+  @Expose() @ApiProperty({ nullable: true }) source_file: string | null;
+  @Expose() @ApiProperty({ nullable: true }) imported_at: Date | null;
+  @Expose() @ApiProperty({ nullable: true }) district_code: string | null;
+  @Expose() @ApiProperty({ nullable: true }) property_id: string | null;
+  @Expose() @ApiProperty({ nullable: true }) sale_counter: number | null;
+  @Expose() @ApiProperty({ nullable: true }) download_datetime: Date | null;
+  @Expose() @ApiProperty({ nullable: true }) property_name: string | null;
+  @Expose() @ApiProperty({ nullable: true }) property_unit_number: string | null;
+  @Expose() @ApiProperty({ nullable: true }) property_house_number: string | null;
+  @Expose() @ApiProperty({ nullable: true }) property_street_name: string | null;
+  @Expose() @ApiProperty({ nullable: true }) property_locality: string | null;
+  @Expose() @ApiProperty({ nullable: true }) property_post_code: string | null;
+  @Expose() @ApiProperty({ nullable: true }) area: number | null;
+  @Expose() @ApiProperty({ nullable: true }) contract_date: Date | null;
+  @Expose() @ApiProperty({ nullable: true }) settlement_date: Date | null;
+  @Expose() @ApiProperty({ nullable: true }) purchase_price: number | null;
+  @Expose() @ApiProperty({ nullable: true }) zoning: string | null;
+  @Expose() @ApiProperty({ nullable: true }) nature_of_property: string | null;
+  @Expose() @ApiProperty({ nullable: true }) primary_purpose: string | null;
+  @Expose() @ApiProperty({ nullable: true }) strata_lot_number: string | null;
+  @Expose() @ApiProperty({ nullable: true }) component_code: string | null;
+  @Expose() @ApiProperty({ nullable: true }) sale_code: string | null;
+  @Expose() @ApiProperty({ nullable: true }) interest_of_sale_percent: number | null;
+  @Expose() @ApiProperty({ nullable: true }) dealing_number: string | null;
+  @Expose() @ApiProperty({ nullable: true }) owner_type: string | null;
+  @Expose() @ApiProperty({ nullable: true }) adjusted_rate_per_sqm: number | null;
+  @Expose() @ApiProperty({ nullable: true, description: "This comparable's own land value in dollars after improvement stripping and adjustments: adjusted_rate_per_sqm × comparable area" }) adjusted_land_value: number | null;
+  @Expose() @ApiProperty({ nullable: true, description: 'Implied land value of the subject property derived from this comparable: adjusted_rate_per_sqm × subject land area' }) suggested_land_value: number | null;
+  @Expose() @ApiProperty({ nullable: true }) explanation: string | null;
 }

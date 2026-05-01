@@ -8,6 +8,7 @@ import { seedCaseClosedNoObjection } from './case-closed-no-objection.seeder';
 import { seedNotifications } from './notification.seeder';
 import { seedSubmitToVG } from './submit-to-vg.seeder';
 import { seedCasesPagination } from './cases-pagination.seeder';
+import { seedComparablesTest } from './comparables-test.seeder';
 
 const logger = new Logger('Seed');
 
@@ -19,6 +20,7 @@ async function runSeeders(dataSource: DataSource): Promise<void> {
     await seedNotifications(dataSource);
     await seedSubmitToVG(dataSource);
     await seedCasesPagination(dataSource);
+    await seedComparablesTest(dataSource);
 }
 
 AppDataSource.initialize()
