@@ -1,6 +1,7 @@
 import { Injectable, Inject } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { TypeOrmOptionsFactory, TypeOrmModuleOptions } from '@nestjs/typeorm';
+import { isProduction } from './environment';
 
 @Injectable()
 export class TypeOrmConfigService implements TypeOrmOptionsFactory {
@@ -8,8 +9,6 @@ export class TypeOrmConfigService implements TypeOrmOptionsFactory {
   private readonly config: ConfigService;
 
   public createTypeOrmOptions(): TypeOrmModuleOptions {
-    const ENV = this.config.get<string>('NODE_ENV') || 'development';
-    const isProduction = ENV == 'development';
 
     return {
       type: 'postgres',
@@ -24,7 +23,7 @@ export class TypeOrmConfigService implements TypeOrmOptionsFactory {
       logger: 'file',
       logging: true,
       synchronize: false,
-      ...(isProduction && {
+      ...(isProduction(this.config) && {
         ssl: {
           rejectUnauthorized: false,
         },

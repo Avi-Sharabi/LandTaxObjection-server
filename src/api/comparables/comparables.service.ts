@@ -188,7 +188,7 @@ export class ComparablesService implements OnModuleInit {
     const systemPrompt = `${this.skillContent}\n\n## property_sales_raw schema (do NOT call list_tables or describe_table — query directly)\n\`\`\`\n${this.schemaBlock}\n\`\`\``;
 
     this.logEvent('GENERATE.anthropic.start', { correlationId, systemPromptLength: systemPrompt.length });
-    const rawText = await this.callAnthropicApi(systemPrompt, userPrompt, mcpUrl, mcpToken, correlationId, dto.dispute_case_id);
+    const { text: rawText, usage } = await this.callAnthropicApi(systemPrompt, userPrompt, mcpUrl, mcpToken, correlationId, dto.dispute_case_id);
     const parsed = this.extractJsonArray(rawText);
 
     this.logEvent('GENERATE.persist', { correlationId, count: parsed.length });
@@ -198,6 +198,10 @@ export class ComparablesService implements OnModuleInit {
       disputeCaseId: dto.dispute_case_id,
       savedCount: saved.length,
       totalDurationMs: Date.now() - start,
+      input_tokens: usage?.input_tokens ?? 0,
+      output_tokens: usage?.output_tokens ?? 0,
+      cache_read_input_tokens: usage?.cache_read_input_tokens ?? 0,
+      cache_creation_input_tokens: usage?.cache_creation_input_tokens ?? 0,
     });
     return saved;
   }
@@ -208,17 +212,17 @@ export class ComparablesService implements OnModuleInit {
   ): SubjectContext {
     const vn = disputeCase.valuation_notice;
     return {
-      pid:            dto.pid            ?? disputeCase.property?.pid            ?? 'unknown',
-      suburb:         (disputeCase.property?.suburb ?? '').trim().toUpperCase(),
-      landAreaSqm:    dto.land_area_sqm  ?? (Number(disputeCase.property?.land_area_sqm) || null),
-      zoning:         dto.zoning         ?? disputeCase.property?.zoning         ?? 'unknown',
-      lotDp:          dto.lot_dp         ?? disputeCase.property?.lot_dp         ?? null,
-      dimensions:     dto.dimensions     ?? disputeCase.property?.dimensions     ?? null,
-      heightLimitM:   dto.height_limit_m ?? disputeCase.property?.height_limit_m ?? null,
+      pid: dto.pid ?? disputeCase.property?.pid ?? 'unknown',
+      suburb: (disputeCase.property?.suburb ?? '').trim().toUpperCase(),
+      landAreaSqm: dto.land_area_sqm ?? (Number(disputeCase.property?.land_area_sqm) || null),
+      zoning: dto.zoning ?? disputeCase.property?.zoning ?? 'unknown',
+      lotDp: dto.lot_dp ?? disputeCase.property?.lot_dp ?? null,
+      dimensions: dto.dimensions ?? disputeCase.property?.dimensions ?? null,
+      heightLimitM: dto.height_limit_m ?? disputeCase.property?.height_limit_m ?? null,
       vgValueCurrent: dto.vg_land_value_current ?? (Number(vn?.assessed_land_value) || 0),
-      vgValuePrior:   dto.vg_land_value_prior   ?? (Number(vn?.prior_land_value)    || 0),
-      landAreaVgSqm:  dto.land_area_vg_sqm      ?? (Number(vn?.land_area_vg_sqm)    || null),
-      valuationDate:  dto.valuation_date
+      vgValuePrior: dto.vg_land_value_prior ?? (Number(vn?.prior_land_value) || 0),
+      landAreaVgSqm: dto.land_area_vg_sqm ?? (Number(vn?.land_area_vg_sqm) || null),
+      valuationDate: dto.valuation_date
         ?? (vn?.valuation_date ? new Date(vn.valuation_date).toISOString().split('T')[0] : NSW_STATUTORY_VALUATION_DATE),
     };
   }
@@ -248,16 +252,16 @@ export class ComparablesService implements OnModuleInit {
       const [tier1, tier2] = await Promise.all([
         subject.suburb
           ? this.dataSource.query(
-              // Same suburb — sort same-zoning sales first so the 80-row cap retains the most relevant candidates.
-              `SELECT ${analysisColumns} FROM property_sales_raw WHERE UPPER(property_locality) = $1 AND contract_date >= $2 ORDER BY CASE WHEN UPPER(zoning) LIKE $3 THEN 0 ELSE 1 END, contract_date DESC LIMIT 80`,
-              [subject.suburb, searchFromStr, zoningPrefix ?? '%'],
-            )
+            // Same suburb — sort same-zoning sales first so the 80-row cap retains the most relevant candidates.
+            `SELECT ${analysisColumns} FROM property_sales_raw WHERE UPPER(property_locality) = $1 AND contract_date >= $2 ORDER BY CASE WHEN UPPER(zoning) LIKE $3 THEN 0 ELSE 1 END, contract_date DESC LIMIT 80`,
+            [subject.suburb, searchFromStr, zoningPrefix ?? '%'],
+          )
           : Promise.resolve([]),
         zoningPrefix
           ? this.dataSource.query(
-              `SELECT ${analysisColumns} FROM property_sales_raw WHERE UPPER(zoning) LIKE $1 AND contract_date >= $2 ORDER BY contract_date DESC LIMIT 60`,
-              [zoningPrefix, searchFromStr],
-            )
+            `SELECT ${analysisColumns} FROM property_sales_raw WHERE UPPER(zoning) LIKE $1 AND contract_date >= $2 ORDER BY contract_date DESC LIMIT 60`,
+            [zoningPrefix, searchFromStr],
+          )
           : Promise.resolve([]),
       ]);
 
@@ -290,16 +294,16 @@ export class ComparablesService implements OnModuleInit {
       : 'unknown';
 
     const subjectLines = [
-      subject.lotDp       ? `- Lot/DP: ${subject.lotDp}` : null,
+      subject.lotDp ? `- Lot/DP: ${subject.lotDp}` : null,
       `- PID: ${subject.pid}`,
-      subject.suburb      ? `- Suburb: ${subject.suburb}` : null,
+      subject.suburb ? `- Suburb: ${subject.suburb}` : null,
       subject.landAreaSqm ? `- Land area: ${subject.landAreaSqm.toLocaleString()}m²${subject.landAreaVgSqm ? ` (VG used ${subject.landAreaVgSqm.toLocaleString()}m² — possible factual error)` : ''}` : null,
-      subject.dimensions  ? `- Dimensions: ${subject.dimensions}` : null,
+      subject.dimensions ? `- Dimensions: ${subject.dimensions}` : null,
       `- Zoning: ${subject.zoning}`,
-      subject.heightLimitM   ? `- Height limit: ${subject.heightLimitM}m` : null,
+      subject.heightLimitM ? `- Height limit: ${subject.heightLimitM}m` : null,
       subject.vgValueCurrent ? `- VG land value current year: $${subject.vgValueCurrent.toLocaleString()} ($${vgRatePerSqm}/m²)` : null,
-      subject.vgValuePrior   ? `- VG land value prior year: $${subject.vgValuePrior.toLocaleString()} ($${vgPriorRatePerSqm}/m²)` : null,
-      subject.vgValuePrior   ? `- YoY increase: +${yoyPct}%` : null,
+      subject.vgValuePrior ? `- VG land value prior year: $${subject.vgValuePrior.toLocaleString()} ($${vgPriorRatePerSqm}/m²)` : null,
+      subject.vgValuePrior ? `- YoY increase: +${yoyPct}%` : null,
       `- Valuation date: ${subject.valuationDate}`,
     ].filter(Boolean).join('\n');
 
@@ -310,11 +314,11 @@ export class ComparablesService implements OnModuleInit {
 ${subjectLines}
 
 ${hasCandidates
-  ? `Pre-fetched candidate sales (${candidates.length} records from the database):
+        ? `Pre-fetched candidate sales (${candidates.length} records from the database):
 ${JSON.stringify(candidates)}
 
 Select the best comparables from the pre-fetched list above. If after applying size and time adjustments (see below) the pre-fetched set contains fewer than 5 same-zoning candidates with an adjusted rate at or below the VG rate of $${vgRatePerSqm}/m², you MUST use the search_comparable_sales MCP tool to broaden the search to nearby industrial suburbs (e.g. Moorebank, Casula, Chipping Norton, Ingleburn, Minto, Prestons) before finalising your selection. Use database tools at most 3 times per analysis.`
-  : `Query property_sales_raw via the search_comparable_sales MCP tool for comparable sales in the same or nearby catchment with matching or similar zoning. If the first search returns fewer than 5 same-zoning candidates with an adjusted rate at or below the VG rate of $${vgRatePerSqm}/m², widen the catchment to nearby industrial suburbs. Use database tools at most 3 times per analysis.`}
+        : `Query property_sales_raw via the search_comparable_sales MCP tool for comparable sales in the same or nearby catchment with matching or similar zoning. If the first search returns fewer than 5 same-zoning candidates with an adjusted rate at or below the VG rate of $${vgRatePerSqm}/m², widen the catchment to nearby industrial suburbs. Use database tools at most 3 times per analysis.`}
 
 Return ONLY a valid JSON array — no markdown, no prose, no code fences. Each element must contain exactly these fields:
 id, property_id, district_code, property_house_number, property_street_name, property_locality, property_post_code, area, zoning, nature_of_property, primary_purpose, component_code, sale_code, interest_of_sale_percent, contract_date, purchase_price, dealing_number, owner_type, adjusted_rate_per_sqm, adjusted_land_value, suggested_land_value, explanation.
@@ -366,7 +370,7 @@ Return a maximum of 10 comparables. Quality over quantity — include only sales
     mcpToken: string | null,
     correlationId?: string,
     disputeCaseId?: string,
-  ): Promise<string> {
+  ): Promise<{ text: string; usage: AnthropicApiResponse['usage'] }> {
     const anthropicT = Date.now();
     let response: AxiosResponse<AnthropicApiResponse>;
     try {
@@ -424,7 +428,7 @@ Return a maximum of 10 comparables. Quality over quantity — include only sales
     }
 
     const { stop_reason, content, usage } = response.data;
-    this.logEvent('GENERATE.token_usage', {
+    console.log('GENERATE.token_usage', {
       correlationId,
       disputeCaseId,
       model: 'claude-sonnet-4-6',
@@ -437,17 +441,39 @@ Return a maximum of 10 comparables. Quality over quantity — include only sales
     });
 
     if (stop_reason === 'max_tokens') {
+      throw {
+        correlationId,
+        disputeCaseId,
+        model: 'claude-sonnet-4-6',
+        input_tokens: usage?.input_tokens ?? 0,
+        output_tokens: usage?.output_tokens ?? 0,
+        cache_read_input_tokens: usage?.cache_read_input_tokens ?? 0,
+        cache_creation_input_tokens: usage?.cache_creation_input_tokens ?? 0,
+        durationMs: Date.now() - anthropicT,
+        stop_reason,
+      }
       this.logger.error('[GENERATE] Response was truncated at max_tokens — increase max_tokens or reduce result set');
       throw new LlmTruncationException();
     }
     if (stop_reason === 'tool_use') {
       this.logEvent('GENERATE.unexpected_tool_use', { correlationId, disputeCaseId });
+      throw {
+        correlationId,
+        disputeCaseId,
+        model: 'claude-sonnet-4-6',
+        input_tokens: usage?.input_tokens ?? 0,
+        output_tokens: usage?.output_tokens ?? 0,
+        cache_read_input_tokens: usage?.cache_read_input_tokens ?? 0,
+        cache_creation_input_tokens: usage?.cache_creation_input_tokens ?? 0,
+        durationMs: Date.now() - anthropicT,
+        stop_reason,
+      }
       throw new LlmToolUseException();
     }
 
     const textBlock = content?.findLast((b) => b.type === 'text');
     if (!textBlock) this.logger.warn('[GENERATE] No text block found in response content');
-    return textBlock?.text ?? '';
+    return { text: textBlock?.text ?? '', usage };
   }
 
   private extractJsonArray(raw: string): Record<string, unknown>[] {
@@ -471,10 +497,10 @@ Return a maximum of 10 comparables. Quality over quantity — include only sales
     let escaped = false;
     for (let i = arrayStart; i < raw.length; i++) {
       const ch = raw[i];
-      if (escaped)               { escaped = false; continue; }
+      if (escaped) { escaped = false; continue; }
       if (ch === '\\' && inString) { escaped = true; continue; }
-      if (ch === '"')              { inString = !inString; continue; }
-      if (inString)                { continue; }
+      if (ch === '"') { inString = !inString; continue; }
+      if (inString) { continue; }
       if (ch === '[' || ch === '{') depth++;
       else if (ch === ']' || ch === '}') { if (--depth === 0) { arrayEnd = i; break; } }
     }

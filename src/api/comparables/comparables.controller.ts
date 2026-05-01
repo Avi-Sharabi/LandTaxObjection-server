@@ -3,7 +3,6 @@ import {
   Controller,
   Get,
   HttpCode,
-  NotFoundException,
   Param,
   Post,
   Request,
@@ -16,16 +15,14 @@ import {
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { InjectQueue } from '@nestjs/bullmq';
-import { Queue } from 'bullmq';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ComparablesService } from './comparables.service';
+import { ComparablesQueueService } from './comparables-queue.service';
 import { CreateComparableDto } from './dto/create-comparable.dto';
 import { ComparableResponseDto } from './dto/comparable-response.dto';
 import { GenerateComparableSalesDto } from './dto/generate-comparable-sales.dto';
 import { EnqueueGenerateResponseDto } from './dto/enqueue-generate-response.dto';
-import { JobStatusResponseDto, JobStatus } from './dto/job-status-response.dto';
-import { COMPARABLE_GENERATION_QUEUE, ComparableGenerationJobData, ComparableGenerationJobResult } from './comparables.processor';
+import { JobStatusResponseDto } from './dto/job-status-response.dto';
 import type { AuthenticatedRequest } from '../../common/types/authenticated-request.type';
 
 @ApiTags('comparables')
@@ -38,7 +35,7 @@ import type { AuthenticatedRequest } from '../../common/types/authenticated-requ
 export class ComparablesController {
   constructor(
     private readonly comparablesService: ComparablesService,
-    @InjectQueue(COMPARABLE_GENERATION_QUEUE) private readonly generationQueue: Queue<ComparableGenerationJobData, ComparableGenerationJobResult>,
+    private readonly comparablesQueueService: ComparablesQueueService,
   ) {}
 
   @Post()
@@ -61,13 +58,7 @@ export class ComparablesController {
     @Body() dto: GenerateComparableSalesDto,
     @Request() req: AuthenticatedRequest,
   ): Promise<EnqueueGenerateResponseDto> {
-    const job = await this.generationQueue.add('generate', {
-      dto,
-      createdById: req.user.id,
-      correlationId: req.correlationId,
-    }, { jobId: dto.dispute_case_id });
-
-    return { jobId: job.id as string, status: 'queued' };
+    return this.comparablesQueueService.enqueue(dto, req.user.id, req.correlationId);
   }
 
   @Get('jobs/:jobId/status')
@@ -76,29 +67,7 @@ export class ComparablesController {
   @ApiResponse({ status: 200, type: JobStatusResponseDto })
   @ApiResponse({ status: 404, description: 'Job not found' })
   async getJobStatus(@Param('jobId') jobId: string): Promise<JobStatusResponseDto> {
-    const job = await this.generationQueue.getJob(jobId);
-    if (!job) throw new NotFoundException(`Job ${jobId} not found`);
-
-    const state = await job.getState();
-    const result = job.returnvalue as ComparableGenerationJobResult | undefined;
-    const failedReason = job.failedReason;
-
-    const statusMap: Record<string, JobStatus> = {
-      waiting: 'waiting',
-      active: 'active',
-      completed: 'completed',
-      failed: 'failed',
-    };
-
-    return {
-      jobId,
-      status: statusMap[state] ?? 'unknown',
-      savedCount: result?.savedCount,
-      error: failedReason ?? undefined,
-      createdAt: job.timestamp,
-      processedAt: job.processedOn ?? undefined,
-      finishedAt: job.finishedOn ?? undefined,
-    };
+    return this.comparablesQueueService.getJobStatus(jobId);
   }
 
   @Get(':applicationId')

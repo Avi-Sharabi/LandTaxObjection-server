@@ -43,6 +43,7 @@ export class ComparablesProcessor extends WorkerHost {
       );
       return { savedCount: results.length };
     } catch (err: unknown) {
+      console.log(err)
       this.logger.error(
         JSON.stringify({
           context: 'PROCESSOR.failed',
