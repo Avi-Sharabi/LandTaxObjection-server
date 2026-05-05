@@ -151,9 +151,6 @@ export class DisputeCase {
   vg_response_notes: string | null;
 
   @Column({ type: 'text', nullable: true })
-  lodgment_reference_number: string | null;
-
-  @Column({ type: 'text', nullable: true })
   analysis_report_blob_path: string | null;
 
   @Column({ type: 'text', nullable: true })

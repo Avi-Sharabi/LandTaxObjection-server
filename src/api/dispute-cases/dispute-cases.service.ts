@@ -20,7 +20,7 @@ import { DisputeCaseResponseDto } from './dto/dispute-case-response.dto';
 import { AnalysisReportResponseDto } from './dto/analysis-report-response.dto';
 import { ApprovalDocumentsResponseDto } from './dto/approval-documents-response.dto';
 import { DisputeCase, DisputeStatus } from './entities/dispute-case.entity';
-import { AuditAction, CaseAuditLog } from './entities/case-audit-log.entity';
+import { AuditAction as CaseAuditAction, CaseAuditLog } from './entities/case-audit-log.entity';
 import { DisputeIntakeOrchestrator } from './intake/dispute-intake.orchestrator';
 import { ComparablesService } from '../comparables/comparables.service';
 import { AzureEmailService } from 'src/common/azure-email/azure-email.service';
@@ -367,62 +367,6 @@ export class DisputeCasesService {
     };
   }
 
-  async submitToVg(
-    caseId: string,
-    dto: SubmitToVgDto,
-  ): Promise<DisputeCaseResponseDto> {
-    const disputeCase = await this.disputeCasesRepository.findOne({
-      where: { id: caseId },
-      relations: ['client', 'property', 'valuation_notice', 'assigned_accountant', 'assigned_lawyer', 'legal_grounds', 'dispute_constraints'],
-    });
-
-    if (!disputeCase) {
-      throw new NotFoundException(`Dispute case #${caseId} not found`);
-    }
-
-    if (disputeCase.status === DisputeStatus.SUBMITTED_TO_VG || disputeCase.status === DisputeStatus.AWAITING_VG_RESPONSE) {
-      throw new ConflictException(`Dispute case #${caseId} has already been submitted to the VG`);
-    }
-
-    if (!disputeCase.client_approved_at) {
-      throw new ConflictException(`Dispute case #${caseId} has not been approved by the client`);
-    }
-
-    const submittedAt = new Date();
-    const lodgmentReferenceNumber = `${LODGMENT_REF_PREFIX}-${disputeCase.case_reference}-${Date.now()}`;
-
-    disputeCase.status = DisputeStatus.SUBMITTED_TO_VG;
-    disputeCase.submitted_at = submittedAt;
-    disputeCase.lodgment_reference_number = lodgmentReferenceNumber;
-    if (dto.submissionNotes) {
-      disputeCase.notes = dto.submissionNotes;
-    }
-
-    const saved = await this.disputeCasesRepository.save(disputeCase);
-
-    // Notify assessor — fire-and-forget
-    const notifyEmail = this.config.get<string>('ASSESSOR_EMAIL') ?? this.config.get<string>('CONTACT_EMAIL') ?? '';
-    if (notifyEmail) {
-      const property = disputeCase.property;
-      const propertyAddress = property
-        ? [property.address, property.suburb, property.state, property.postcode].filter(Boolean).join(', ')
-        : 'Address not available';
-
-      this.azureEmailService.sendSubmitToVgNotification({
-        sendTo: notifyEmail,
-        caseReference: disputeCase.case_reference,
-        clientName: disputeCase.client?.name ?? 'Client',
-        propertyAddress,
-        jurisdiction: disputeCase.jurisdiction,
-        lodgmentReferenceNumber,
-        submittedAt: submittedAt.toLocaleString('en-AU', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' }),
-        assessorFullName: disputeCase.assigned_accountant?.fullName ?? 'YML Assessor',
-      }).catch(() => { /* email failure is non-fatal */ });
-    }
-
-    return saved;
-  }
-
   async recordVgResponse(
     caseId: string,
     dto: RecordVgResponseDto,
@@ -457,7 +401,7 @@ export class DisputeCasesService {
     await this.auditLogRepo.save(
       this.auditLogRepo.create({
         case_id: caseId,
-        action: AuditAction.VG_RESPONSE_RECORDED,
+        action: CaseAuditAction.VG_RESPONSE_RECORDED,
         performed_by: assessorId,
         response_notes: dto.responseNotes ?? null,
       }),
@@ -570,7 +514,7 @@ export class DisputeCasesService {
     };
   }
 
-  async submitToVg(id: string, assessorId: string, assessorFullName: string): Promise<DisputeCaseResponseDto> {
+  async submitToVg(id: string, dto: SubmitToVgDto, assessorId: string, assessorFullName: string): Promise<DisputeCaseResponseDto> {
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
@@ -603,6 +547,9 @@ export class DisputeCasesService {
       disputeCase.status = DisputeStatus.SUBMITTED_TO_VG;
       disputeCase.submitted_at = submittedAt;
       disputeCase.lodgment_reference_number = lodgmentRef;
+      if (dto?.submissionNotes) {
+        disputeCase.notes = dto.submissionNotes;
+      }
 
       await queryRunner.manager.save(DisputeCase, disputeCase);
 

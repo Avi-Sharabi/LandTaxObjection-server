@@ -278,8 +278,9 @@ export class DisputeCasesController {
   submitToVg(
     @Param('id') id: string,
     @Body() dto: SubmitToVgDto,
+    @Req() req: { user: { id: string; fullName: string } },
   ): Promise<DisputeCaseResponseDto> {
-    return this.disputeCasesService.submitToVg(id, dto);
+    return this.disputeCasesService.submitToVg(id, dto, req.user.id, req.user.fullName);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
