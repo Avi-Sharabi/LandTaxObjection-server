@@ -7,23 +7,20 @@ import { MsGraphService, GraphMessage } from 'src/common/ms-graph/ms-graph.servi
 import { AzureEmailService } from 'src/common/azure-email/azure-email.service';
 import { DisputeCase, DisputeStatus } from './entities/dispute-case.entity';
 import { AuditAction, CaseAuditLog } from './entities/case-audit-log.entity';
+import { VgEmailInbox } from './entities/vg-email-inbox.entity';
 
-// Statuses eligible for automated VG email matching
 const AWAITING_VG_STATUSES: DisputeStatus[] = [
   DisputeStatus.SUBMITTED_TO_VG,
   DisputeStatus.AWAITING_VG_RESPONSE,
 ];
 
 const MAX_INBOX_MESSAGES_PER_POLL = 50;
-
-// Identifies audit log entries created by this automated monitor (no human performer)
 const VG_MONITOR_SOURCE = 'vg-email-monitor';
 
 @Injectable()
 export class VgEmailMonitorTask {
   private readonly logger = new Logger(VgEmailMonitorTask.name);
 
-  /** Normalised set of known VG sender email addresses, loaded once from config. */
   private readonly vgSenderEmails: Set<string>;
 
   constructor(
@@ -31,6 +28,8 @@ export class VgEmailMonitorTask {
     private readonly disputeCasesRepo: Repository<DisputeCase>,
     @InjectRepository(CaseAuditLog)
     private readonly auditLogRepo: Repository<CaseAuditLog>,
+    @InjectRepository(VgEmailInbox)
+    private readonly vgEmailInboxRepo: Repository<VgEmailInbox>,
     private readonly msGraphService: MsGraphService,
     private readonly azureEmailService: AzureEmailService,
     private readonly config: ConfigService,
@@ -44,15 +43,17 @@ export class VgEmailMonitorTask {
     );
   }
 
-  // Twice daily: 08:00 and 12:00 AEST (22:00 and 02:00 UTC)
-  @Cron('0 22,2 * * *')
-  async pollVgMailbox(): Promise<void> {
-    this.logger.log('[VG-MONITOR] Starting VG mailbox poll');
+  // Once daily at 08:00 AEST (22:00 UTC)
+  @Cron('0 22 * * *')
+  public async pollVgMailbox(): Promise<void> {
+    this.logger.log(
+      `[VG-MONITOR] Starting VG mailbox poll — inbox=${this.msGraphService.mailboxUserId}`,
+    );
 
     let messages: GraphMessage[];
 
     try {
-      messages = await this.msGraphService.fetchUnreadInboxMessages(MAX_INBOX_MESSAGES_PER_POLL);
+      messages = await this.msGraphService.fetchInboxMessages(MAX_INBOX_MESSAGES_PER_POLL);
     } catch (err) {
       this.logger.error(
         `[VG-MONITOR] Failed to fetch inbox — ${err instanceof Error ? err.message : String(err)}`,
@@ -60,7 +61,13 @@ export class VgEmailMonitorTask {
       return;
     }
 
-    this.logger.log(`[VG-MONITOR] ${messages.length} unread message(s) found`);
+    this.logger.log(`[VG-MONITOR] ${messages.length} message(s) found`);
+    messages.forEach((m, i) =>
+      this.logger.log(
+        `[VG-MONITOR] [${i + 1}/${messages.length}] from=${m.from?.emailAddress?.address} ` +
+          `received=${m.receivedDateTime} subject="${m.subject}"`,
+      ),
+    );
 
     for (const message of messages) {
       await this.processMessage(message);
@@ -70,30 +77,43 @@ export class VgEmailMonitorTask {
   }
 
   private async processMessage(message: GraphMessage): Promise<void> {
-    // Guard against re-processing the same email on repeated twice-daily polls
-    if (await this.isAlreadyProcessed(message.id)) {
+    // Idempotency: skip if this message was already saved to the inbox
+    const existing = await this.vgEmailInboxRepo.findOne({
+      where: { message_id: message.id },
+      select: ['id'],
+    });
+    if (existing) {
       await this.safeMarkAsRead(message.id);
       return;
     }
 
-    const { senderAddress, subject, isVgSender, lodgmentRef } = this.extractEmailSignals(message);
+    const { senderAddress, subject, isVgSender, lodgmentRef, caseRef, pid } = this.extractEmailSignals(message);
 
-    if (!isVgSender && !lodgmentRef) {
+    // Not from a known VG sender and no identifiers found — not a VG response
+    if (!isVgSender && !lodgmentRef && !caseRef && !pid) {
+      this.logger.debug(
+        `[VG-MONITOR] Skipping messageId=${message.id} sender=${senderAddress} — not a VG sender and no identifiers found`,
+      );
+      await this.safeMarkAsRead(message.id);
       return;
     }
 
     this.logger.log(
       `[VG-MONITOR] VG email detected — messageId=${message.id} sender=${senderAddress} ` +
-        `lodgmentRef=${lodgmentRef ?? 'not found'} subject="${subject}"`,
+        `lodgmentRef=${lodgmentRef ?? '-'} caseRef=${caseRef ?? '-'} pid=${pid ?? '-'} subject="${subject}"`,
     );
 
-    const disputeCase = await this.findMatchingCase(lodgmentRef, isVgSender);
+    // Always save to inbox — captured emails (even unmatched) are available for AI analysis
+    const inboxEntry = await this.saveToInbox(message, senderAddress);
+
+    const disputeCase = await this.findMatchingCase(lodgmentRef, caseRef, pid, isVgSender);
 
     if (!disputeCase) {
       this.logger.warn(
-        `[VG-MONITOR] No matching case — messageId=${message.id} lodgmentRef=${lodgmentRef ?? 'none'} sender=${senderAddress}`,
+        `[VG-MONITOR] No matching case for messageId=${message.id} ` +
+          `lodgmentRef=${lodgmentRef ?? 'none'} caseRef=${caseRef ?? 'none'} pid=${pid ?? 'none'} sender=${senderAddress}. ` +
+          `Email saved to vg_email_inbox (id=${inboxEntry.id}) for manual/AI review.`,
       );
-      // Mark read so it won't block subsequent polls; the assessor can review manually
       await this.safeMarkAsRead(message.id);
       return;
     }
@@ -106,16 +126,31 @@ export class VgEmailMonitorTask {
       return;
     }
 
-    await this.recordVgResponseFromEmail(disputeCase, message, senderAddress);
+    await this.recordVgResponseFromEmail(disputeCase, message, inboxEntry, senderAddress);
     await this.safeMarkAsRead(message.id);
   }
 
-  private async isAlreadyProcessed(messageId: string): Promise<boolean> {
-    const existing = await this.disputeCasesRepo.findOne({
-      where: { vg_email_message_id: messageId },
-      select: ['id'],
-    });
-    return existing !== null;
+  private async saveToInbox(message: GraphMessage, senderAddress: string): Promise<VgEmailInbox> {
+    const bodyContent = message.body?.content ?? null;
+    const bodyPreview =
+      message.bodyPreview ?? this.stripHtmlPreview(bodyContent);
+
+    return this.vgEmailInboxRepo.save(
+      this.vgEmailInboxRepo.create({
+        message_id: message.id,
+        sender_address: senderAddress,
+        subject: message.subject ?? null,
+        body_content: bodyContent,
+        body_content_type: message.body?.contentType ?? null,
+        body_preview: bodyPreview,
+        received_at: new Date(message.receivedDateTime),
+        processed_at: null,
+        case_id: null,
+        ai_outcome: null,
+        ai_analyzed_at: null,
+        ai_raw_response: null,
+      }),
+    );
   }
 
   private extractEmailSignals(message: GraphMessage): {
@@ -123,14 +158,19 @@ export class VgEmailMonitorTask {
     subject: string;
     isVgSender: boolean;
     lodgmentRef: string | null;
+    caseRef: string | null;
+    pid: string | null;
   } {
     const senderAddress = message.from?.emailAddress?.address ?? '';
     const subject = message.subject ?? '';
+    const body = message.body?.content ?? '';
     return {
       senderAddress,
       subject,
       isVgSender: this.isVgSenderEmail(senderAddress),
-      lodgmentRef: this.extractLodgmentReference(subject, message.body?.content ?? ''),
+      lodgmentRef: this.extractLodgmentReference(subject, body),
+      caseRef: this.extractCaseReference(subject, body),
+      pid: this.extractPid(subject, body),
     };
   }
 
@@ -138,40 +178,82 @@ export class VgEmailMonitorTask {
     return this.vgSenderEmails.has(senderAddress.toLowerCase());
   }
 
-  /**
-   * Extract our internal lodgment reference (format: VG-{caseRef}-{timestamp})
-   * from the email subject or body text.
-   */
   private extractLodgmentReference(subject: string, body: string): string | null {
-    const plainBody = body.replace(/<[^>]+>/g, ' ');
+    const plain = body.replace(/<[^>]+>/g, ' ');
     const pattern = /\bVG-[A-Z0-9-]+-\d+\b/i;
+    return subject.match(pattern)?.[0] ?? plain.match(pattern)?.[0] ?? null;
+  }
 
-    return subject.match(pattern)?.[0] ?? plainBody.match(pattern)?.[0] ?? null;
+  private extractCaseReference(subject: string, body: string): string | null {
+    const plain = body.replace(/<[^>]+>/g, ' ');
+    const pattern = /\bLTD-\d{4}-[A-Z0-9]+-\d+\b/i;
+    return subject.match(pattern)?.[0] ?? plain.match(pattern)?.[0] ?? null;
+  }
+
+  private extractPid(subject: string, body: string): string | null {
+    const plain = body.replace(/<[^>]+>/g, ' ');
+    const text = `${subject} ${plain}`;
+    return text.match(/\bPID[:\s#]*(\d+)\b/i)?.[1] ?? null;
   }
 
   private async findMatchingCase(
     lodgmentRef: string | null,
+    caseRef: string | null,
+    pid: string | null,
     isVgSender: boolean,
   ): Promise<DisputeCase | null> {
-    // Primary match: lodgment reference number
+    const relations = ['client', 'property', 'assigned_accountant'];
+
     if (lodgmentRef) {
       const matched = await this.disputeCasesRepo.findOne({
         where: { lodgment_reference_number: lodgmentRef, status: In(AWAITING_VG_STATUSES) },
-        relations: ['client', 'property', 'assigned_accountant'],
+        relations,
       });
-      if (matched) return matched;
+      if (matched) {
+        this.logger.log(`[VG-MONITOR] Matched by lodge-ref — caseRef=${matched.case_reference}`);
+        return matched;
+      }
     }
 
-    // Fallback: if from a known VG sender but no ref — only safe when exactly one case is pending
-    if (isVgSender && !lodgmentRef) {
+    if (caseRef) {
+      const matched = await this.disputeCasesRepo.findOne({
+        where: { case_reference: caseRef, status: In(AWAITING_VG_STATUSES) },
+        relations,
+      });
+      if (matched) {
+        this.logger.log(`[VG-MONITOR] Matched by case-ref — caseRef=${matched.case_reference}`);
+        return matched;
+      }
+    }
+
+    if (pid) {
+      const matched = await this.disputeCasesRepo
+        .createQueryBuilder('dc')
+        .innerJoinAndSelect('dc.property', 'p')
+        .leftJoinAndSelect('dc.client', 'c')
+        .leftJoinAndSelect('dc.assigned_accountant', 'a')
+        .where('p.pid = :pid', { pid })
+        .andWhere('dc.status IN (:...statuses)', { statuses: AWAITING_VG_STATUSES })
+        .getOne();
+      if (matched) {
+        this.logger.log(`[VG-MONITOR] Matched by pid — caseRef=${matched.case_reference}`);
+        return matched;
+      }
+    }
+
+    // Fallback: known VG sender, no identifiers — only safe when exactly one case is pending
+    if (isVgSender) {
       const pending = await this.disputeCasesRepo.find({
         where: { status: In(AWAITING_VG_STATUSES) },
-        relations: ['client', 'property', 'assigned_accountant'],
+        relations,
         order: { submitted_at: 'ASC' },
       });
-      if (pending.length === 1) return pending[0];
+      if (pending.length === 1) {
+        this.logger.log(`[VG-MONITOR] Matched by fallback (single pending case) — caseRef=${pending[0].case_reference}`);
+        return pending[0];
+      }
       this.logger.warn(
-        `[VG-MONITOR] ${pending.length} case(s) awaiting VG response — cannot auto-match without lodgment ref`,
+        `[VG-MONITOR] ${pending.length} case(s) awaiting VG response — cannot auto-match without identifiers`,
       );
     }
 
@@ -181,13 +263,15 @@ export class VgEmailMonitorTask {
   private async recordVgResponseFromEmail(
     disputeCase: DisputeCase,
     message: GraphMessage,
+    inboxEntry: VgEmailInbox,
     senderAddress: string,
   ): Promise<void> {
     try {
       const receivedAt = new Date(message.receivedDateTime);
-      await this.persistVgResponse(disputeCase, message, senderAddress, receivedAt);
+      await this.persistVgResponse(disputeCase, message, inboxEntry, senderAddress, receivedAt);
       this.logger.log(
-        `[VG-MONITOR] VG response recorded — caseRef=${disputeCase.case_reference}`,
+        `[VG-MONITOR] VG response recorded — caseRef=${disputeCase.case_reference} ` +
+          `inboxId=${inboxEntry.id}`,
       );
       this.notifyAssessor(disputeCase, message, senderAddress, receivedAt);
     } catch (err) {
@@ -201,6 +285,7 @@ export class VgEmailMonitorTask {
   private async persistVgResponse(
     disputeCase: DisputeCase,
     message: GraphMessage,
+    inboxEntry: VgEmailInbox,
     senderAddress: string,
     receivedAt: Date,
   ): Promise<void> {
@@ -212,6 +297,11 @@ export class VgEmailMonitorTask {
       `Subject: ${message.subject ?? '(no subject)'}`;
 
     await this.disputeCasesRepo.save(disputeCase);
+
+    // Link inbox entry to the matched case and mark processed
+    inboxEntry.case_id = disputeCase.id;
+    inboxEntry.processed_at = new Date();
+    await this.vgEmailInboxRepo.save(inboxEntry);
 
     await this.auditLogRepo.save(
       this.auditLogRepo.create({
@@ -286,5 +376,11 @@ export class VgEmailMonitorTask {
     return [property.address, property.suburb, property.state, property.postcode]
       .filter(Boolean)
       .join(', ');
+  }
+
+  /** Strip HTML tags and collapse whitespace for a plain-text preview. */
+  private stripHtmlPreview(html: string | null, maxLength = 500): string | null {
+    if (!html) return null;
+    return html.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, maxLength);
   }
 }

@@ -12,6 +12,7 @@ import { DisputeCasesService } from './dispute-cases.service';
 import { DisputeCase } from './entities/dispute-case.entity';
 import { AssessmentDocument } from './entities/assessment-document.entity';
 import { CaseAuditLog } from './entities/case-audit-log.entity';
+import { VgEmailInbox } from './entities/vg-email-inbox.entity';
 import { PackageDocument } from '../objection-package/entities/package-document.entity';
 import { AzureBlobModule } from 'src/common/azure-blob/azure-blob.module';
 import { AzureEmailModule } from 'src/common/azure-email/azure-email.module';
@@ -34,6 +35,7 @@ import { MsGraphModule } from 'src/common/ms-graph/ms-graph.module';
       DisputeCase,
       AssessmentDocument,
       CaseAuditLog,
+      VgEmailInbox,
       DisputeLegalGround,
       Client,
       Property,

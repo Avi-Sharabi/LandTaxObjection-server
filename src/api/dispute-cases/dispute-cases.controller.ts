@@ -23,6 +23,7 @@ import {
 } from '@nestjs/swagger';
 import { ApprovalDocumentsResponseDto } from './dto/approval-documents-response.dto';
 import { DisputeCasesService } from './dispute-cases.service';
+import { VgEmailMonitorTask } from './vg-email-monitor.task';
 import { UpdateDisputeCaseDto } from './dto/update-dispute-case.dto';
 import { CreateDisputeIntakeDto } from './dto/create-dispute-intake.dto';
 import { CloseNoObjectionDto } from './dto/close-no-objection.dto';
@@ -35,7 +36,6 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { UserRole } from '../users/entities/user.entity';
-import { AuthResponseDto } from '../auth/dto/auth-response.dto';
 
 @ApiTags('dispute-cases')
 @Controller({
@@ -43,7 +43,20 @@ import { AuthResponseDto } from '../auth/dto/auth-response.dto';
   version: '1',
 })
 export class DisputeCasesController {
-  constructor(private readonly disputeCasesService: DisputeCasesService) {}
+  constructor(
+    private readonly disputeCasesService: DisputeCasesService,
+    private readonly vgEmailMonitorTask: VgEmailMonitorTask,
+  ) {}
+
+  // DEV ONLY — not guarded, remove before production
+  @Post('dev/trigger-vg-poll')
+  @HttpCode(200)
+  @ApiOperation({ summary: '[DEV] Manually trigger the VG mailbox poll', description: 'Fires pollVgMailbox() immediately. Use this to test email detection without waiting for the daily cron.' })
+  @ApiResponse({ status: 200, description: 'Poll triggered — check server logs and vg_email_inbox table for results' })
+  async devTriggerVgPoll(): Promise<{ message: string }> {
+    await this.vgEmailMonitorTask.pollVgMailbox();
+    return { message: 'VG mailbox poll complete — check server logs' };
+  }
 
   /**
    * Submit a new dispute case via intake form

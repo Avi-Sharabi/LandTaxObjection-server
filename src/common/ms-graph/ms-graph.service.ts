@@ -7,6 +7,8 @@ export interface GraphMessage {
   id: string;
   subject: string | null;
   body: { content: string; contentType: string };
+  /** First 255 chars of the email as plain text — provided by Graph API directly. */
+  bodyPreview: string | null;
   from: { emailAddress: { address: string; name: string } };
   receivedDateTime: string;
   isRead: boolean;
@@ -31,7 +33,7 @@ export class MsGraphService {
   private readonly tenantId: string;
   private readonly clientId: string;
   private readonly clientSecret: string;
-  private readonly mailboxUserId: string;
+  readonly mailboxUserId: string;
 
   private tokenCache: TokenCache | null = null;
 
@@ -83,18 +85,25 @@ export class MsGraphService {
     return this.tokenCache.accessToken;
   }
 
-  async fetchUnreadInboxMessages(maxMessages = 50): Promise<GraphMessage[]> {
+  // Fetches inbox messages received within the last 7 days regardless of read status.
+  // Using a rolling window instead of isRead — shared mailboxes auto-read on delivery.
+  // Deduplication is handled by the caller via message_id idempotency check.
+  async fetchInboxMessages(maxMessages = 50): Promise<GraphMessage[]> {
     const token = await this.resolveAccessToken();
     const url = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(this.mailboxUserId)}/mailFolders/inbox/messages`;
+
+    const since = new Date();
+    since.setDate(since.getDate() - 7);
+    const sinceIso = since.toISOString();
 
     const response = await firstValueFrom(
       this.http.get<{ value: GraphMessage[] }>(url, {
         headers: { Authorization: `Bearer ${token}` },
         params: {
-          $filter: 'isRead eq false',
+          $filter: `receivedDateTime ge ${sinceIso}`,
           $orderby: 'receivedDateTime asc',
           $top: maxMessages,
-          $select: 'id,subject,body,from,receivedDateTime,isRead,conversationId',
+          $select: 'id,subject,body,bodyPreview,from,receivedDateTime,isRead,conversationId',
         },
       }),
     );
