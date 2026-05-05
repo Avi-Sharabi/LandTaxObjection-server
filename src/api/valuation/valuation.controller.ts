@@ -39,17 +39,19 @@ export class ValuationController {
 
   @Post('compute-land-tax')
   @ApiOperation({
-    summary: 'Compute NSW land tax payable from 3 comparable sales (Steps 2–8 of the VG algorithm)',
+    summary: 'Compute NSW land tax payable for a disputed property valuation',
     description:
-      'Loads 3 comparable sales from the database, runs the full NSW Land Tax algorithm (normalise → time-adjust → reconcile → ULV → taxable value → tax payable), and returns all intermediate step values. Supports optional aggregation for owners with multiple properties.',
+      'Applies the NSW Land Tax algorithm (2025–26, Revenue NSW) to a disputed land value. ' +
+      'Supports the 3-year average input (Scenario 3), combined threshold across multiple properties (Scenario 1), ' +
+      'and returns annual and 3-year cumulative client savings with YML fee analysis (Scenario 4). ' +
+      'No database calls — pure stateless computation.',
   })
-  @ApiResponse({ status: 201, type: LandTaxResponseDto, description: 'Full land tax computation result with all intermediate steps' })
-  @ApiResponse({ status: 400, description: 'Weights do not sum to 1.0, duplicate comparable IDs, market_index_pct out of range, tax year not supported, or comparable missing contract_date' })
+  @ApiResponse({ status: 201, type: LandTaxResponseDto, description: 'Full land tax computation result with savings analysis' })
+  @ApiResponse({ status: 400, description: 'Tax year not supported, or neither vg_assessed_value nor vg_year_values provided' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
-  @ApiResponse({ status: 404, description: 'Dispute case, property, valuation notice, or comparable sale not found' })
-  async computeLandTax(
+  computeLandTax(
     @Body() dto: ComputeLandTaxDto,
-  ): Promise<LandTaxResponseDto> {
+  ): LandTaxResponseDto {
     return this.landTaxComputationService.computeLandTax(dto);
   }
 }

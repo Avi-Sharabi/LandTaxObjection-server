@@ -1,80 +1,22 @@
 import {
   ArrayMaxSize,
   ArrayMinSize,
-  ArrayUnique,
   IsArray,
   IsInt,
+  IsNotEmpty,
   IsNumber,
   IsOptional,
-  IsUUID,
   Max,
   Min,
-  Validate,
-  ValidatorConstraint,
-  ValidatorConstraintInterface,
+  ValidateIf,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 
-@ValidatorConstraint({ name: 'weightsSumToOne', async: false })
-export class WeightsSumValidator implements ValidatorConstraintInterface {
-  validate(weights: number[]): boolean {
-    if (!Array.isArray(weights)) return false;
-    const sum = weights.reduce((acc, w) => acc + w, 0);
-    return Math.abs(sum - 1.0) <= 0.001;
-  }
-
-  defaultMessage(): string {
-    return 'weights must sum to 1.0 (tolerance ±0.001)';
-  }
-}
-
 export class ComputeLandTaxDto {
-  @ApiProperty({ description: 'UUID of the dispute case', example: 'uuid-here' })
-  @IsUUID()
-  dispute_case_id: string;
-
   @ApiProperty({
-    description: 'Exactly 3 comparable sale UUIDs belonging to the dispute case',
-    type: [String],
-    example: ['uuid1', 'uuid2', 'uuid3'],
-  })
-  @IsArray()
-  @ArrayMinSize(3)
-  @ArrayMaxSize(3)
-  @ArrayUnique()
-  @IsUUID('all', { each: true })
-  comparable_ids: string[];
-
-  @ApiProperty({
-    description: 'Reconciliation weights for each comparable (must sum to 1.0, in the same order as comparable_ids)',
-    type: [Number],
-    example: [0.4, 0.35, 0.25],
-  })
-  @IsArray()
-  @ArrayMinSize(3)
-  @ArrayMaxSize(3)
-  @IsNumber({}, { each: true })
-  @Min(0, { each: true })
-  @Max(1, { each: true })
-  @Validate(WeightsSumValidator)
-  @Type(() => Number)
-  weights: number[];
-
-  @ApiProperty({
-    description: 'Monthly market index percentage used for time-adjustment (e.g. 0.3 = 0.3% per month). Range: −50 to 50.',
-    example: 0.3,
-    minimum: -50,
-    maximum: 50,
-  })
-  @IsNumber()
-  @Min(-50)
-  @Max(50)
-  market_index_pct: number;
-
-  @ApiProperty({
-    description: 'NSW tax year (e.g. 2025). Valuation date = 1 July of (tax_year - 1).',
-    example: 2025,
+    description: 'NSW tax year (e.g. 2026). Valuation date = 1 July of (tax_year - 1).',
+    example: 2026,
     minimum: 2020,
     maximum: 2040,
   })
@@ -83,8 +25,48 @@ export class ComputeLandTaxDto {
   @Max(2040)
   tax_year: number;
 
+  @ApiProperty({
+    description: 'The new disputed/appraised land value being argued to the VG (AUD).',
+    example: 2500000,
+    minimum: 0,
+  })
+  @IsNumber()
+  @Min(0)
+  disputed_land_value: number;
+
   @ApiPropertyOptional({
-    description: 'Additional land values for aggregation (Step 8) — other properties owned by the same owner (AUD)',
+    description:
+      'VG assessed land value from the notice (AUD). Required when vg_year_values is not provided.',
+    example: 3500000,
+    minimum: 0,
+  })
+  @ValidateIf((o) => !o.vg_year_values || o.vg_year_values.length !== 3)
+  @IsNotEmpty({ message: 'vg_assessed_value is required when vg_year_values is not provided' })
+  @IsNumber()
+  @Min(0)
+  vg_assessed_value?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Three consecutive annual land values used by Revenue NSW to compute the 3-year average ' +
+      '(e.g. [1150000, 1100000, 1050000] for 2022–2024). ' +
+      'When provided, overrides vg_assessed_value for tax comparison purposes.',
+    type: [Number],
+    example: [1150000, 1100000, 1050000],
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(3)
+  @ArrayMaxSize(3)
+  @IsNumber({}, { each: true })
+  @Min(0, { each: true })
+  @Type(() => Number)
+  vg_year_values?: number[];
+
+  @ApiPropertyOptional({
+    description:
+      'Additional land values for aggregation — other taxable properties owned by the same owner (AUD). ' +
+      'The threshold is shared across the combined total.',
     type: [Number],
     example: [800000],
   })
@@ -107,5 +89,4 @@ export class ComputeLandTaxDto {
   @Min(0)
   @Max(100)
   yml_fee_share_pct?: number;
-
 }
