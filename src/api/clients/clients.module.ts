@@ -3,14 +3,16 @@ import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AzureBlobService } from 'src/common/azure-blob/azure-blob.service';
 import { fyiStorageService } from 'src/common/fyi-storage/fyi-storage.service';
+import { XpmModule } from 'src/common/xpm/xpm.module';
 import { DisputeCase } from '../dispute-cases/entities/dispute-case.entity';
 import { ValuationNotice } from '../valuation-notices/entities/valuation-notice.entity';
+import { User } from '../users/entities/user.entity';
 import { ClientsController } from './clients.controller';
 import { ClientsService } from './clients.service';
 import { Client } from './entities/client.entity';
 
 @Module({
-  imports: [HttpModule, TypeOrmModule.forFeature([Client, DisputeCase, ValuationNotice])],
+  imports: [HttpModule, TypeOrmModule.forFeature([Client, DisputeCase, ValuationNotice, User]), XpmModule],
   controllers: [ClientsController],
   providers: [ClientsService, AzureBlobService, fyiStorageService],
 })

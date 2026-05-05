@@ -20,6 +20,8 @@ const TEMPLATE_NAMES = [
     'submit-to-vg-notification',
     'client-approved-notification',
     'vg-response-detected',
+    'vg-submission-confirmation',
+    'vg-follow-up-enquiry',
 ] as const;
 
 type TemplateName = (typeof TEMPLATE_NAMES)[number];
@@ -203,33 +205,33 @@ export class AzureEmailService implements OnModuleInit {
         await poller.pollUntilDone();
     }
 
-    async sendSubmitToVgNotification(params: {
+    async sendVgSubmissionConfirmation(params: {
         sendTo: string;
-        caseReference: string;
         clientName: string;
+        caseReference: string;
         propertyAddress: string;
-        jurisdiction: string;
         lodgmentReferenceNumber: string;
         submittedAt: string;
         assessorFullName: string;
     }): Promise<void> {
-        const html = this.loadTemplate('submit-to-vg-notification', {
+        const contactEmail = this.config.getOrThrow<string>('CONTACT_EMAIL');
+
+        const html = this.loadTemplate('vg-submission-confirmation', {
             caseReference: params.caseReference,
-            clientName: params.clientName,
             propertyAddress: params.propertyAddress,
-            jurisdiction: params.jurisdiction,
             lodgmentReferenceNumber: params.lodgmentReferenceNumber,
             submittedAt: params.submittedAt,
             assessorFullName: params.assessorFullName,
+            contactEmail,
         });
 
         const message = {
             senderAddress: this.sender,
             recipients: {
-                to: [{ address: params.sendTo, displayName: 'YML Land Tax Dispute' }],
+                to: [{ address: params.sendTo, displayName: params.clientName }],
             },
             content: {
-                subject: `[${params.caseReference}] Objection Submitted to Valuer-General`,
+                subject: `[${params.caseReference}] Objection Package Submitted to Valuer-General`,
                 html,
             },
         };
@@ -238,64 +240,32 @@ export class AzureEmailService implements OnModuleInit {
         await poller.pollUntilDone();
     }
 
-    async sendVgResponseDetectedNotification(params: {
+    async sendVgFollowUpEnquiry(params: {
         sendTo: string;
         caseReference: string;
-        clientName: string;
         propertyAddress: string;
-        jurisdiction: string;
-        receivedAt: string;
-        senderEmail: string;
-        emailSubject: string;
+        lodgmentReferenceNumber: string;
+        submittedAt: string;
+        followUpCount: string;
     }): Promise<void> {
-        const html = this.loadTemplate('vg-response-detected', {
+        const contactEmail = this.config.getOrThrow<string>('CONTACT_EMAIL');
+
+        const html = this.loadTemplate('vg-follow-up-enquiry', {
             caseReference: params.caseReference,
-            clientName: params.clientName,
             propertyAddress: params.propertyAddress,
-            jurisdiction: params.jurisdiction,
-            receivedAt: params.receivedAt,
-            senderEmail: params.senderEmail,
-            emailSubject: params.emailSubject,
+            lodgmentReferenceNumber: params.lodgmentReferenceNumber,
+            submittedAt: params.submittedAt,
+            followUpCount: params.followUpCount,
+            contactEmail,
         });
 
         const message = {
             senderAddress: this.sender,
             recipients: {
-                to: [{ address: params.sendTo, displayName: 'YML Land Tax Assessor' }],
+                to: [{ address: params.sendTo, displayName: 'Valuer-General Office' }],
             },
             content: {
-                subject: `[${params.caseReference}] Action Required \u2013 VG Response Detected`,
-                html,
-            },
-        };
-
-        const poller = await this.emailClient.beginSend(message);
-        await poller.pollUntilDone();
-    }
-
-    async sendClientApprovedNotification(params: {
-        sendTo: string;
-        caseReference: string;
-        clientName: string;
-        propertyAddress: string;
-        jurisdiction: string;
-        approvedAt: string;
-    }): Promise<void> {
-        const html = this.loadTemplate('client-approved-notification', {
-            caseReference: params.caseReference,
-            clientName: params.clientName,
-            propertyAddress: params.propertyAddress,
-            jurisdiction: params.jurisdiction,
-            approvedAt: params.approvedAt,
-        });
-
-        const message = {
-            senderAddress: this.sender,
-            recipients: {
-                to: [{ address: params.sendTo, displayName: 'YML Land Tax Assessor' }],
-            },
-            content: {
-                subject: `[${params.caseReference}] Action Required — Client Approved Objection Package`,
+                subject: `[${params.caseReference}] Follow-Up Enquiry #${params.followUpCount} — Awaiting VG Response`,
                 html,
             },
         };

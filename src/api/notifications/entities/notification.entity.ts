@@ -12,6 +12,7 @@ export enum NotificationType {
   APPROVAL_REQUESTED = 'approval_requested',
   APPROVAL_REMINDER = 'approval_reminder',
   APPROVAL_REMINDER_MAX_REACHED = 'approval_reminder_max_reached',
+  VG_FOLLOW_UP_SENT = 'vg_follow_up_sent',
 }
 
 @Entity('notifications')

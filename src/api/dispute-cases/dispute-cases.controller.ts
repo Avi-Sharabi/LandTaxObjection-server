@@ -11,6 +11,8 @@ import {
   HttpCode,
   Query,
   Req,
+  Version,
+  ParseUUIDPipe,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -24,8 +26,11 @@ import {
 import { ApprovalDocumentsResponseDto } from './dto/approval-documents-response.dto';
 import { DisputeCasesService } from './dispute-cases.service';
 import { VgEmailMonitorTask } from './vg-email-monitor.task';
+import { GetDisputeCasesQueryDto } from '../../common/dto/paginated-query.dto';
+import { PaginatedDisputeCasesResponseDto } from '../../common/dto/paginated-response.dto';
 import { UpdateDisputeCaseDto } from './dto/update-dispute-case.dto';
 import { CreateDisputeIntakeDto } from './dto/create-dispute-intake.dto';
+import { CreateDisputeIntakeV2Dto } from './dto/create-dispute-intake-v2.dto';
 import { CloseNoObjectionDto } from './dto/close-no-objection.dto';
 import { SubmitToVgDto } from './dto/submit-to-vg.dto';
 import { RecordVgResponseDto } from './dto/record-vg-response.dto';
@@ -33,8 +38,8 @@ import { ApproveObjectionPackageDto } from './dto/approve-objection-package.dto'
 import { DisputeCaseResponseDto } from './dto/dispute-case-response.dto';
 import { AnalysisReportResponseDto } from './dto/analysis-report-response.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { RolesGuard } from '../../common/guards/roles.guard';
-import { Roles } from '../../common/decorators/roles.decorator';
+import { RolesGuard } from 'src/common/guards/roles.guard';
+import { Roles } from 'src/common/decorators/roles.decorator';
 import { UserRole } from '../users/entities/user.entity';
 
 @ApiTags('dispute-cases')
@@ -58,6 +63,7 @@ export class DisputeCasesController {
     return { message: 'VG mailbox poll complete — check server logs' };
   }
 
+
   /**
    * Submit a new dispute case via intake form
    * Accepts application/json with base64-encoded PDF
@@ -70,6 +76,21 @@ export class DisputeCasesController {
   @Post('intake/submit')
   async submitIntake(@Body() intakeDto: CreateDisputeIntakeDto): Promise<unknown> {
     return this.disputeCasesService.submitIntakeApplication(intakeDto);
+  }
+
+  /**
+   * v2 — simplified intake: accountantId is optional, legal grounds not required at submission
+   * Used by the new single-step SubmitDisputePage frontend
+   */
+  @Version('2')
+  @Post('intake/submit')
+  @ApiOperation({ summary: 'Submit a new dispute intake application (v2)', description: 'Simplified intake — no legal grounds or YML contact required at submission time' })
+  @ApiBody({ type: CreateDisputeIntakeV2Dto })
+  @ApiResponse({ status: 201, description: 'Dispute case successfully created' })
+  @ApiResponse({ status: 400, description: 'Validation error' })
+  @ApiResponse({ status: 500, description: 'Internal server error' })
+  async submitIntakeV2(@Body() intakeDto: CreateDisputeIntakeV2Dto): Promise<unknown> {
+    return this.disputeCasesService.submitIntakeApplication(intakeDto as unknown as CreateDisputeIntakeDto);
   }
 
   @Post('approve')
@@ -112,10 +133,21 @@ export class DisputeCasesController {
   @ApiBearerAuth()
   @Get()
   @ApiOperation({ summary: 'List all dispute cases' })
+  @ApiQuery({ name: 'clientId', required: false, description: 'Filter by client UUID' })
   @ApiResponse({ status: 200, description: 'List of dispute cases', type: [DisputeCaseResponseDto] })
   @ApiResponse({ status: 401, description: 'Unauthorised' })
-  findAll(): Promise<DisputeCaseResponseDto[]> {
-    return this.disputeCasesService.findAll();
+  findAll(@Query('clientId', new ParseUUIDPipe({ optional: true })) clientId?: string): Promise<DisputeCaseResponseDto[]> {
+    return this.disputeCasesService.findAll(clientId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @Get('paginated')
+  @ApiOperation({ summary: 'List dispute cases with pagination, search, and filtering' })
+  @ApiResponse({ status: 200, description: 'Paginated list of dispute cases', type: PaginatedDisputeCasesResponseDto })
+  @ApiResponse({ status: 401, description: 'Unauthorised' })
+  findPaginated(@Query() query: GetDisputeCasesQueryDto): Promise<PaginatedDisputeCasesResponseDto> {
+    return this.disputeCasesService.findPaginated(query);
   }
 
   // Public endpoint — no auth guard. Accessed via time-limited token link in the advisory letter email.
@@ -226,7 +258,7 @@ export class DisputeCasesController {
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ACCOUNTANT, UserRole.ADMIN)
+  @Roles(UserRole.INTERNAL_Assessor)
   @ApiBearerAuth()
   @Post(':id/submit-to-vg')
   @HttpCode(200)

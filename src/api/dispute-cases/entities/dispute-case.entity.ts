@@ -8,6 +8,7 @@ import { ComparableSale } from '../../comparables/entities/comparable-sale.entit
 import { DisputeConstraint } from '../../dispute-constraints/entities/dispute-constraint.entity';
 
 export enum DisputeStatus {
+  PENDING_TNC = 'pending_tnc',
   DRAFT = 'draft',
   GROUNDS_SELECTION = 'grounds_selection',
   EVIDENCE_COMPILATION = 'evidence_compilation',
@@ -131,6 +132,15 @@ export class DisputeCase {
   @Column({ type: 'timestamptz', nullable: true })
   submitted_at: Date | null;
 
+  @Column({ type: 'text', nullable: true })
+  lodgment_reference_number: string | null;
+
+  @Column({ type: 'smallint', nullable: false, default: 0 })
+  vg_follow_up_count: number;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  last_vg_follow_up_sent_at: Date | null;
+
   @Column({ type: 'timestamptz', nullable: true })
   closed_at: Date | null;
 
@@ -154,7 +164,6 @@ export class DisputeCase {
 
   @Column({ type: 'timestamptz', nullable: true })
   advisory_view_token_expires_at: Date | null;
-
 
   @CreateDateColumn({ type: 'timestamptz' })
   created_at: Date;

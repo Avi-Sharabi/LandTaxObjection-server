@@ -23,6 +23,10 @@ import { fyiStorageService } from 'src/common/fyi-storage/fyi-storage.service';
 import { ApprovalReminderTask } from './approval-reminder.task';
 import { VgEmailMonitorTask } from './vg-email-monitor.task';
 import { MsGraphModule } from 'src/common/ms-graph/ms-graph.module';
+import { VGResponseMonitorScheduler } from './vg-response-monitor.scheduler';
+import { NotificationsModule } from '../notifications/notifications.module';
+import { AuditLogModule } from '../audit-log/audit-log.module';
+import { AuditLog } from '../audit-log/entities/audit-log.entity';
 
 @Module({
   imports: [
@@ -31,6 +35,8 @@ import { MsGraphModule } from 'src/common/ms-graph/ms-graph.module';
     AzureEmailModule,
     ComparablesModule,
     MsGraphModule,
+    AuditLogModule,
+    NotificationsModule,
     TypeOrmModule.forFeature([
       DisputeCase,
       AssessmentDocument,
@@ -42,6 +48,7 @@ import { MsGraphModule } from 'src/common/ms-graph/ms-graph.module';
       ValuationNotice,
       User,
       PackageDocument,
+      AuditLog,
     ]),
   ],
   controllers: [DisputeCasesController],
@@ -53,6 +60,7 @@ import { MsGraphModule } from 'src/common/ms-graph/ms-graph.module';
     fyiStorageService,
     ApprovalReminderTask,
     VgEmailMonitorTask,
+    VGResponseMonitorScheduler,
   ],
 })
 export class DisputeCasesModule {}

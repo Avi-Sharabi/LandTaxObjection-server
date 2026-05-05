@@ -1,10 +1,13 @@
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ScheduleModule } from '@nestjs/schedule';
 
 import { TypeOrmConfigService } from './config/typeorm.config';
 import { APIModule } from './api/api.module';
+import { McpModule } from './mcp/mcp.module';
+import { QueueModule } from './queue/queue.module';
+import { CorrelationIdMiddleware } from './common/middleware/correlation-id.middleware';
 
 @Module({
   imports: [
@@ -21,8 +24,14 @@ import { APIModule } from './api/api.module';
     }),
 
     ScheduleModule.forRoot(),
+    QueueModule,
 
-    APIModule
+    APIModule,
+    McpModule,
   ],
 })
-export class AppModule { }
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer): void {
+    consumer.apply(CorrelationIdMiddleware).forRoutes('*');
+  }
+}
