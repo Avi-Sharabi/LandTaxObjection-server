@@ -17,34 +17,106 @@ export class ComparableSale {
   @Column({ type: 'uuid', nullable: false, name: 'dispute_case_id' })
   dispute_case_id: string;
 
-  @Column({ type: 'text', nullable: false })
-  address: string;
-
-  @Column({ type: 'date', nullable: false })
-  sale_date: Date;
-
-  @Column({ type: 'numeric', precision: 15, scale: 2, nullable: false })
-  sale_price: number;
-
-  @Column({ type: 'numeric', precision: 15, scale: 2, nullable: false })
-  estimated_improvements_value: number;
-
-  @Column({ type: 'numeric', precision: 15, scale: 2, nullable: false })
-  adjusted_land_value: number;
-
-  @Column({ type: 'numeric', precision: 10, scale: 2, nullable: true })
-  land_area_sqm: number | null;
-
-  @Column({ type: 'text', nullable: true })
-  notes: string | null;
-
   @Column({ type: 'uuid', nullable: false, name: 'created_by_id' })
   created_by_id: string;
 
   @CreateDateColumn({ type: 'timestamptz' })
   created_at: Date;
 
-  // Relations
+  // ── property_sales_raw fields ─────────────────────────────────────────────
+
+  @Column({ type: 'varchar', nullable: true })
+  sale_id: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  source_file: string | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  imported_at: Date | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  district_code: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  property_id: string | null;
+
+  @Column({ type: 'integer', nullable: true })
+  sale_counter: number | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  download_datetime: Date | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  property_name: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  property_unit_number: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  property_house_number: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  property_street_name: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  property_locality: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  property_post_code: string | null;
+
+  @Column({ type: 'numeric', precision: 15, scale: 4, nullable: true })
+  area: number | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  contract_date: Date | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  settlement_date: Date | null;
+
+  @Column({ type: 'numeric', precision: 20, scale: 2, nullable: true })
+  purchase_price: number | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  zoning: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  nature_of_property: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  primary_purpose: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  strata_lot_number: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  component_code: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  sale_code: string | null;
+
+  @Column({ type: 'numeric', precision: 10, scale: 4, nullable: true })
+  interest_of_sale_percent: number | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  dealing_number: string | null;
+
+  @Column({ type: 'varchar', nullable: true })
+  owner_type: string | null;
+
+  @Column({ type: 'numeric', precision: 15, scale: 2, nullable: true })
+  adjusted_rate_per_sqm: number | null;
+
+  @Column({ type: 'numeric', precision: 20, scale: 2, nullable: true })
+  adjusted_land_value: number | null;
+
+  @Column({ type: 'numeric', precision: 20, scale: 2, nullable: true })
+  suggested_land_value: number | null;
+
+  @Column({ type: 'text', nullable: true })
+  explanation: string | null;
+
+  // ── Relations ─────────────────────────────────────────────────────────────
+
   @ManyToOne(() => DisputeCase, (disputeCase) => disputeCase.comparables, {
     nullable: false,
     onDelete: 'CASCADE',

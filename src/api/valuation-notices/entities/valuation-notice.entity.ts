@@ -23,6 +23,12 @@ export class ValuationNotice {
   @Column({ type: 'numeric', precision: 15, scale: 2, nullable: true })
   assessed_land_value: number | null;
 
+  @Column({ type: 'numeric', precision: 15, scale: 2, nullable: true })
+  prior_land_value: number | null;
+
+  @Column({ type: 'numeric', precision: 12, scale: 2, nullable: true })
+  land_area_vg_sqm: number | null;
+
   @Column({ type: 'boolean', nullable: false, default: false })
   is_exempt: boolean;
 

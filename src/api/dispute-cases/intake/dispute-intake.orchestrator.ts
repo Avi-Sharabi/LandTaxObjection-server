@@ -17,7 +17,7 @@ import { XpmClientHandler } from './xpm-client.handler';
 import { PdfStorageHandler } from './pdf-storage.handler';
 import { AzureEmailService } from 'src/common/azure-email/azure-email.service';
 import { AccountantNotFoundException } from '../exceptions/accountant-not-found.exception';
-import { Client } from '../../clients/entities/client.entity';
+import { Client, ClientStatus } from '../../clients/entities/client.entity';
 
 interface PropertyFlags {
   flag_heritage: boolean;
@@ -88,7 +88,7 @@ export class DisputeIntakeOrchestrator {
 
       const flags = this.mapConstraintsToFlags(prop.constraints ?? []);
       const notice = await this.createValuationNotice(property.id, prop.valuation_notice, intakeDto.valuationYear, assessmentDocument.id);
-      const disputeCase = await this.createDisputeCase(client, property.id, notice.id, caseReference, prop.state, prop.valuation_notice.assessed_land_value, intakeDto, flags);
+      const disputeCase = await this.createDisputeCase(client as Client, property.id, notice.id, caseReference, prop.state, prop.valuation_notice.assessed_land_value, intakeDto, flags);
 
       await this.createLegalGrounds(disputeCase.id, prop.grounds ?? []);
       caseReferences.push(caseReference);
@@ -158,7 +158,7 @@ export class DisputeIntakeOrchestrator {
   }
 
   private async createDisputeCase(
-    client: any,
+    client: Client,
     propertyId: string,
     valuationNoticeId: string,
     caseReference: string,
@@ -174,7 +174,7 @@ export class DisputeIntakeOrchestrator {
       valuation_notice_id: valuationNoticeId,
       assigned_accountant_id: intakeDto.accountantId,
       jurisdiction,
-      status: DisputeStatus.DRAFT,
+      status: client.status === ClientStatus.PROSPECT ? DisputeStatus.PENDING_TNC : DisputeStatus.DRAFT,
       statutory_deadline: new Date(intakeDto.statutoryDeadline),
       original_assessed_value: assessedLandValue,
       notes: intakeDto.addNotes || null,
@@ -210,7 +210,7 @@ export class DisputeIntakeOrchestrator {
   private async notifyInternalAssessor(caseReferences: string[], accountantId: string): Promise<void> {
     const user = await this.usersRepository.findOne({ where: { id: accountantId } });
     if (!user) {
-      console.warn(`Accountant with ID ${accountantId} not found. Skipping email notification.`);
+      this.logger.warn(`Accountant with ID ${accountantId} not found. Skipping email notification.`);
       return;
     }
     await this.azureEmailService.sendDisputeApplication(caseReferences, user.email);
