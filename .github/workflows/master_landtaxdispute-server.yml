@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      
+
     environment:
       name: ${{ github.ref == 'refs/heads/main' && 'production' || github.ref == 'refs/heads/qa' && 'qa' || 'development' }}
 
@@ -23,10 +23,11 @@ jobs:
         with:
           node-version: '24.x'
 
-      - name: Install and build
-        run: |
-          npm ci
-          npm run build
+      - name: Install all dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
 
       - name: Run database migrations
         env:
@@ -39,17 +40,23 @@ jobs:
           DB_SSL: ${{ github.ref == 'refs/heads/main' && secrets.DB_SSL_PROD || github.ref == 'refs/heads/qa' && secrets.DB_SSL_QA || secrets.DB_SSL_DEV }}
         run: npm run migration:run
 
+      - name: Install production dependencies only
+        run: npm ci --omit=dev
+
       - name: Prepare deploy package
         run: |
           mkdir deploy-package
           cp -r dist deploy-package/
+          cp -r node_modules deploy-package/
           cp package.json deploy-package/
-          cp package-lock.json deploy-package/
+
+      - name: Zip deploy package
+        run: zip --symlinks -r deploy.zip ./deploy-package
 
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
         with:
           app-name: 'landtaxdispute-server'
           slot-name: 'Production'
-          package: ./deploy-package
+          package: deploy.zip
           publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_A76461515FA9422A88808EE1E33679FD }}
