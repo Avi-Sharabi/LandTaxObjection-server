@@ -43,7 +43,7 @@ jobs:
           app-name: 'landtaxdispute-server'
           slot-name: 'Production'
           package: .
-          publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_A76461515FA9422A88808EEE1E33679FD }}
+          publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_A76461515FA9422A88808EE1E33679FD }}
 
   deploy-qa:
     if: github.ref == 'refs/heads/qa'
