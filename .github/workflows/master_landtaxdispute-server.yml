@@ -4,16 +4,15 @@ on:
   push:
     branches:
       - main
-      - qa
   workflow_dispatch:
 
 jobs:
-  deploy-production:
-    if: github.ref == 'refs/heads/main'
+  build-and-deploy:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-    environment: production
+    environment:
+      name: production
 
     steps:
       - uses: actions/checkout@v4
@@ -23,20 +22,15 @@ jobs:
         with:
           node-version: '24.x'
 
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Install dotenvx globally
-        run: npm install -g @dotenvx/dotenvx
-
-      - name: Build
-        run: npm run build
+      - name: Install and build
+        run: |
+          npm ci
+          npm run build
 
       - name: Run database migrations
         env:
-          NODE_ENV: production
           DOTENV_PRIVATE_KEY_PRODUCTION: ${{ secrets.DOTENV_PRIVATE_KEY_PRODUCTION }}
-        run: dotenvx run -f .env.production -- npm run migration:run
+        run: npx dotenvx run -f .env.production -- npm run migration:run
 
       - name: Prune dev dependencies
         run: npm prune --omit=dev
@@ -51,47 +45,3 @@ jobs:
           slot-name: 'Production'
           package: .
           publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_A76461515FA9422A88808EE1E33679FD }}
-
-  deploy-qa:
-    if: github.ref == 'refs/heads/qa'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    environment: qa
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Node.js version
-        uses: actions/setup-node@v3
-        with:
-          node-version: '24.x'
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Install dotenvx globally
-        run: npm install -g @dotenvx/dotenvx
-
-      - name: Build
-        run: npm run build
-
-      - name: Run database migrations
-        env:
-          NODE_ENV: qa
-          DOTENV_PRIVATE_KEY_QA: ${{ secrets.DOTENV_PRIVATE_KEY_QA }}
-        run: dotenvx run -f .env.qa -- npm run migration:run
-
-      - name: Prune dev dependencies
-        run: npm prune --omit=dev
-
-      - name: Remove node_modules before deploy
-        run: rm -rf node_modules
-
-      - name: Deploy to Azure Web App
-        uses: azure/webapps-deploy@v3
-        with:
-          app-name: 'landtaxdispute-server'
-          slot-name: 'Production'
-          package: .
-          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE_QA }}
