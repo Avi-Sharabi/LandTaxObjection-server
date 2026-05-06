@@ -31,7 +31,7 @@ jobs:
       - name: Run database migrations
         env:
           NODE_ENV: production
-          DB_HOST:  ${{ github.ref == 'refs/heads/main' && secrets.DB_HOST_PROD || github.ref == 'refs/heads/qa' && secrets.DB_HOST_QA || secrets.DB_HOST_DEV }}
+          DB_HOST: ${{ github.ref == 'refs/heads/main' && secrets.DB_HOST_PROD || github.ref == 'refs/heads/qa' && secrets.DB_HOST_QA || secrets.DB_HOST_DEV }}
           DB_PORT: ${{ github.ref == 'refs/heads/main' && secrets.DB_PORT_PROD || github.ref == 'refs/heads/qa' && secrets.DB_PORT_QA || secrets.DB_PORT_DEV }}
           DB_USERNAME: ${{ github.ref == 'refs/heads/main' && secrets.DB_USERNAME_PROD || github.ref == 'refs/heads/qa' && secrets.DB_USERNAME_QA || secrets.DB_USERNAME_DEV }}
           DB_PASSWORD: ${{ github.ref == 'refs/heads/main' && secrets.DB_PASSWORD_PROD || github.ref == 'refs/heads/qa' && secrets.DB_PASSWORD_QA || secrets.DB_PASSWORD_DEV }}
@@ -39,13 +39,17 @@ jobs:
           DB_SSL: ${{ github.ref == 'refs/heads/main' && secrets.DB_SSL_PROD || github.ref == 'refs/heads/qa' && secrets.DB_SSL_QA || secrets.DB_SSL_DEV }}
         run: npm run migration:run
 
-      - name: Prune dev dependencies
-        run: npm prune --omit=dev
+      - name: Prepare deploy package
+        run: |
+          mkdir deploy-package
+          cp -r dist deploy-package/
+          cp package.json deploy-package/
+          cp package-lock.json deploy-package/
 
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
         with:
           app-name: 'landtaxdispute-server'
           slot-name: 'Production'
-          package: .
+          package: ./deploy-package
           publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_A76461515FA9422A88808EE1E33679FD }}
