@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - qa
   workflow_dispatch:
 
 jobs:
@@ -11,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      
+
     environment:
       name: ${{ github.ref == 'refs/heads/main' && 'production' || github.ref == 'refs/heads/qa' && 'qa' || 'development' }}
 
@@ -23,6 +24,19 @@ jobs:
         with:
           node-version: '24.x'
 
+      - name: Set environment variables
+        run: |
+          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+            echo "ENV_FILE=.env.production" >> $GITHUB_ENV
+            echo "DOTENV_PRIVATE_KEY=${{ secrets.DOTENV_PRIVATE_KEY_PRODUCTION }}" >> $GITHUB_ENV
+          elif [[ "${{ github.ref }}" == "refs/heads/qa" ]]; then
+            echo "ENV_FILE=.env.qa" >> $GITHUB_ENV
+            echo "DOTENV_PRIVATE_KEY=${{ secrets.DOTENV_PRIVATE_KEY_QA }}" >> $GITHUB_ENV
+          else
+            echo "ENV_FILE=.env.development" >> $GITHUB_ENV
+            echo "DOTENV_PRIVATE_KEY=${{ secrets.DOTENV_PRIVATE_KEY_DEV }}" >> $GITHUB_ENV
+          fi
+
       - name: Install and build
         run: |
           npm ci
@@ -30,14 +44,8 @@ jobs:
 
       - name: Run database migrations
         env:
-          NODE_ENV: production
-          DB_HOST:  ${{ github.ref == 'refs/heads/main' && secrets.DB_HOST_PROD || github.ref == 'refs/heads/qa' && secrets.DB_HOST_QA || secrets.DB_HOST_DEV }}
-          DB_PORT: ${{ github.ref == 'refs/heads/main' && secrets.DB_PORT_PROD || github.ref == 'refs/heads/qa' && secrets.DB_PORT_QA || secrets.DB_PORT_DEV }}
-          DB_USERNAME: ${{ github.ref == 'refs/heads/main' && secrets.DB_USERNAME_PROD || github.ref == 'refs/heads/qa' && secrets.DB_USERNAME_QA || secrets.DB_USERNAME_DEV }}
-          DB_PASSWORD: ${{ github.ref == 'refs/heads/main' && secrets.DB_PASSWORD_PROD || github.ref == 'refs/heads/qa' && secrets.DB_PASSWORD_QA || secrets.DB_PASSWORD_DEV }}
-          DB_NAME: ${{ github.ref == 'refs/heads/main' && secrets.DB_NAME_PROD || github.ref == 'refs/heads/qa' && secrets.DB_NAME_QA || secrets.DB_NAME_DEV }}
-          DB_SSL: ${{ github.ref == 'refs/heads/main' && secrets.DB_SSL_PROD || github.ref == 'refs/heads/qa' && secrets.DB_SSL_QA || secrets.DB_SSL_DEV }}
-        run: npm run migration:run
+          DOTENV_PRIVATE_KEY: ${{ env.DOTENV_PRIVATE_KEY }}
+        run: npx dotenvx run -f ${{ env.ENV_FILE }} -- npm run migration:run
 
       - name: Prune dev dependencies
         run: npm prune --omit=dev
@@ -48,4 +56,4 @@ jobs:
           app-name: 'landtaxdispute-server'
           slot-name: 'Production'
           package: .
-          publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_A76461515FA9422A88808EE1E33679FD }}
+          publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_A76461515FA9422A88808EEE1E33679FD }}
