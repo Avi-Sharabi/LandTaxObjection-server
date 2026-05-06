@@ -8,13 +8,12 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-and-deploy:
+  deploy-production:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
       contents: read
-
-    environment:
-      name: ${{ github.ref == 'refs/heads/main' && 'production' || github.ref == 'refs/heads/qa' && 'qa' || 'development' }}
+    environment: production
 
     steps:
       - uses: actions/checkout@v4
@@ -24,19 +23,6 @@ jobs:
         with:
           node-version: '24.x'
 
-      - name: Set environment variables
-        run: |
-          if [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
-            echo "ENV_FILE=.env.production" >> $GITHUB_ENV
-            echo "DOTENV_PRIVATE_KEY=${{ secrets.DOTENV_PRIVATE_KEY_PRODUCTION }}" >> $GITHUB_ENV
-          elif [[ "${{ github.ref }}" == "refs/heads/qa" ]]; then
-            echo "ENV_FILE=.env.qa" >> $GITHUB_ENV
-            echo "DOTENV_PRIVATE_KEY=${{ secrets.DOTENV_PRIVATE_KEY_QA }}" >> $GITHUB_ENV
-          else
-            echo "ENV_FILE=.env.development" >> $GITHUB_ENV
-            echo "DOTENV_PRIVATE_KEY=${{ secrets.DOTENV_PRIVATE_KEY_DEV }}" >> $GITHUB_ENV
-          fi
-
       - name: Install and build
         run: |
           npm ci
@@ -44,8 +30,9 @@ jobs:
 
       - name: Run database migrations
         env:
-          DOTENV_PRIVATE_KEY: ${{ env.DOTENV_PRIVATE_KEY }}
-        run: npx dotenvx run -f ${{ env.ENV_FILE }} -- npm run migration:run
+          NODE_ENV: production
+          DOTENV_PRIVATE_KEY_PRODUCTION: ${{ secrets.DOTENV_PRIVATE_KEY_PRODUCTION }}
+        run: npx dotenvx run -f .env.production -- npm run migration:run
 
       - name: Prune dev dependencies
         run: npm prune --omit=dev
@@ -57,3 +44,40 @@ jobs:
           slot-name: 'Production'
           package: .
           publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_A76461515FA9422A88808EEE1E33679FD }}
+
+  deploy-qa:
+    if: github.ref == 'refs/heads/qa'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    environment: qa
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js version
+        uses: actions/setup-node@v3
+        with:
+          node-version: '24.x'
+
+      - name: Install and build
+        run: |
+          npm ci
+          npm run build
+
+      - name: Run database migrations
+        env:
+          NODE_ENV: qa
+          DOTENV_PRIVATE_KEY_QA: ${{ secrets.DOTENV_PRIVATE_KEY_QA }}
+        run: npx dotenvx run -f .env.qa -- npm run migration:run
+
+      - name: Prune dev dependencies
+        run: npm prune --omit=dev
+
+      - name: Deploy to Azure Web App
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: 'landtaxdispute-server'
+          slot-name: 'Production'
+          package: .
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE_QA }}
