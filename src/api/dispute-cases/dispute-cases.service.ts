@@ -15,12 +15,10 @@ import { UpdateDisputeCaseDto } from './dto/update-dispute-case.dto';
 import { CreateDisputeIntakeDto } from './dto/create-dispute-intake.dto';
 import { CloseNoObjectionDto } from './dto/close-no-objection.dto';
 import { SubmitToVgDto } from './dto/submit-to-vg.dto';
-import { RecordVgResponseDto } from './dto/record-vg-response.dto';
 import { DisputeCaseResponseDto } from './dto/dispute-case-response.dto';
 import { AnalysisReportResponseDto } from './dto/analysis-report-response.dto';
 import { ApprovalDocumentsResponseDto } from './dto/approval-documents-response.dto';
 import { DisputeCase, DisputeStatus } from './entities/dispute-case.entity';
-import { AuditAction as CaseAuditAction, CaseAuditLog } from './entities/case-audit-log.entity';
 import { DisputeIntakeOrchestrator } from './intake/dispute-intake.orchestrator';
 import { ComparablesService } from '../comparables/comparables.service';
 import { AzureEmailService } from 'src/common/azure-email/azure-email.service';
@@ -49,11 +47,6 @@ const CLOSED_STATUSES: DisputeStatus[] = [
 
 const LODGMENT_REF_PREFIX = 'VG';
 
-const VG_SUBMITTABLE_STATUSES: DisputeStatus[] = [
-  DisputeStatus.SUBMITTED_TO_VG,
-  DisputeStatus.AWAITING_VG_RESPONSE,
-];
-
 @Injectable()
 export class DisputeCasesService {
   private readonly logger = new Logger(DisputeCasesService.name);
@@ -70,8 +63,6 @@ export class DisputeCasesService {
     private disputeCasesRepository: Repository<DisputeCase>,
     @InjectRepository(PackageDocument)
     private readonly packageDocumentRepo: Repository<PackageDocument>,
-    @InjectRepository(CaseAuditLog)
-    private readonly auditLogRepo: Repository<CaseAuditLog>,
   ) { }
 
   async submitIntakeApplication(intakeDto: CreateDisputeIntakeDto): Promise<unknown> {
@@ -365,49 +356,6 @@ export class DisputeCasesService {
           viewUrl: this.azureBlobService.getFileUrl(doc.blob_name, THREE_DAY_WINDOW_MINUTES),
         })),
     };
-  }
-
-  async recordVgResponse(
-    caseId: string,
-    dto: RecordVgResponseDto,
-    assessorId: string,
-  ): Promise<DisputeCaseResponseDto> {
-    const disputeCase = await this.disputeCasesRepository.findOne({
-      where: { id: caseId },
-      relations: ['client', 'property', 'valuation_notice', 'assigned_accountant', 'assigned_lawyer', 'legal_grounds', 'dispute_constraints'],
-    });
-
-    if (!disputeCase) {
-      throw new NotFoundException(`Dispute case #${caseId} not found`);
-    }
-
-    if (!VG_SUBMITTABLE_STATUSES.includes(disputeCase.status) && disputeCase.status !== DisputeStatus.VG_RESPONSE_RECEIVED) {
-      throw new ConflictException(`Dispute case #${caseId} is not in a state that allows recording a VG response`);
-    }
-
-    if (disputeCase.status === DisputeStatus.VG_RESPONSE_RECEIVED) {
-      throw new ConflictException(`VG response has already been recorded for dispute case #${caseId}`);
-    }
-
-    disputeCase.status = DisputeStatus.VG_RESPONSE_RECEIVED;
-    disputeCase.vg_response_received_at = new Date(dto.responseDate);
-    disputeCase.vg_response_notes = dto.responseNotes ?? null;
-    if (dto.lodgmentReferenceNumber !== undefined) {
-      disputeCase.lodgment_reference_number = dto.lodgmentReferenceNumber;
-    }
-
-    const saved = await this.disputeCasesRepository.save(disputeCase);
-
-    await this.auditLogRepo.save(
-      this.auditLogRepo.create({
-        case_id: caseId,
-        action: CaseAuditAction.VG_RESPONSE_RECORDED,
-        performed_by: assessorId,
-        response_notes: dto.responseNotes ?? null,
-      }),
-    );
-
-    return saved;
   }
 
   async findAdvisoryView(token: string): Promise<AnalysisReportResponseDto> {

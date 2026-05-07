@@ -93,12 +93,6 @@ export class DisputeCaseResponseDto {
   @ApiPropertyOptional()
   closed_at: Date | null;
 
-  @ApiPropertyOptional()
-  vg_response_received_at: Date | null;
-
-  @ApiPropertyOptional()
-  vg_response_notes: string | null;
-
   @ApiPropertyOptional({ nullable: true, type: () => ValuationNoticeNestedDto })
   valuation_notice: ValuationNoticeNestedDto | null;
 
