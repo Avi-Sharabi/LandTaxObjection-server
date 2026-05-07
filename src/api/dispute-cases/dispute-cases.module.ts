@@ -1,10 +1,11 @@
 import { HttpModule } from '@nestjs/axios';
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { BullModule } from '@nestjs/bullmq';
 import { ComparablesModule } from '../comparables/comparables.module';
+import { Property } from '../properties/entities/property.entity';
 import { Client } from '../clients/entities/client.entity';
 import { DisputeLegalGround } from '../dispute-legal-grounds/entities/dispute-legal-ground.entity';
-import { Property } from '../properties/entities/property.entity';
 import { User } from '../users/entities/user.entity';
 import { ValuationNotice } from '../valuation-notices/entities/valuation-notice.entity';
 import { DisputeCasesController } from './dispute-cases.controller';
@@ -12,7 +13,6 @@ import { DisputeCasesService } from './dispute-cases.service';
 import { DisputeCase } from './entities/dispute-case.entity';
 import { AssessmentDocument } from './entities/assessment-document.entity';
 import { CaseAuditLog } from './entities/case-audit-log.entity';
-import { VgEmailInbox } from './entities/vg-email-inbox.entity';
 import { PackageDocument } from '../objection-package/entities/package-document.entity';
 import { AzureBlobModule } from 'src/common/azure-blob/azure-blob.module';
 import { AzureEmailModule } from 'src/common/azure-email/azure-email.module';
@@ -21,12 +21,16 @@ import { XpmClientHandler } from './intake/xpm-client.handler';
 import { PdfStorageHandler } from './intake/pdf-storage.handler';
 import { fyiStorageService } from 'src/common/fyi-storage/fyi-storage.service';
 import { ApprovalReminderTask } from './approval-reminder.task';
-import { VgEmailMonitorTask } from './vg-email-monitor.task';
 import { MsGraphModule } from 'src/common/ms-graph/ms-graph.module';
-import { VGResponseMonitorScheduler } from './vg-response-monitor.scheduler';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { AuditLogModule } from '../audit-log/audit-log.module';
 import { AuditLog } from '../audit-log/entities/audit-log.entity';
+import { McpModule } from 'src/mcp/mcp.module';
+import { VgEmailMonitorTask } from './vg-email/vg-email-monitor.task';
+import { VG_EMAIL_ANALYSIS_QUEUE } from './vg-email/vg-email-analysis.queue';
+import { VgEmailAnalysisQueueService } from './vg-email/vg-email-analysis-queue.service';
+import { VgEmailAnalysisProcessor } from './vg-email/vg-email-analysis.processor';
+import { VgEmailAnalysisService } from './vg-email/vg-email-analysis.service';
 
 @Module({
   imports: [
@@ -35,16 +39,17 @@ import { AuditLog } from '../audit-log/entities/audit-log.entity';
     AzureEmailModule,
     ComparablesModule,
     MsGraphModule,
+    McpModule,
     AuditLogModule,
     NotificationsModule,
+    BullModule.registerQueue({ name: VG_EMAIL_ANALYSIS_QUEUE }),
     TypeOrmModule.forFeature([
       DisputeCase,
       AssessmentDocument,
       CaseAuditLog,
-      VgEmailInbox,
       DisputeLegalGround,
-      Client,
       Property,
+      Client,
       ValuationNotice,
       User,
       PackageDocument,
@@ -60,7 +65,9 @@ import { AuditLog } from '../audit-log/entities/audit-log.entity';
     fyiStorageService,
     ApprovalReminderTask,
     VgEmailMonitorTask,
-    VGResponseMonitorScheduler,
+    VgEmailAnalysisQueueService,
+    VgEmailAnalysisProcessor,
+    VgEmailAnalysisService,
   ],
 })
 export class DisputeCasesModule {}

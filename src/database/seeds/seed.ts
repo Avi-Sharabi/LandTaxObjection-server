@@ -10,7 +10,6 @@ import { seedVgMonitorTest } from './vg-monitor-test.seeder';
 import { seedSubmitToVG } from './submit-to-vg.seeder';
 import { seedCasesPagination } from './cases-pagination.seeder';
 import { seedComparablesTest } from './comparables-test.seeder';
-
 const logger = new Logger('Seed');
 
 async function runSeeders(dataSource: DataSource): Promise<void> {

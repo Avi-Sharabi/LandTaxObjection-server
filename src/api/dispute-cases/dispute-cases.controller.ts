@@ -25,7 +25,6 @@ import {
 } from '@nestjs/swagger';
 import { ApprovalDocumentsResponseDto } from './dto/approval-documents-response.dto';
 import { DisputeCasesService } from './dispute-cases.service';
-import { VgEmailMonitorTask } from './vg-email-monitor.task';
 import { GetDisputeCasesQueryDto } from '../../common/dto/paginated-query.dto';
 import { PaginatedDisputeCasesResponseDto } from '../../common/dto/paginated-response.dto';
 import { UpdateDisputeCaseDto } from './dto/update-dispute-case.dto';
@@ -48,20 +47,7 @@ import { UserRole } from '../users/entities/user.entity';
   version: '1',
 })
 export class DisputeCasesController {
-  constructor(
-    private readonly disputeCasesService: DisputeCasesService,
-    private readonly vgEmailMonitorTask: VgEmailMonitorTask,
-  ) {}
-
-  // DEV ONLY — not guarded, remove before production
-  @Post('dev/trigger-vg-poll')
-  @HttpCode(200)
-  @ApiOperation({ summary: '[DEV] Manually trigger the VG mailbox poll', description: 'Fires pollVgMailbox() immediately. Use this to test email detection without waiting for the daily cron.' })
-  @ApiResponse({ status: 200, description: 'Poll triggered — check server logs and vg_email_inbox table for results' })
-  async devTriggerVgPoll(): Promise<{ message: string }> {
-    await this.vgEmailMonitorTask.pollVgMailbox();
-    return { message: 'VG mailbox poll complete — check server logs' };
-  }
+  constructor(private readonly disputeCasesService: DisputeCasesService) {}
 
 
   /**

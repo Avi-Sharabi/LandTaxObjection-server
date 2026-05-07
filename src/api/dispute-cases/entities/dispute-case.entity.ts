@@ -20,6 +20,8 @@ export enum DisputeStatus {
   SUBMITTED_TO_VG = 'submitted_to_vg',
   AWAITING_VG_RESPONSE = 'awaiting_vg_response',
   VG_RESPONSE_RECEIVED = 'vg_response_received',
+  VG_APPROVED = 'vg_approved',
+  VG_DECLINED = 'vg_declined',
   OUTCOME_RECEIVED = 'outcome_received',
   CLOSED = 'closed',
   CLOSED_NO_OBJECTION = 'closed_no_objection',
