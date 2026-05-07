@@ -173,17 +173,10 @@ export class DisputeCasesService {
     }
 
     const closedAtDate = new Date();
-    const token = randomUUID();
-    const tokenExpiry = new Date(closedAtDate);
-    tokenExpiry.setDate(tokenExpiry.getDate() + THREE_DAY_WINDOW_DAYS);
-    const frontendUrl = this.config.get<string>('FRONTEND_URL') ?? '';
-    const viewReportUrl = `${frontendUrl}/advisory-view?token=${token}`;
 
     // Persist status transition before sending email
     disputeCase.status = DisputeStatus.CLOSED_NO_OBJECTION;
     disputeCase.closed_at = closedAtDate;
-    disputeCase.advisory_view_token = token;
-    disputeCase.advisory_view_token_expires_at = tokenExpiry;
     if (dto.assessorNotes !== undefined) {
       disputeCase.notes = dto.assessorNotes;
     }
@@ -192,7 +185,7 @@ export class DisputeCasesService {
 
     this.azureEmailService
       .sendAdvisoryLetterNotification(
-        this.buildAdvisoryEmailPayload(disputeCase, dto, vgAssessedValue, closedAtDate, viewReportUrl),
+        this.buildAdvisoryEmailPayload(disputeCase, dto, vgAssessedValue, closedAtDate),
       )
       .catch((err: unknown) => {
         this.logger.error(
@@ -423,10 +416,9 @@ export class DisputeCasesService {
     dto: CloseNoObjectionDto,
     vgAssessedValue: number,
     closedAtDate: Date,
-    viewReportUrl: string,
   ): Parameters<AzureEmailService['sendAdvisoryLetterNotification']>[0] {
     return {
-      clientEmail: disputeCase.client.email!, // guarded by ClientEmailMissingException before this is called
+      clientEmail: disputeCase.client.email!,
       clientName: disputeCase.client.name,
       caseReference: disputeCase.case_reference,
       propertyAddress: this.buildPropertyAddress(disputeCase.property),
@@ -437,7 +429,6 @@ export class DisputeCasesService {
         day: '2-digit', month: 'long', year: 'numeric',
         hour: '2-digit', minute: '2-digit',
       }),
-      viewReportUrl,
     };
   }
 
