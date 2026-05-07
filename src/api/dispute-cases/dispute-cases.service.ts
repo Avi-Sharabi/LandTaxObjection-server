@@ -7,14 +7,13 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Between, DataSource, FindOptionsWhere, ILike, In, LessThan, Not, Repository } from 'typeorm';
-import { randomUUID, randomInt } from 'crypto';
+import { randomUUID } from 'crypto';
 import { ConfigService } from '@nestjs/config';
 import { GetDisputeCasesQueryDto } from '../../common/dto/paginated-query.dto';
 import { PaginatedDisputeCasesResponseDto } from '../../common/dto/paginated-response.dto';
 import { UpdateDisputeCaseDto } from './dto/update-dispute-case.dto';
 import { CreateDisputeIntakeDto } from './dto/create-dispute-intake.dto';
 import { CloseNoObjectionDto } from './dto/close-no-objection.dto';
-import { SubmitToVgDto } from './dto/submit-to-vg.dto';
 import { DisputeCaseResponseDto } from './dto/dispute-case-response.dto';
 import { AnalysisReportResponseDto } from './dto/analysis-report-response.dto';
 import { ApprovalDocumentsResponseDto } from './dto/approval-documents-response.dto';
@@ -25,8 +24,6 @@ import { AzureEmailService } from 'src/common/azure-email/azure-email.service';
 import { AzureBlobService } from 'src/common/azure-blob/azure-blob.service';
 import { PackageDocument, PackageDocumentStatus } from '../objection-package/entities/package-document.entity';
 import { ClientEmailMissingException } from './exceptions/client-email-missing.exception';
-import { CaseNotClientApprovedException } from './exceptions/case-not-client-approved.exception';
-import { CaseAlreadySubmittedException } from './exceptions/case-already-submitted.exception';
 import { AuditLog, AuditAction } from '../audit-log/entities/audit-log.entity';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/entities/notification.entity';
@@ -460,82 +457,6 @@ export class DisputeCasesService {
       }),
       viewReportUrl,
     };
-  }
-
-  async submitToVg(id: string, dto: SubmitToVgDto, assessorId: string, assessorFullName: string): Promise<DisputeCaseResponseDto> {
-    const queryRunner = this.dataSource.createQueryRunner();
-    await queryRunner.connect();
-    await queryRunner.startTransaction();
-
-    try {
-      const disputeCase = await queryRunner.manager.findOne(DisputeCase, {
-        where: { id },
-        relations: ['client', 'property', 'valuation_notice'],
-        lock: { mode: 'pessimistic_write' },
-      });
-
-      if (!disputeCase) {
-        throw new NotFoundException(`Dispute case #${id} not found`);
-      }
-
-      if (disputeCase.status === DisputeStatus.SUBMITTED_TO_VG) {
-        throw new CaseAlreadySubmittedException(id);
-      }
-
-      if (disputeCase.status !== DisputeStatus.CLIENT_APPROVED) {
-        throw new CaseNotClientApprovedException(id);
-      }
-
-      const year = new Date().getFullYear();
-      const caseIdPrefix = id.replace(/-/g, '').slice(0, 4).toUpperCase();
-      const randomDigits = randomInt(1000, 10000).toString();
-      const lodgmentRef = `LR-${year}-${caseIdPrefix}-${randomDigits}`;
-      const submittedAt = new Date();
-
-      disputeCase.status = DisputeStatus.SUBMITTED_TO_VG;
-      disputeCase.submitted_at = submittedAt;
-      disputeCase.lodgment_reference_number = lodgmentRef;
-      if (dto?.submissionNotes) {
-        disputeCase.notes = dto.submissionNotes;
-      }
-
-      await queryRunner.manager.save(DisputeCase, disputeCase);
-
-      const auditEntry = queryRunner.manager.create(AuditLog, {
-        action: AuditAction.SUBMITTED_TO_VG,
-        performedBy: assessorId,
-        caseId: id,
-        lodgmentReferenceNumber: lodgmentRef,
-      });
-      await queryRunner.manager.save(AuditLog, auditEntry);
-
-      const vgEmail = this.config.getOrThrow<string>('VG_SUBMISSION_EMAIL');
-      await this.azureEmailService.sendVgSubmissionConfirmation({
-        sendTo: vgEmail,
-        clientName: disputeCase.client?.name ?? '',
-        caseReference: disputeCase.case_reference,
-        propertyAddress: this.buildPropertyAddress(disputeCase.property),
-        lodgmentReferenceNumber: lodgmentRef,
-        submittedAt: submittedAt.toLocaleString('en-AU', {
-          timeZone: 'Australia/Melbourne',
-          day: '2-digit',
-          month: 'long',
-          year: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit',
-        }),
-        assessorFullName,
-      });
-
-      await queryRunner.commitTransaction();
-
-      return disputeCase;
-    } catch (err) {
-      await queryRunner.rollbackTransaction();
-      throw err;
-    } finally {
-      await queryRunner.release();
-    }
   }
 
   async findCasesDueForVGFollowUp(): Promise<DisputeCase[]> {
