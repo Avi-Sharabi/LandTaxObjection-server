@@ -514,6 +514,55 @@ export class DisputeCasesService {
     }
   }
 
+  async updateVgOutcome(caseId: string, newStatus: DisputeStatus, messageId: string): Promise<void> {
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    let resolvedCase: DisputeCase | null = null;
+
+    try {
+      resolvedCase = await queryRunner.manager.findOne(DisputeCase, {
+        where: { id: caseId },
+        lock: { mode: 'pessimistic_write' },
+      });
+
+      if (!resolvedCase) {
+        throw new NotFoundException(`Dispute case #${caseId} not found`);
+      }
+
+      resolvedCase.status = newStatus;
+      resolvedCase.vg_response_received_at = new Date();
+      resolvedCase.vg_email_message_id = messageId;
+      await queryRunner.manager.save(DisputeCase, resolvedCase);
+
+      const auditEntry = queryRunner.manager.create(AuditLog, {
+        action: AuditAction.VG_OUTCOME_RECEIVED,
+        performedBy: SYSTEM_ACTOR_ID,
+        caseId,
+        lodgmentReferenceNumber: resolvedCase.lodgment_reference_number,
+      });
+      await queryRunner.manager.save(AuditLog, auditEntry);
+
+      await queryRunner.commitTransaction();
+    } catch (err) {
+      await queryRunner.rollbackTransaction();
+      throw err;
+    } finally {
+      await queryRunner.release();
+    }
+
+    if (resolvedCase?.assigned_accountant_id) {
+      const label = newStatus === DisputeStatus.VG_APPROVED ? 'approved' : 'declined';
+      await this.notificationsService.create(
+        resolvedCase.assigned_accountant_id,
+        NotificationType.VG_FOLLOW_UP_SENT,
+        `VG response received for case ${resolvedCase.case_reference} — outcome: ${label}.`,
+        caseId,
+      );
+    }
+  }
+
   async remove(id: string): Promise<{ message: string }> {
     const disputeCase = await this.disputeCasesRepository.findOne({ where: { id } });
     if (!disputeCase) throw new NotFoundException(`Dispute case #${id} not found`);

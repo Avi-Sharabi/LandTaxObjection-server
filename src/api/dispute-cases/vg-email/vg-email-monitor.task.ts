@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Cron } from '@nestjs/schedule';
+import { Interval } from '@nestjs/schedule';
 import { ConfigService } from '@nestjs/config';
 import { MsGraphService, GraphMessage } from 'src/common/ms-graph/ms-graph.service';
 import { VgEmailAnalysisQueueService } from './vg-email-analysis-queue.service';
@@ -26,8 +26,8 @@ export class VgEmailMonitorTask {
     );
   }
 
-  // Once daily at 08:00 AEST (22:00 UTC)
-  @Cron('0 22 * * *')
+  // Every 1.5 minutes (90 seconds)
+  @Interval(90000)
   public async pollVgMailbox(): Promise<void> {
     this.logger.log(
       `[VG-MONITOR] Starting VG mailbox poll — inbox=${this.msGraphService.mailboxUserId}`,
