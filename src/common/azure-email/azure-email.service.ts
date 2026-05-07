@@ -17,9 +17,6 @@ const TEMPLATE_NAMES = [
     'advisory-letter-notification',
     'objection-package-approval',
     'objection-package-reminder',
-    'submit-to-vg-notification',
-    'client-approved-notification',
-    'vg-response-detected',
     'vg-submission-confirmation',
     'vg-follow-up-enquiry',
 ] as const;
@@ -232,72 +229,6 @@ export class AzureEmailService implements OnModuleInit {
             },
             content: {
                 subject: `[${params.caseReference}] Objection Package Submitted to Valuer-General`,
-                html,
-            },
-        };
-
-        const poller = await this.emailClient.beginSend(message);
-        await poller.pollUntilDone();
-    }
-
-    async sendClientApprovedNotification(data: {
-        sendTo: string;
-        caseReference: string;
-        clientName: string;
-        propertyAddress: string;
-        jurisdiction: string;
-        approvedAt: string;
-    }): Promise<void> {
-        const html = this.loadTemplate('client-approved-notification', {
-            caseReference: data.caseReference,
-            clientName: data.clientName,
-            propertyAddress: data.propertyAddress,
-            jurisdiction: data.jurisdiction,
-            approvedAt: data.approvedAt,
-        });
-
-        const message = {
-            senderAddress: this.sender,
-            recipients: {
-                to: [{ address: data.sendTo }],
-            },
-            content: {
-                subject: `[${data.caseReference}] Client Has Approved the Objection Package`,
-                html,
-            },
-        };
-
-        const poller = await this.emailClient.beginSend(message);
-        await poller.pollUntilDone();
-    }
-
-    async sendVgResponseDetectedNotification(data: {
-        sendTo: string;
-        caseReference: string;
-        clientName: string;
-        propertyAddress: string;
-        jurisdiction: string;
-        receivedAt: string;
-        senderEmail: string;
-        emailSubject: string;
-    }): Promise<void> {
-        const html = this.loadTemplate('vg-response-detected', {
-            caseReference: data.caseReference,
-            clientName: data.clientName,
-            propertyAddress: data.propertyAddress,
-            jurisdiction: data.jurisdiction,
-            receivedAt: data.receivedAt,
-            senderEmail: data.senderEmail,
-            emailSubject: data.emailSubject,
-        });
-
-        const message = {
-            senderAddress: this.sender,
-            recipients: {
-                to: [{ address: data.sendTo }],
-            },
-            content: {
-                subject: `[${data.caseReference}] VG Response Detected — Action Required`,
                 html,
             },
         };

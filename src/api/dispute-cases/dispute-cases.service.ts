@@ -35,14 +35,11 @@ const MAX_VG_FOLLOW_UPS = 3;
 
 const THREE_DAY_WINDOW_DAYS = 3;
 const THREE_DAY_WINDOW_MINUTES = THREE_DAY_WINDOW_DAYS * 24 * 60;
-const THREE_DAY_WINDOW_HOURS = THREE_DAY_WINDOW_DAYS * 24;
 
 const CLOSED_STATUSES: DisputeStatus[] = [
   DisputeStatus.CLOSED,
   DisputeStatus.CLOSED_NO_OBJECTION,
 ];
-
-const LODGMENT_REF_PREFIX = 'VG';
 
 @Injectable()
 export class DisputeCasesService {
@@ -287,25 +284,10 @@ export class DisputeCasesService {
       // so relations are safe to join here.
       const withProperty = await this.disputeCasesRepository.findOne({
         where: { id: disputeCase.id },
-        relations: ['property', 'client'],
+        relations: ['property'],
       });
 
       const propertyAddress = this.buildPropertyAddress(withProperty?.property ?? null);
-
-      // Notify assessor that the client has approved — fire-and-forget
-      const assessorEmail = this.config.get<string>('ASSESSOR_EMAIL') ?? '';
-      if (assessorEmail) {
-        this.azureEmailService.sendClientApprovedNotification({
-          sendTo: assessorEmail,
-          caseReference: disputeCase.case_reference,
-          clientName: withProperty?.client?.name ?? 'Client',
-          propertyAddress,
-          jurisdiction: disputeCase.jurisdiction,
-          approvedAt: disputeCase.client_approved_at!.toLocaleString('en-AU', {
-            day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit',
-          }),
-        }).catch(() => { /* email failure is non-fatal */ });
-      }
 
       return { alreadyApproved: false, propertyAddress };
     } catch (err) {
