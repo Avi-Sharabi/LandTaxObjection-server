@@ -150,9 +150,6 @@ export class DisputeCase {
   vg_response_received_at: Date | null;
 
   @Column({ type: 'text', nullable: true })
-  vg_response_notes: string | null;
-
-  @Column({ type: 'text', nullable: true })
   analysis_report_blob_path: string | null;
 
   @Column({ type: 'text', nullable: true })

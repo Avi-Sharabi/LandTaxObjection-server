@@ -185,7 +185,7 @@ async function seedCase(dataSource: DataSource, c: TestCase, accountantId: strin
   } else {
     await dataSource.query(
       `UPDATE dispute_cases
-       SET status = $1, vg_response_received_at = NULL, vg_email_message_id = NULL, vg_response_notes = NULL
+       SET status = $1, vg_response_received_at = NULL, vg_email_message_id = NULL
        WHERE id = $2`,
       [c.status, c.disputeCase],
     );

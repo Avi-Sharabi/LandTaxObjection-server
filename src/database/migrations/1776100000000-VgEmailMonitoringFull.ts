@@ -7,7 +7,7 @@ import { MigrationInterface, QueryRunner } from 'typeorm';
 //
 // Net result:
 //   - New dispute_cases_status_enum values: vg_response_received, vg_approved, vg_declined
-//   - New dispute_cases columns: vg_response_received_at, vg_response_notes, vg_email_message_id
+//   - New dispute_cases columns: vg_response_received_at, vg_email_message_id
 //   - New table: case_audit_logs
 //   - vg_email_inbox is NOT created (email content is not persisted to DB)
 //   - vg_email_message_id has NO unique index (one email can update multiple cases)
@@ -22,7 +22,6 @@ export class VgEmailMonitoringFull1776100000000 implements MigrationInterface {
     await queryRunner.query(`
       ALTER TABLE "dispute_cases"
         ADD COLUMN IF NOT EXISTS "vg_response_received_at" TIMESTAMPTZ,
-        ADD COLUMN IF NOT EXISTS "vg_response_notes"       TEXT,
         ADD COLUMN IF NOT EXISTS "vg_email_message_id"     TEXT
     `);
 
@@ -56,7 +55,6 @@ export class VgEmailMonitoringFull1776100000000 implements MigrationInterface {
     await queryRunner.query(`
       ALTER TABLE "dispute_cases"
         DROP COLUMN IF EXISTS "vg_email_message_id",
-        DROP COLUMN IF EXISTS "vg_response_notes",
         DROP COLUMN IF EXISTS "vg_response_received_at"
     `);
 
