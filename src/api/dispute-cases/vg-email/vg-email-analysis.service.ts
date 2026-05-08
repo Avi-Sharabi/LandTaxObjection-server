@@ -208,11 +208,14 @@ export class VgEmailAnalysisService implements OnModuleInit {
         `SELECT dc.id AS case_id, dc.case_reference, dc.status, p.pid, p.address, dc.lodgment_reference_number
          FROM dispute_cases dc
          JOIN properties p ON p.id = dc.property_id
-         WHERE p.address ILIKE $1
-           AND dc.status = ANY($2)
+         WHERE (
+           p.address ILIKE $1
+           OR $2 ILIKE '%' || p.address || '%'
+         )
+           AND dc.status = ANY($3)
          ORDER BY dc.submitted_at DESC
          LIMIT 1`,
-        [`%${address}%`, ['submitted_to_vg', 'awaiting_vg_response']],
+        [`%${address}%`, address, ['submitted_to_vg', 'awaiting_vg_response']],
       );
       return rows[0] ?? null;
     } catch (err) {
