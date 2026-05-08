@@ -1,13 +1,16 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { Cron } from '@nestjs/schedule';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { SchedulerRegistry } from '@nestjs/schedule';
+import { CronJob } from 'cron';
 import { ConfigService } from '@nestjs/config';
 import { MsGraphService, GraphMessage } from 'src/common/ms-graph/ms-graph.service';
 import { VgEmailAnalysisQueueService } from './vg-email-analysis-queue.service';
 
 const MAX_INBOX_MESSAGES_PER_POLL = 50;
+// 08:00 AEST daily (22:00 UTC). Override with VG_EMAIL_POLL_CRON in .env.
+const DEFAULT_POLL_CRON = '0 22 * * *';
 
 @Injectable()
-export class VgEmailMonitorTask {
+export class VgEmailMonitorTask implements OnModuleInit {
   private readonly logger = new Logger(VgEmailMonitorTask.name);
 
   private readonly vgSenderEmails: Set<string>;
@@ -16,6 +19,7 @@ export class VgEmailMonitorTask {
     private readonly msGraphService: MsGraphService,
     private readonly config: ConfigService,
     private readonly analysisQueue: VgEmailAnalysisQueueService,
+    private readonly schedulerRegistry: SchedulerRegistry,
   ) {
     const raw = this.config.get<string>('VG_SENDER_EMAILS') ?? '';
     this.vgSenderEmails = new Set(
@@ -26,8 +30,14 @@ export class VgEmailMonitorTask {
     );
   }
 
-  // Once daily at 08:00 AEST (22:00 UTC)
-  @Cron('0 22 * * *')
+  onModuleInit() {
+    const expression = this.config.get<string>('VG_EMAIL_POLL_CRON') ?? DEFAULT_POLL_CRON;
+    const job = new CronJob(expression, () => { void this.pollVgMailbox(); });
+    this.schedulerRegistry.addCronJob('vg-email-monitor', job);
+    job.start();
+    this.logger.log(`[VG-MONITOR] Scheduled with cron: "${expression}"`);
+  }
+
   public async pollVgMailbox(): Promise<void> {
     this.logger.log(
       `[VG-MONITOR] Starting VG mailbox poll — inbox=${this.msGraphService.mailboxUserId}`,
