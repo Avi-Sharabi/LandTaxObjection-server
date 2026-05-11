@@ -41,13 +41,6 @@ jobs:
           DB_SSL: ${{ github.ref == 'refs/heads/main' && secrets.DB_SSL_PROD || github.ref == 'refs/heads/qa' && secrets.DB_SSL_QA || secrets.DB_SSL_DEV }}
         run: npm run migration:run
 
-      - name: Cache production node_modules
-        id: cache-node-modules
-        uses: actions/cache@v4
-        with:
-          path: deployment/node_modules
-          key: node-modules-${{ hashFiles('package-lock.json') }}
-
       - name: Prepare deployment package
         run: |
           mkdir -p deployment
@@ -66,6 +59,13 @@ jobs:
           cat > deployment/.oryxignore << 'EOF'
           node_modules.tar.gz
           EOF
+
+      - name: Cache production node_modules
+        id: cache-node-modules
+        uses: actions/cache@v4
+        with:
+          path: deployment/node_modules
+          key: node-modules-${{ hashFiles('package-lock.json') }}
 
       - name: Install production dependencies
         if: steps.cache-node-modules.outputs.cache-hit != 'true'
