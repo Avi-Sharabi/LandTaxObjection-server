@@ -48,16 +48,6 @@ jobs:
           cp package.json deployment/package.json
           cp package-lock.json deployment/package-lock.json
 
-          cat > deployment/oryx-manifest.toml << 'EOF'
-          [build]
-          operationId = "github-actions-build"
-          buildCommands = []
-          EOF
-
-          cat > deployment/.oryxignore << 'EOF'
-          node_modules.tar.gz
-          EOF
-
       - name: Cache production node_modules
         id: cache-node-modules
         uses: actions/cache@v4
@@ -71,24 +61,20 @@ jobs:
           cd deployment
           npm ci --omit=dev
 
-      - name: Verify deployment package
-        run: |
-          echo "=== Deployment folder ==="
-          ls -la deployment/
-          echo "=== node_modules check ==="
-          ls deployment/node_modules | head -5 || echo "NO NODE_MODULES FOUND!"
-          echo "=== Zip size ==="
-          du -sh deployment/
-
       - name: Zip deployment package
         run: |
           cd deployment
           zip -r ../deployment.zip .
 
       - name: Deploy to Azure Web App
-        uses: azure/webapps-deploy@v3
-        with:
-          app-name: 'landtaxdispute-server'
-          slot-name: 'Production'
-          package: deployment.zip
-          publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_A76461515FA9422A88808EE1E33679FD }}
+        env:
+          PUBLISH_PROFILE: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_A76461515FA9422A88808EE1E33679FD }}
+        run: |
+          USERNAME=$(echo "$PUBLISH_PROFILE" | grep -o 'userName="[^"]*"' | head -1 | cut -d'"' -f2)
+          PASSWORD=$(echo "$PUBLISH_PROFILE" | grep -o 'userPWD="[^"]*"' | head -1 | cut -d'"' -f2)
+          curl -X POST \
+            "https://landtaxdispute-server-gagne7hjaxcjd6b8.scm.australiacentral-01.azurewebsites.net/api/zipdeploy" \
+            -u "$USERNAME:$PASSWORD" \
+            -H "Content-Type: application/zip" \
+            --data-binary @deployment.zip \
+            --max-time 600
