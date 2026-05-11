@@ -47,11 +47,25 @@ jobs:
           cp -r dist deployment/dist
           cp package.json deployment/package.json
           cp package-lock.json deployment/package-lock.json
+          echo "[config]" > deployment/.deployment
+          echo "SCM_DO_BUILD_DURING_DEPLOYMENT=false" >> deployment/.deployment
 
       - name: Install production dependencies
         run: |
           cd deployment
           npm ci --omit=dev
+
+      - name: Configure Azure settings
+        uses: azure/appservice-settings@v1
+        with:
+          app-name: 'landtaxdispute-server'
+          publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_A76461515FA9422A88808EE1E33679FD }}
+          app-settings-json: |
+            [
+              {"name": "SCM_DO_BUILD_DURING_DEPLOYMENT", "value": "false"},
+              {"name": "WEBSITE_RUN_FROM_PACKAGE", "value": "0"},
+              {"name": "WEBSITE_NODE_DEFAULT_VERSION", "value": "~24"}
+            ]
 
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
