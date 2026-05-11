@@ -18,22 +18,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Login to Azure
-        uses: azure/login@v1
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
-
-      - name: Configure Azure settings
-        uses: azure/appservice-settings@v1
-        with:
-          app-name: 'landtaxdispute-server'
-          app-settings-json: |
-            [
-              {"name": "SCM_DO_BUILD_DURING_DEPLOYMENT", "value": "false"},
-              {"name": "WEBSITE_RUN_FROM_PACKAGE", "value": "0"},
-              {"name": "WEBSITE_NODE_DEFAULT_VERSION", "value": "~24"}
-            ]
-
       - name: Set up Node.js version
         uses: actions/setup-node@v4
         with:
