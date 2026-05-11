@@ -17,6 +17,7 @@ export interface VgEmailResult {
   confidence: number;
   reasoning: string;
   caseId: string | null;
+  conflictDetected: boolean;
 }
 
 interface PrefetchedCase {
@@ -67,8 +68,16 @@ export class VgEmailAnalysisService implements OnModuleInit {
     const result = await this.analyzeEmail(subject, body, messageId);
 
     this.logger.log(
-      `[VG-ANALYSIS] Result — pid=${result.pid ?? '-'} outcome=${result.outcome} confidence=${result.confidence.toFixed(2)} caseId=${result.caseId ?? '-'}`,
+      `[VG-ANALYSIS] Result — pid=${result.pid ?? '-'} outcome=${result.outcome} confidence=${result.confidence.toFixed(2)} caseId=${result.caseId ?? '-'} conflictDetected=${result.conflictDetected}`,
     );
+
+    if (result.conflictDetected) {
+      this.logger.warn(
+        `[VG-ANALYSIS] Identifier conflict detected for messageId=${messageId} — PID and address resolve to different cases. Manual review required. Status unchanged.`,
+      );
+      await this.safeMarkAsRead(messageId);
+      return;
+    }
 
     let caseId = result.caseId;
     if (!caseId && result.address) {
@@ -349,9 +358,12 @@ ${step3}
   "outcome": "approved" | "declined" | "needs_review",
   "confidence": 0.0–1.0,
   "reasoning": "one sentence citing the key signal",
-  "case_id": "<UUID from matched case, or null>"
+  "case_id": "<UUID from matched case, or null>",
+  "conflict_detected": true | false
 }
-\`\`\``;
+\`\`\`
+
+Set \`conflict_detected: true\` only when two or more identifiers (e.g. PID and address) resolve to **different** cases. In that scenario also set \`case_id: null\` and \`outcome: "needs_review"\`.`;
   }
 
   private parseResponse(raw: string): VgEmailResult {
@@ -404,11 +416,12 @@ ${step3}
       confidence: typeof p['confidence'] === 'number' ? p['confidence'] : 0.5,
       reasoning: typeof p['reasoning'] === 'string' ? p['reasoning'] : '',
       caseId,
+      conflictDetected: p['conflict_detected'] === true,
     };
   }
 
   private fallback(outcome: VgEmailOutcome, reasoning: string): VgEmailResult {
-    return { pid: null, address: null, outcome, confidence: 0, reasoning, caseId: null };
+    return { pid: null, address: null, outcome, confidence: 0, reasoning, caseId: null, conflictDetected: false };
   }
 
   private async safeMarkAsRead(messageId: string): Promise<void> {
