@@ -55,6 +55,18 @@ jobs:
           cp package.json deployment/package.json
           cp package-lock.json deployment/package-lock.json
 
+          # Tell Oryx this was already built - don't touch it
+          cat > deployment/oryx-manifest.toml << 'EOF'
+          [build]
+          operationId = "github-actions-build"
+          buildCommands = []
+          EOF
+
+          # Tell Oryx's startup script to skip tar.gz extraction
+          cat > deployment/.oryxignore << 'EOF'
+          node_modules.tar.gz
+          EOF
+
       - name: Install production dependencies
         if: steps.cache-node-modules.outputs.cache-hit != 'true'
         run: |
