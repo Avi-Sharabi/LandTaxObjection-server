@@ -14,7 +14,7 @@ interface TestCase {
   suburb: string;
   postcode: string;
   caseRef: string;
-  status: 'submitted_to_vg' | 'awaiting_vg_response';
+  status: 'submitted_to_vg' | 'for_review';
   lodgmentRef: string | null;
   expectedOutcome: string | null;
   client: string;
@@ -28,7 +28,7 @@ const ALL_CASES: TestCase[] = [
   // ── Lodgment-ref case ──────────────────────────────────────────────────────
   {
     pid: '9990001', address: '1 VG TEST ST SOUTH YARRA', suburb: 'South Yarra', postcode: '3141',
-    caseRef: 'LTD-2026-VG-TEST-001', status: 'awaiting_vg_response',
+    caseRef: 'LTD-2026-VG-TEST-001', status: 'submitted_to_vg',
     lodgmentRef: VG_TEST_LODGMENT_REF, expectedOutcome: null,
     client: 'f1234560-0001-4001-b001-000000000001', property: 'f1234560-0001-4001-b001-000000000002',
     assessmentDoc: 'f1234560-0001-4001-b001-000000000003', valuationNotice: 'f1234560-0001-4001-b001-000000000004',
@@ -46,7 +46,7 @@ const ALL_CASES: TestCase[] = [
   },
   {
     pid: '1000002', address: '1 PID TEST ST SOUTH YARRA', suburb: 'South Yarra', postcode: '3141',
-    caseRef: 'LTD-2026-VG-PID-1000002', status: 'awaiting_vg_response',
+    caseRef: 'LTD-2026-VG-PID-1000002', status: 'submitted_to_vg',
     lodgmentRef: null, expectedOutcome: 'declined',
     client: 'f1234560-0003-4001-b001-000000000001', property: 'f1234560-0003-4001-b001-000000000002',
     assessmentDoc: 'f1234560-0003-4001-b001-000000000003', valuationNotice: 'f1234560-0003-4001-b001-000000000004',
@@ -64,7 +64,7 @@ const ALL_CASES: TestCase[] = [
   },
   {
     pid: '5000002', address: '6 MIXED TEST ST SOUTH YARRA', suburb: 'South Yarra', postcode: '3141',
-    caseRef: 'LTD-2026-VG-MIX-002', status: 'awaiting_vg_response',
+    caseRef: 'LTD-2026-VG-MIX-002', status: 'submitted_to_vg',
     lodgmentRef: null, expectedOutcome: 'declined',
     client: 'f1234560-0012-4001-b001-000000000001', property: 'f1234560-0012-4001-b001-000000000002',
     assessmentDoc: 'f1234560-0012-4001-b001-000000000003', valuationNotice: 'f1234560-0012-4001-b001-000000000004',
@@ -80,7 +80,7 @@ const ALL_CASES: TestCase[] = [
   },
   {
     pid: '5000004', address: '8 MIXED TEST ST SOUTH YARRA', suburb: 'South Yarra', postcode: '3141',
-    caseRef: 'LTD-2026-VG-MIX-004', status: 'awaiting_vg_response',
+    caseRef: 'LTD-2026-VG-MIX-004', status: 'submitted_to_vg',
     lodgmentRef: null, expectedOutcome: 'declined',
     client: 'f1234560-0014-4001-b001-000000000001', property: 'f1234560-0014-4001-b001-000000000002',
     assessmentDoc: 'f1234560-0014-4001-b001-000000000003', valuationNotice: 'f1234560-0014-4001-b001-000000000004',
@@ -96,7 +96,7 @@ const ALL_CASES: TestCase[] = [
   },
   {
     pid: '5000006', address: '10 MIXED TEST ST SOUTH YARRA', suburb: 'South Yarra', postcode: '3141',
-    caseRef: 'LTD-2026-VG-MIX-006', status: 'awaiting_vg_response',
+    caseRef: 'LTD-2026-VG-MIX-006', status: 'submitted_to_vg',
     lodgmentRef: null, expectedOutcome: 'declined',
     client: 'f1234560-0016-4001-b001-000000000001', property: 'f1234560-0016-4001-b001-000000000002',
     assessmentDoc: 'f1234560-0016-4001-b001-000000000003', valuationNotice: 'f1234560-0016-4001-b001-000000000004',
@@ -114,7 +114,7 @@ const ALL_CASES: TestCase[] = [
   },
   {
     pid: null, address: '12 ADDRESS ONLY BOULEVARD SOUTH YARRA', suburb: 'South Yarra', postcode: '3141',
-    caseRef: 'LTD-2026-VG-ADDR-002', status: 'awaiting_vg_response',
+    caseRef: 'LTD-2026-VG-ADDR-002', status: 'submitted_to_vg',
     lodgmentRef: null, expectedOutcome: 'declined',
     client: 'f1234560-0018-4001-b001-000000000001', property: 'f1234560-0018-4001-b001-000000000002',
     assessmentDoc: 'f1234560-0018-4001-b001-000000000003', valuationNotice: 'f1234560-0018-4001-b001-000000000004',
@@ -185,7 +185,7 @@ async function seedCase(dataSource: DataSource, c: TestCase, accountantId: strin
   } else {
     await dataSource.query(
       `UPDATE dispute_cases
-       SET status = $1, vg_response_received_at = NULL, vg_email_message_id = NULL
+       SET status = $1, vg_response_notes = NULL
        WHERE id = $2`,
       [c.status, c.disputeCase],
     );

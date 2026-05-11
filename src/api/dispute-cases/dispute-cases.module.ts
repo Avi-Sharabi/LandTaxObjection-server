@@ -1,7 +1,6 @@
 import { HttpModule } from '@nestjs/axios';
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { BullModule } from '@nestjs/bullmq';
 import { ComparablesModule } from '../comparables/comparables.module';
 import { Property } from '../properties/entities/property.entity';
 import { Client } from '../clients/entities/client.entity';
@@ -26,9 +25,6 @@ import { AuditLogModule } from '../audit-log/audit-log.module';
 import { AuditLog } from '../audit-log/entities/audit-log.entity';
 import { McpModule } from 'src/mcp/mcp.module';
 import { VgEmailMonitorTask } from './vg-email/vg-email-monitor.task';
-import { VG_EMAIL_ANALYSIS_QUEUE } from './vg-email/vg-email-analysis.queue';
-import { VgEmailAnalysisQueueService } from './vg-email/vg-email-analysis-queue.service';
-import { VgEmailAnalysisProcessor } from './vg-email/vg-email-analysis.processor';
 import { VgEmailAnalysisService } from './vg-email/vg-email-analysis.service';
 
 @Module({
@@ -41,7 +37,6 @@ import { VgEmailAnalysisService } from './vg-email/vg-email-analysis.service';
     McpModule,
     AuditLogModule,
     NotificationsModule,
-    BullModule.registerQueue({ name: VG_EMAIL_ANALYSIS_QUEUE }),
     TypeOrmModule.forFeature([
       DisputeCase,
       AssessmentDocument,
@@ -63,8 +58,6 @@ import { VgEmailAnalysisService } from './vg-email/vg-email-analysis.service';
     fyiStorageService,
     ApprovalReminderTask,
     VgEmailMonitorTask,
-    VgEmailAnalysisQueueService,
-    VgEmailAnalysisProcessor,
     VgEmailAnalysisService,
   ],
 })

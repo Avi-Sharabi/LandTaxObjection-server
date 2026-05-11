@@ -1,4 +1,4 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, ManyToOne, OneToMany, JoinColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, ManyToOne, OneToMany, JoinColumn, Index } from 'typeorm';
 import { Client } from '../../clients/entities/client.entity';
 import { Property } from '../../properties/entities/property.entity';
 import { ValuationNotice } from '../../valuation-notices/entities/valuation-notice.entity';
@@ -18,10 +18,10 @@ export enum DisputeStatus {
   AWAITING_CLIENT_APPROVAL = 'awaiting_client_approval',
   CLIENT_APPROVED = 'client_approved',
   SUBMITTED_TO_VG = 'submitted_to_vg',
-  AWAITING_VG_RESPONSE = 'awaiting_vg_response',
   VG_RESPONSE_RECEIVED = 'vg_response_received',
   VG_APPROVED = 'vg_approved',
   VG_DECLINED = 'vg_declined',
+  FOR_REVIEW = 'for_review',
   OUTCOME_RECEIVED = 'outcome_received',
   CLOSED = 'closed',
   CLOSED_NO_OBJECTION = 'closed_no_objection',
@@ -68,6 +68,7 @@ export class DisputeCase {
   @Column({ type: 'enum', enum: Jurisdiction, nullable: false })
   jurisdiction: Jurisdiction;
 
+  @Index()
   @Column({ type: 'enum', enum: DisputeStatus, nullable: false, default: DisputeStatus.DRAFT })
   status: DisputeStatus;
 
@@ -146,14 +147,11 @@ export class DisputeCase {
   @Column({ type: 'timestamptz', nullable: true })
   closed_at: Date | null;
 
-  @Column({ type: 'timestamptz', nullable: true })
-  vg_response_received_at: Date | null;
+  @Column({ type: 'text', nullable: true })
+  vg_response_notes: string | null;
 
   @Column({ type: 'text', nullable: true })
   analysis_report_blob_path: string | null;
-
-  @Column({ type: 'text', nullable: true })
-  vg_email_message_id: string | null;
 
   @Column({ type: 'uuid', nullable: true })
   advisory_view_token: string | null;

@@ -119,7 +119,7 @@ const STATIC_CASES = [
     caseId:     'b4000000-0000-0000-0000-000000000010',
     property: { address: '77 William Street',   suburb: 'Fitzroy',    state: Jurisdiction.VIC, postcode: '3065' },
     notice:   { valuation_date: '2026-01-15', assessed_land_value: 1_200_000 },
-    case:     { case_reference: 'SEED-PAG-010', status: DisputeStatus.AWAITING_VG_RESPONSE,     statutory_deadline: '2026-11-15', jurisdiction: Jurisdiction.VIC },
+    case:     { case_reference: 'SEED-PAG-010', status: DisputeStatus.SUBMITTED_TO_VG,     statutory_deadline: '2026-11-15', jurisdiction: Jurisdiction.VIC },
   },
 
   // ── Group 3: QLD — future deadlines (cases 11–15) ──────────────────────────
@@ -233,7 +233,7 @@ const STATIC_CASES = [
     caseId:     'b4000000-0000-0000-0000-000000000022',
     property: { address: '8 Exhibition Street', suburb: 'Melbourne',  state: Jurisdiction.VIC, postcode: '3000' },
     notice:   { valuation_date: '2025-10-01', assessed_land_value: 3_800_000 },
-    case:     { case_reference: 'SEED-PAG-022', status: DisputeStatus.AWAITING_VG_RESPONSE,    statutory_deadline: '2025-12-31', jurisdiction: Jurisdiction.VIC },
+    case:     { case_reference: 'SEED-PAG-022', status: DisputeStatus.SUBMITTED_TO_VG,    statutory_deadline: '2025-12-31', jurisdiction: Jurisdiction.VIC },
   },
   {
     clientId: 'b1000000-0000-0000-0000-000000000005',

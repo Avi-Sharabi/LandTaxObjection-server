@@ -3,7 +3,7 @@ import { SchedulerRegistry } from '@nestjs/schedule';
 import { CronJob } from 'cron';
 import { ConfigService } from '@nestjs/config';
 import { MsGraphService, GraphMessage } from 'src/common/ms-graph/ms-graph.service';
-import { VgEmailAnalysisQueueService } from './vg-email-analysis-queue.service';
+import { VgEmailAnalysisService } from './vg-email-analysis.service';
 
 const MAX_INBOX_MESSAGES_PER_POLL = 50;
 // 08:00 AEST daily (22:00 UTC). Override with VG_EMAIL_POLL_CRON in .env.
@@ -18,7 +18,7 @@ export class VgEmailMonitorTask implements OnModuleInit {
   constructor(
     private readonly msGraphService: MsGraphService,
     private readonly config: ConfigService,
-    private readonly analysisQueue: VgEmailAnalysisQueueService,
+    private readonly analysisService: VgEmailAnalysisService,
     private readonly schedulerRegistry: SchedulerRegistry,
   ) {
     const raw = this.config.get<string>('VG_SENDER_EMAILS') ?? '';
@@ -83,17 +83,11 @@ export class VgEmailMonitorTask implements OnModuleInit {
       `[VG-MONITOR] VG email detected — messageId=${message.id} sender=${senderAddress} subject="${message.subject ?? ''}"`,
     );
 
-    await this.analysisQueue.enqueue({
-      messageId: message.id,
-      senderAddress,
-      subject: message.subject ?? null,
-      bodyContent: message.body?.content ?? null,
-      bodyContentType: message.body?.contentType ?? null,
-      receivedAt: message.receivedDateTime,
-    });
-
-    this.logger.log(`[VG-MONITOR] Enqueued messageId=${message.id}`);
-    // markAsRead is handled by VgEmailAnalysisProcessor after classification
+    await this.analysisService.processEmail(
+      message.id,
+      message.subject ?? null,
+      message.body?.content ?? null,
+    );
   }
 
   private isVgSenderEmail(senderAddress: string): boolean {

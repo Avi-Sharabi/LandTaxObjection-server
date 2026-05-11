@@ -4,7 +4,20 @@ import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import axios, { AxiosResponse } from 'axios';
 import { McpService } from 'src/mcp/mcp.service';
-import { PropertyAnalysisResult, VgEmailOutcome } from './vg-email-analysis.queue';
+import { DisputeCasesService } from '../dispute-cases.service';
+import { DisputeStatus } from '../entities/dispute-case.entity';
+import { MsGraphService } from 'src/common/ms-graph/ms-graph.service';
+
+export type VgEmailOutcome = 'approved' | 'declined' | 'needs_review';
+
+export interface VgEmailResult {
+  pid: string | null;
+  address: string | null;
+  outcome: VgEmailOutcome;
+  confidence: number;
+  reasoning: string;
+  caseId: string | null;
+}
 
 interface PrefetchedCase {
   case_id: string;
@@ -26,10 +39,7 @@ interface AnthropicApiResponse {
   };
 }
 
-export interface AnalyzeEmailResult {
-  results: PropertyAnalysisResult[];
-  rawResponse: unknown;
-}
+const ACTIVE_VG_STATUSES = ['submitted_to_vg', 'for_review'];
 
 @Injectable()
 export class VgEmailAnalysisService implements OnModuleInit {
@@ -39,6 +49,8 @@ export class VgEmailAnalysisService implements OnModuleInit {
   constructor(
     private readonly config: ConfigService,
     private readonly mcpService: McpService,
+    private readonly disputeCasesService: DisputeCasesService,
+    private readonly msGraphService: MsGraphService,
     @InjectDataSource() private readonly dataSource: DataSource,
   ) {}
 
@@ -47,22 +59,64 @@ export class VgEmailAnalysisService implements OnModuleInit {
     this.logger.log(`[VG-ANALYSIS] Skill loaded (${this.skillContent.length} chars)`);
   }
 
+  async processEmail(
+    messageId: string,
+    subject: string | null,
+    body: string | null,
+  ): Promise<void> {
+    const result = await this.analyzeEmail(subject, body, messageId);
+
+    this.logger.log(
+      `[VG-ANALYSIS] Result — pid=${result.pid ?? '-'} outcome=${result.outcome} confidence=${result.confidence.toFixed(2)} caseId=${result.caseId ?? '-'}`,
+    );
+
+    let caseId = result.caseId;
+    if (!caseId && result.address) {
+      const found = await this.lookupCaseByAddress(result.address);
+      caseId = found?.case_id ?? null;
+      if (caseId) {
+        this.logger.log(`[VG-ANALYSIS] Case resolved via address lookup → caseId=${caseId}`);
+      }
+    }
+
+    if (result.outcome === 'approved' || result.outcome === 'declined') {
+      if (caseId) {
+        const newStatus = result.outcome === 'approved'
+          ? DisputeStatus.VG_APPROVED
+          : DisputeStatus.VG_DECLINED;
+        await this.disputeCasesService.updateVgOutcome(caseId, newStatus, result.reasoning);
+        this.logger.log(`[VG-ANALYSIS] Case ${caseId} → ${newStatus}`);
+      } else {
+        this.logger.warn(`[VG-ANALYSIS] outcome=${result.outcome} but no case resolved — status unchanged`);
+      }
+    } else {
+      if (caseId) {
+        await this.disputeCasesService.updateVgOutcome(caseId, DisputeStatus.FOR_REVIEW, result.reasoning);
+        this.logger.log(`[VG-ANALYSIS] Case ${caseId} → ${DisputeStatus.FOR_REVIEW}`);
+      } else {
+        this.logger.log(`[VG-ANALYSIS] outcome=needs_review — no case resolved, status unchanged`);
+      }
+    }
+
+    await this.safeMarkAsRead(messageId);
+  }
+
   async analyzeEmail(
     subject: string | null,
     body: string | null,
     correlationId?: string,
-  ): Promise<AnalyzeEmailResult> {
+  ): Promise<VgEmailResult> {
     const mcpPublicUrl = this.config.get<string>('MCP_PUBLIC_URL');
     const mcpUrl = mcpPublicUrl ? `${mcpPublicUrl}/api/mcp` : null;
     const mcpToken = mcpUrl ? this.config.getOrThrow<string>('MCP_SECRET_TOKEN') : null;
 
     const identifiers = this.extractIdentifiers(subject, body);
-    const prefetchedCases = await this.prefetchMatchingCases(identifiers);
+    const prefetchedCase = await this.prefetchMatchingCase(identifiers);
     this.logger.log(
-      `[VG-ANALYSIS] Pre-fetch — pids=${identifiers.pids.join(',') || 'none'} lodgmentRefs=${identifiers.lodgmentRefs.join(',') || 'none'} — found=${prefetchedCases.length} case(s) (address-only properties resolved post-classification)`,
+      `[VG-ANALYSIS] Pre-fetch — pids=${identifiers.pids.join(',') || 'none'} lodgmentRefs=${identifiers.lodgmentRefs.join(',') || 'none'} — found=${prefetchedCase ? 1 : 0} case(s)`,
     );
 
-    const userPrompt = this.buildAnalysisPrompt(subject, body, prefetchedCases);
+    const userPrompt = this.buildAnalysisPrompt(subject, body, prefetchedCase);
     const startMs = Date.now();
 
     let response: AxiosResponse<AnthropicApiResponse>;
@@ -71,7 +125,7 @@ export class VgEmailAnalysisService implements OnModuleInit {
         this.config.getOrThrow<string>('ANTHROPIC_API_URL'),
         {
           model: 'claude-sonnet-4-6',
-          max_tokens: 4096,
+          max_tokens: 2048,
           system: [
             {
               type: 'text',
@@ -133,12 +187,8 @@ export class VgEmailAnalysisService implements OnModuleInit {
       return this.fallback('needs_review', 'Response truncated — manual review required');
     }
 
-    const textBlock = content?.findLast((b: { type: string; text?: string }) => b.type === 'text');
-    const parsed = this.parseResponse(textBlock?.text ?? '');
-    this.logger.log(
-      `[VG-ANALYSIS] Classified ${parsed.results.length} property result(s): ${parsed.results.map((r) => `pid=${r.pid ?? 'unknown'} outcome=${r.outcome} caseId=${r.caseId ?? '-'}`).join(' | ')}`,
-    );
-    return parsed;
+    const textBlock = content?.findLast((b) => b.type === 'text');
+    return this.parseResponse(textBlock?.text ?? '');
   }
 
   private extractIdentifiers(
@@ -154,23 +204,10 @@ export class VgEmailAnalysisService implements OnModuleInit {
     };
   }
 
-  private async prefetchMatchingCases(identifiers: {
+  private async prefetchMatchingCase(identifiers: {
     pids: string[];
     lodgmentRefs: string[];
-  }): Promise<PrefetchedCase[]> {
-    const activeStatuses = ['submitted_to_vg', 'awaiting_vg_response'];
-    const seen = new Set<string>();
-    const results: PrefetchedCase[] = [];
-
-    const merge = (rows: PrefetchedCase[]) => {
-      for (const row of rows) {
-        if (!seen.has(row.case_id)) {
-          seen.add(row.case_id);
-          results.push(row);
-        }
-      }
-    };
-
+  }): Promise<PrefetchedCase | null> {
     try {
       if (identifiers.pids.length > 0) {
         const rows = await this.dataSource.query<PrefetchedCase[]>(
@@ -178,10 +215,11 @@ export class VgEmailAnalysisService implements OnModuleInit {
            FROM dispute_cases dc
            JOIN properties p ON p.id = dc.property_id
            WHERE p.pid = ANY($1) AND dc.status = ANY($2)
-           ORDER BY dc.submitted_at DESC`,
-          [identifiers.pids, activeStatuses],
+           ORDER BY dc.submitted_at DESC
+           LIMIT 1`,
+          [identifiers.pids, ACTIVE_VG_STATUSES],
         );
-        merge(rows);
+        if (rows[0]) return rows[0];
       }
 
       if (identifiers.lodgmentRefs.length > 0) {
@@ -190,16 +228,17 @@ export class VgEmailAnalysisService implements OnModuleInit {
            FROM dispute_cases dc
            JOIN properties p ON p.id = dc.property_id
            WHERE dc.lodgment_reference_number = ANY($1) AND dc.status = ANY($2)
-           ORDER BY dc.submitted_at DESC`,
-          [identifiers.lodgmentRefs, activeStatuses],
+           ORDER BY dc.submitted_at DESC
+           LIMIT 1`,
+          [identifiers.lodgmentRefs, ACTIVE_VG_STATUSES],
         );
-        merge(rows);
+        if (rows[0]) return rows[0];
       }
     } catch (err) {
       this.logger.warn('[VG-ANALYSIS] Pre-fetch DB query failed — Claude will attempt MCP lookup', (err as Error).message);
     }
 
-    return results;
+    return null;
   }
 
   async lookupCaseByAddress(address: string): Promise<PrefetchedCase | null> {
@@ -215,7 +254,7 @@ export class VgEmailAnalysisService implements OnModuleInit {
            AND dc.status = ANY($3)
          ORDER BY dc.submitted_at DESC
          LIMIT 1`,
-        [`%${address}%`, address, ['submitted_to_vg', 'awaiting_vg_response']],
+        [`%${address}%`, address, ACTIVE_VG_STATUSES],
       );
       return rows[0] ?? null;
     } catch (err) {
@@ -224,50 +263,52 @@ export class VgEmailAnalysisService implements OnModuleInit {
     }
   }
 
-  private buildAnalysisPrompt(subject: string | null, body: string | null, prefetchedCases: PrefetchedCase[]): string {
+  private buildAnalysisPrompt(
+    subject: string | null,
+    body: string | null,
+    prefetchedCase: PrefetchedCase | null,
+  ): string {
     const plainBody = body
       ? body.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
       : '(no body)';
 
-    const step3 =
-      prefetchedCases.length > 0
-        ? `### Step 3 — Match each property to a dispute case (server pre-fetched results):
-The server already queried the database. For each PID or property found in the email, match it to the
-correct entry below using the pid field. Set case_id to null if no entry matches.
+    const step3 = prefetchedCase
+      ? `### Step 3 — Match the property to a dispute case (server pre-fetched result):
+The server already queried the database. Match the property in the email to the entry below.
+Set case_id to null if it does not match.
 
 \`\`\`json
-${JSON.stringify(prefetchedCases, null, 2)}
+${JSON.stringify(prefetchedCase, null, 2)}
 \`\`\``
-        : `### Step 3 — Find each dispute case in the database (REQUIRED when outcome is approved or declined):
-For each PID found, run a separate query:
+      : `### Step 3 — Find the dispute case in the database (REQUIRED when outcome is approved or declined):
 
 \`\`\`sql
 SELECT dc.id AS case_id, dc.case_reference, dc.status, p.pid, p.address
 FROM dispute_cases dc
 JOIN properties p ON p.id = dc.property_id
 WHERE p.pid = '<extracted_pid>'
-  AND dc.status IN ('submitted_to_vg', 'awaiting_vg_response')
+  AND dc.status IN ('submitted_to_vg', 'for_review')
 ORDER BY dc.submitted_at DESC
 LIMIT 1
 \`\`\`
 
-For address-only properties:
+For address-only:
 \`\`\`sql
 SELECT dc.id AS case_id, dc.case_reference, dc.status, p.pid, p.address
 FROM dispute_cases dc
 JOIN properties p ON p.id = dc.property_id
 WHERE p.address ILIKE '%<extracted_address>%'
-  AND dc.status IN ('submitted_to_vg', 'awaiting_vg_response')
+  AND dc.status IN ('submitted_to_vg', 'for_review')
 ORDER BY dc.submitted_at DESC
 LIMIT 1
 \`\`\`
 
-For lodgment references:
+For lodgment reference:
 \`\`\`sql
 SELECT id AS case_id, case_reference, status, lodgment_reference_number
 FROM dispute_cases
 WHERE lodgment_reference_number = '<lodgment_ref>'
-  AND status IN ('submitted_to_vg', 'awaiting_vg_response')
+  AND status IN ('submitted_to_vg', 'for_review')
 LIMIT 1
 \`\`\``;
 
@@ -282,51 +323,48 @@ ${plainBody}
 
 ## Your Task — follow ALL steps in order
 
-### Step 1 — Read the email and list every property mentioned:
-Identify all occurrences of:
+### Step 1 — Extract property identifiers:
+Identify:
 - **PID** (e.g. "3007700" from "PID-3007700", "PID: 3007700", or "PID 3007700")
 - **Property address** (e.g. "1 Smith Street, Sydney NSW 2000")
 - **Case reference** (e.g. "LTD-2024-ABC-001")
 - **Lodgment reference** (e.g. "VG-DC-2025-001-1746000000")
 
-There may be one property or many — list them all.
+### Step 2 — Classify the outcome:
+Determine whether the VG has upheld or declined the objection based on the email's language and overall outcome.
+- **approved** — the objection was upheld in the client's favour (any reduction counts)
+- **declined** — the objection was rejected, original valuation stands
+- **needs_review** — ambiguous, procedural, or no clear final determination
 
-### Step 2 — Classify the outcome for EACH property independently:
-- **approved** — the objection was upheld, valuation reduced or amended in the client's favour
-- **declined** — the objection was rejected, original valuation maintained
-- **needs_review** — ambiguous, procedural, or no clear final determination for this specific property
+When in doubt, choose \`needs_review\`.
 
 ${step3}
 
-### Step 4 — Return a JSON ARRAY only (no prose before or after).
-One object per property mentioned in the email.
-If the email mentions no specific property, return a single entry with pid=null and outcome=needs_review.
+### Step 4 — Return a single JSON object only (no prose before or after):
 
 \`\`\`json
-[
-  {
-    "pid": "<PID string from the email, or null if not present>",
-    "address": "<property address from the email, or null if not present>",
-    "outcome": "approved" | "declined" | "needs_review",
-    "confidence": 0.0–1.0,
-    "reasoning": "one sentence citing the key signal for this specific property",
-    "case_id": "<UUID from matched case, or null>"
-  }
-]
+{
+  "pid": "<PID string from the email, or null>",
+  "address": "<property address from the email, or null>",
+  "outcome": "approved" | "declined" | "needs_review",
+  "confidence": 0.0–1.0,
+  "reasoning": "one sentence citing the key signal",
+  "case_id": "<UUID from matched case, or null>"
+}
 \`\`\``;
   }
 
-  private parseResponse(raw: string): AnalyzeEmailResult {
-    // Prefer a JSON array; fall back to a single object wrapped in an array
-    const arrayMatch = raw.match(/\[[\s\S]*\]/);
+  private parseResponse(raw: string): VgEmailResult {
     const objectMatch = raw.match(/\{[\s\S]*\}/);
+    const arrayMatch = raw.match(/\[[\s\S]*\]/);
 
-    let items: unknown[];
+    let item: unknown;
     try {
-      if (arrayMatch) {
-        items = JSON.parse(arrayMatch[0]) as unknown[];
-      } else if (objectMatch) {
-        items = [JSON.parse(objectMatch[0])];
+      if (objectMatch) {
+        item = JSON.parse(objectMatch[0]);
+      } else if (arrayMatch) {
+        const arr = JSON.parse(arrayMatch[0]) as unknown[];
+        item = arr[0];
       } else {
         this.logger.warn('[VG-ANALYSIS] No JSON found in response — defaulting to needs_review');
         return this.fallback('needs_review', 'Could not parse AI response');
@@ -336,47 +374,50 @@ If the email mentions no specific property, return a single entry with pid=null 
       return this.fallback('needs_review', 'JSON parse error in AI response');
     }
 
-    const results: PropertyAnalysisResult[] = items.map((item) => {
-      const p = item as Record<string, unknown>;
-      const outcome = p['outcome'];
-      const validOutcome: VgEmailOutcome =
-        outcome === 'approved' || outcome === 'declined' ? outcome : 'needs_review';
+    const p = item as Record<string, unknown>;
+    const outcome = p['outcome'];
+    const validOutcome: VgEmailOutcome =
+      outcome === 'approved' || outcome === 'declined' ? outcome : 'needs_review';
 
-      const rawCaseId = p['case_id'];
-      const caseId =
-        typeof rawCaseId === 'string' && rawCaseId !== 'null' && rawCaseId.trim() !== ''
-          ? rawCaseId.trim()
-          : null;
+    const rawCaseId = p['case_id'];
+    const caseId =
+      typeof rawCaseId === 'string' && rawCaseId !== 'null' && rawCaseId.trim() !== ''
+        ? rawCaseId.trim()
+        : null;
 
-      const rawPid = p['pid'];
-      const pid =
-        typeof rawPid === 'string' && rawPid !== 'null' && rawPid.trim() !== ''
-          ? rawPid.trim()
-          : null;
+    const rawPid = p['pid'];
+    const pid =
+      typeof rawPid === 'string' && rawPid !== 'null' && rawPid.trim() !== ''
+        ? rawPid.trim()
+        : null;
 
-      const rawAddress = p['address'];
-      const address =
-        typeof rawAddress === 'string' && rawAddress !== 'null' && rawAddress.trim() !== ''
-          ? rawAddress.trim()
-          : null;
+    const rawAddress = p['address'];
+    const address =
+      typeof rawAddress === 'string' && rawAddress !== 'null' && rawAddress.trim() !== ''
+        ? rawAddress.trim()
+        : null;
 
-      return {
-        pid,
-        address,
-        outcome: validOutcome,
-        confidence: typeof p['confidence'] === 'number' ? p['confidence'] : 0.5,
-        reasoning: typeof p['reasoning'] === 'string' ? p['reasoning'] : '',
-        caseId,
-      };
-    });
-
-    return { results, rawResponse: items };
+    return {
+      pid,
+      address,
+      outcome: validOutcome,
+      confidence: typeof p['confidence'] === 'number' ? p['confidence'] : 0.5,
+      reasoning: typeof p['reasoning'] === 'string' ? p['reasoning'] : '',
+      caseId,
+    };
   }
 
-  private fallback(outcome: VgEmailOutcome, reasoning: string): AnalyzeEmailResult {
-    return {
-      results: [{ pid: null, address: null, outcome, confidence: 0, reasoning, caseId: null }],
-      rawResponse: { outcome, reasoning },
-    };
+  private fallback(outcome: VgEmailOutcome, reasoning: string): VgEmailResult {
+    return { pid: null, address: null, outcome, confidence: 0, reasoning, caseId: null };
+  }
+
+  private async safeMarkAsRead(messageId: string): Promise<void> {
+    try {
+      await this.msGraphService.markMessageAsRead(messageId);
+    } catch (err) {
+      this.logger.warn(
+        `[VG-ANALYSIS] Failed to mark messageId=${messageId} as read: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
 }

@@ -24,17 +24,14 @@ import { AzureEmailService } from 'src/common/azure-email/azure-email.service';
 import { AzureBlobService } from 'src/common/azure-blob/azure-blob.service';
 import { PackageDocument, PackageDocumentStatus } from '../objection-package/entities/package-document.entity';
 import { ClientEmailMissingException } from './exceptions/client-email-missing.exception';
-import { AuditLog, AuditAction } from '../audit-log/entities/audit-log.entity';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/entities/notification.entity';
-
-/** Nil UUID used as the actor ID for system-initiated audit log entries (e.g. cron jobs). */
-const SYSTEM_ACTOR_ID = '00000000-0000-0000-0000-000000000000';
 
 const MAX_VG_FOLLOW_UPS = 3;
 
 const THREE_DAY_WINDOW_DAYS = 3;
 const THREE_DAY_WINDOW_MINUTES = THREE_DAY_WINDOW_DAYS * 24 * 60;
+const THREE_DAY_WINDOW_HOURS = THREE_DAY_WINDOW_DAYS * 24;
 
 const CLOSED_STATUSES: DisputeStatus[] = [
   DisputeStatus.CLOSED,
@@ -174,9 +171,26 @@ export class DisputeCasesService {
 
     const closedAtDate = new Date();
 
-    // Persist status transition before sending email
+    // Guard: client must have an email before we commit anything
+    if (!disputeCase.client.email) {
+      throw new ClientEmailMissingException(disputeCase.case_reference);
+    }
+
+    const advisoryToken = randomUUID();
+    const advisoryTokenExpires = new Date(
+      closedAtDate.getTime() + THREE_DAY_WINDOW_HOURS * 60 * 60 * 1000,
+    );
+
+    const frontendUrl = this.config.get<string>('FRONTEND_URL') ?? '';
+    const viewReportUrl = `${frontendUrl}/advisory-view?token=${advisoryToken}`;
+
+    // Persist status transition first — email is sent after a successful save.
+    // If the email subsequently fails, the case is already correctly closed in
+    // the DB and the advisory email can be re-triggered manually.
     disputeCase.status = DisputeStatus.CLOSED_NO_OBJECTION;
     disputeCase.closed_at = closedAtDate;
+    disputeCase.advisory_view_token = advisoryToken;
+    disputeCase.advisory_view_token_expires_at = advisoryTokenExpires;
     if (dto.assessorNotes !== undefined) {
       disputeCase.notes = dto.assessorNotes;
     }
@@ -185,7 +199,7 @@ export class DisputeCasesService {
 
     this.azureEmailService
       .sendAdvisoryLetterNotification(
-        this.buildAdvisoryEmailPayload(disputeCase, dto, vgAssessedValue, closedAtDate),
+        this.buildAdvisoryEmailPayload(disputeCase, dto, vgAssessedValue, closedAtDate, viewReportUrl),
       )
       .catch((err: unknown) => {
         this.logger.error(
@@ -416,9 +430,10 @@ export class DisputeCasesService {
     dto: CloseNoObjectionDto,
     vgAssessedValue: number,
     closedAtDate: Date,
+    viewReportUrl: string,
   ): Parameters<AzureEmailService['sendAdvisoryLetterNotification']>[0] {
     return {
-      clientEmail: disputeCase.client.email!,
+      clientEmail: disputeCase.client.email!, // guarded by ClientEmailMissingException before this is called
       clientName: disputeCase.client.name,
       caseReference: disputeCase.case_reference,
       propertyAddress: this.buildPropertyAddress(disputeCase.property),
@@ -429,6 +444,7 @@ export class DisputeCasesService {
         day: '2-digit', month: 'long', year: 'numeric',
         hour: '2-digit', minute: '2-digit',
       }),
+      viewReportUrl,
     };
   }
 
@@ -470,14 +486,6 @@ export class DisputeCasesService {
       resolvedCase.last_vg_follow_up_sent_at = now;
       await queryRunner.manager.save(DisputeCase, resolvedCase);
 
-      const auditEntry = queryRunner.manager.create(AuditLog, {
-        action: AuditAction.VG_FOLLOW_UP_SENT,
-        performedBy: SYSTEM_ACTOR_ID,
-        caseId,
-        lodgmentReferenceNumber: resolvedCase.lodgment_reference_number,
-      });
-      await queryRunner.manager.save(AuditLog, auditEntry);
-
       const vgEmail = this.config.getOrThrow<string>('VG_SUBMISSION_EMAIL');
       await this.azureEmailService.sendVgFollowUpEnquiry({
         sendTo: vgEmail,
@@ -514,7 +522,7 @@ export class DisputeCasesService {
     }
   }
 
-  async updateVgOutcome(caseId: string, newStatus: DisputeStatus, messageId: string): Promise<void> {
+  async updateVgOutcome(caseId: string, newStatus: DisputeStatus, reasoning?: string): Promise<void> {
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
@@ -532,17 +540,10 @@ export class DisputeCasesService {
       }
 
       resolvedCase.status = newStatus;
-      resolvedCase.vg_response_received_at = new Date();
-      resolvedCase.vg_email_message_id = messageId;
+      if ((newStatus === DisputeStatus.VG_DECLINED || newStatus === DisputeStatus.FOR_REVIEW) && reasoning) {
+        resolvedCase.vg_response_notes = reasoning;
+      }
       await queryRunner.manager.save(DisputeCase, resolvedCase);
-
-      const auditEntry = queryRunner.manager.create(AuditLog, {
-        action: AuditAction.VG_OUTCOME_RECEIVED,
-        performedBy: SYSTEM_ACTOR_ID,
-        caseId,
-        lodgmentReferenceNumber: resolvedCase.lodgment_reference_number,
-      });
-      await queryRunner.manager.save(AuditLog, auditEntry);
 
       await queryRunner.commitTransaction();
     } catch (err) {
@@ -562,6 +563,7 @@ export class DisputeCasesService {
       );
     }
   }
+
 
   async remove(id: string): Promise<{ message: string }> {
     const disputeCase = await this.disputeCasesRepository.findOne({ where: { id } });
