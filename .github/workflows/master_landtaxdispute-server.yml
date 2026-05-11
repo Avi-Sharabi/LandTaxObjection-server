@@ -23,7 +23,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22.x'
+          node-version: '20.x'
           cache: npm
 
       - name: Install dependencies
@@ -32,35 +32,46 @@ jobs:
       - name: Build application
         run: npm run build
 
+      # Run migrations (only main safe guard recommended)
       - name: Run database migrations
+        if: github.ref == 'refs/heads/main'
         env:
           NODE_ENV: production
 
-          DB_HOST: ${{ github.ref == 'refs/heads/main' && secrets.DB_HOST_PROD || github.ref == 'refs/heads/qa' && secrets.DB_HOST_QA || secrets.DB_HOST_DEV }}
-
-          DB_PORT: ${{ github.ref == 'refs/heads/main' && secrets.DB_PORT_PROD || github.ref == 'refs/heads/qa' && secrets.DB_PORT_QA || secrets.DB_PORT_DEV }}
-
-          DB_USERNAME: ${{ github.ref == 'refs/heads/main' && secrets.DB_USERNAME_PROD || github.ref == 'refs/heads/qa' && secrets.DB_USERNAME_QA || secrets.DB_USERNAME_DEV }}
-
-          DB_PASSWORD: ${{ github.ref == 'refs/heads/main' && secrets.DB_PASSWORD_PROD || github.ref == 'refs/heads/qa' && secrets.DB_PASSWORD_QA || secrets.DB_PASSWORD_DEV }}
-
-          DB_NAME: ${{ github.ref == 'refs/heads/main' && secrets.DB_NAME_PROD || github.ref == 'refs/heads/qa' && secrets.DB_NAME_QA || secrets.DB_NAME_DEV }}
-
-          DB_SSL: ${{ github.ref == 'refs/heads/main' && secrets.DB_SSL_PROD || github.ref == 'refs/heads/qa' && secrets.DB_SSL_QA || secrets.DB_SSL_DEV }}
+          DB_HOST: ${{ secrets.DB_HOST_PROD }}
+          DB_PORT: ${{ secrets.DB_PORT_PROD }}
+          DB_USERNAME: ${{ secrets.DB_USERNAME_PROD }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD_PROD }}
+          DB_NAME: ${{ secrets.DB_NAME_PROD }}
+          DB_SSL: ${{ secrets.DB_SSL_PROD }}
 
         run: npm run migration:run
 
+      # ❌ FIX: REMOVE custom deployment folder (this was breaking SCM deploy)
+      # Azure Run-From-Package expects a normal app root structure
+
       - name: Prepare deployment package
         run: |
+          rm -rf deployment
           mkdir deployment
+          cp -r dist deployment/
+          cp package.json deployment/
+          cp package-lock.json deployment/
 
-          cp -r dist deployment/dist
-          cp package.json deployment/package.json
-          cp package-lock.json deployment/package-lock.json
+      # ✅ FIX: install production deps inside deployment
+      - name: Install production dependencies
+        run: |
+          cd deployment
+          npm ci --omit=dev
 
+      # ✅ FIX: prevent SCM restart conflict
+      - name: Wait before deploy
+        run: sleep 30
+
+      # Deploy
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
         with:
-          app-name: 'landtaxdispute-server'
-          publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_A76461515FA9422A88808EE1E33679FD }}
+          app-name: landtaxdispute-server
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISHPROFILE_A76461515FA9422A88808EE1E33679FD }}
           package: deployment
