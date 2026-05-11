@@ -18,6 +18,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Login to Azure
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Configure Azure settings
+        uses: azure/appservice-settings@v1
+        with:
+          app-name: 'landtaxdispute-server'
+          app-settings-json: |
+            [
+              {"name": "SCM_DO_BUILD_DURING_DEPLOYMENT", "value": "false"},
+              {"name": "WEBSITE_RUN_FROM_PACKAGE", "value": "0"},
+              {"name": "WEBSITE_NODE_DEFAULT_VERSION", "value": "~24"}
+            ]
+
       - name: Set up Node.js version
         uses: actions/setup-node@v4
         with:
@@ -41,24 +57,35 @@ jobs:
           DB_SSL: ${{ github.ref == 'refs/heads/main' && secrets.DB_SSL_PROD || github.ref == 'refs/heads/qa' && secrets.DB_SSL_QA || secrets.DB_SSL_DEV }}
         run: npm run migration:run
 
+      - name: Cache production node_modules
+        id: cache-node-modules
+        uses: actions/cache@v4
+        with:
+          path: deployment/node_modules
+          key: node-modules-${{ hashFiles('package-lock.json') }}
+
       - name: Prepare deployment package
         run: |
           mkdir -p deployment
           cp -r dist deployment/dist
           cp package.json deployment/package.json
           cp package-lock.json deployment/package-lock.json
-          echo "[config]" > deployment/.deployment
-          echo "SCM_DO_BUILD_DURING_DEPLOYMENT=false" >> deployment/.deployment
 
       - name: Install production dependencies
+        if: steps.cache-node-modules.outputs.cache-hit != 'true'
         run: |
           cd deployment
           npm ci --omit=dev
+
+      - name: Zip deployment package
+        run: |
+          cd deployment
+          zip -r ../deployment.zip .
 
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
         with:
           app-name: 'landtaxdispute-server'
           slot-name: 'Production'
-          package: deployment
+          package: deployment.zip
           publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_A76461515FA9422A88808EE1E33679FD }}
