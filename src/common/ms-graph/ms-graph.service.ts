@@ -85,9 +85,9 @@ export class MsGraphService {
     return this.tokenCache.accessToken;
   }
 
-  // Fetches inbox messages received within the last 7 days regardless of read status.
-  // Using a rolling window instead of isRead — shared mailboxes auto-read on delivery.
-  // Deduplication is handled by the caller via message_id idempotency check.
+  // Fetches unread inbox messages received in the last 7 days.
+  // isRead eq false excludes messages already processed by a prior poll.
+  // In-memory dedup in VgEmailMonitorTask covers the mark-as-read latency window.
   async fetchInboxMessages(maxMessages = 50): Promise<GraphMessage[]> {
     const token = await this.resolveAccessToken();
     const url = `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(this.mailboxUserId)}/mailFolders/inbox/messages`;
@@ -100,7 +100,7 @@ export class MsGraphService {
       this.http.get<{ value: GraphMessage[] }>(url, {
         headers: { Authorization: `Bearer ${token}` },
         params: {
-          $filter: `receivedDateTime ge ${sinceIso}`,
+          $filter: `receivedDateTime ge ${sinceIso} and isRead eq false`,
           $orderby: 'receivedDateTime asc',
           $top: maxMessages,
           $select: 'id,subject,body,bodyPreview,from,receivedDateTime,isRead,conversationId',

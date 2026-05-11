@@ -93,15 +93,23 @@ export class VgEmailAnalysisService implements OnModuleInit {
         const newStatus = result.outcome === 'approved'
           ? DisputeStatus.VG_APPROVED
           : DisputeStatus.VG_DECLINED;
-        await this.disputeCasesService.updateVgOutcome(caseId, newStatus, result.reasoning);
-        this.logger.log(`[VG-ANALYSIS] Case ${caseId} → ${newStatus}`);
+        try {
+          await this.disputeCasesService.updateVgOutcome(caseId, newStatus, result.reasoning);
+          this.logger.log(`[VG-ANALYSIS] Case ${caseId} → ${newStatus}`);
+        } catch (err) {
+          this.logger.error(`[VG-ANALYSIS] updateVgOutcome failed for caseId=${caseId} — ${(err as Error).message}`);
+        }
       } else {
         this.logger.warn(`[VG-ANALYSIS] outcome=${result.outcome} but no case resolved — status unchanged`);
       }
     } else {
       if (caseId) {
-        await this.disputeCasesService.updateVgOutcome(caseId, DisputeStatus.FOR_REVIEW, result.reasoning);
-        this.logger.log(`[VG-ANALYSIS] Case ${caseId} → ${DisputeStatus.FOR_REVIEW}`);
+        try {
+          await this.disputeCasesService.updateVgOutcome(caseId, DisputeStatus.FOR_REVIEW, result.reasoning);
+          this.logger.log(`[VG-ANALYSIS] Case ${caseId} → ${DisputeStatus.FOR_REVIEW}`);
+        } catch (err) {
+          this.logger.error(`[VG-ANALYSIS] updateVgOutcome failed for caseId=${caseId} — ${(err as Error).message}`);
+        }
       } else {
         this.logger.log(`[VG-ANALYSIS] outcome=needs_review — no case resolved, status unchanged`);
       }
@@ -120,12 +128,12 @@ export class VgEmailAnalysisService implements OnModuleInit {
     const mcpToken = mcpUrl ? this.config.getOrThrow<string>('MCP_SECRET_TOKEN') : null;
 
     const identifiers = this.extractIdentifiers(subject, body);
-    const prefetchedCase = await this.prefetchMatchingCase(identifiers);
+    const prefetch = await this.prefetchMatchingCase(identifiers);
     this.logger.log(
-      `[VG-ANALYSIS] Pre-fetch — pids=${identifiers.pids.join(',') || 'none'} lodgmentRefs=${identifiers.lodgmentRefs.join(',') || 'none'} — found=${prefetchedCase ? 1 : 0} case(s)`,
+      `[VG-ANALYSIS] Pre-fetch — pids=${identifiers.pids.join(',') || 'none'} lodgmentRefs=${identifiers.lodgmentRefs.join(',') || 'none'} — found=${prefetch.case ? 1 : 0} case(s)`,
     );
 
-    const userPrompt = this.buildAnalysisPrompt(subject, body, prefetchedCase);
+    const userPrompt = this.buildAnalysisPrompt(subject, body, prefetch.case, prefetch.dbQueried);
     const startMs = Date.now();
 
     let response: AxiosResponse<AnthropicApiResponse>;
@@ -216,7 +224,7 @@ export class VgEmailAnalysisService implements OnModuleInit {
   private async prefetchMatchingCase(identifiers: {
     pids: string[];
     lodgmentRefs: string[];
-  }): Promise<PrefetchedCase | null> {
+  }): Promise<{ case: PrefetchedCase | null; dbQueried: boolean }> {
     try {
       if (identifiers.pids.length > 0) {
         const rows = await this.dataSource.query<PrefetchedCase[]>(
@@ -228,7 +236,7 @@ export class VgEmailAnalysisService implements OnModuleInit {
            LIMIT 1`,
           [identifiers.pids, ACTIVE_VG_STATUSES],
         );
-        if (rows[0]) return rows[0];
+        if (rows[0]) return { case: rows[0], dbQueried: true };
       }
 
       if (identifiers.lodgmentRefs.length > 0) {
@@ -241,13 +249,15 @@ export class VgEmailAnalysisService implements OnModuleInit {
            LIMIT 1`,
           [identifiers.lodgmentRefs, ACTIVE_VG_STATUSES],
         );
-        if (rows[0]) return rows[0];
+        if (rows[0]) return { case: rows[0], dbQueried: true };
       }
+
+      // DB query ran successfully but found no matching case
+      return { case: null, dbQueried: identifiers.pids.length > 0 || identifiers.lodgmentRefs.length > 0 };
     } catch (err) {
       this.logger.warn('[VG-ANALYSIS] Pre-fetch DB query failed — Claude will attempt MCP lookup', (err as Error).message);
+      return { case: null, dbQueried: false };
     }
-
-    return null;
   }
 
   async lookupCaseByAddress(address: string): Promise<PrefetchedCase | null> {
@@ -276,20 +286,27 @@ export class VgEmailAnalysisService implements OnModuleInit {
     subject: string | null,
     body: string | null,
     prefetchedCase: PrefetchedCase | null,
+    dbQueried: boolean,
   ): string {
     const plainBody = body
       ? body.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim()
       : '(no body)';
 
-    const step3 = prefetchedCase
-      ? `### Step 3 — Match the property to a dispute case (server pre-fetched result):
+    let step3: string;
+    if (prefetchedCase) {
+      step3 = `### Step 3 — Match the property to a dispute case (server pre-fetched result):
 The server already queried the database. Match the property in the email to the entry below.
 Set case_id to null if it does not match.
 
 \`\`\`json
 ${JSON.stringify(prefetchedCase, null, 2)}
-\`\`\``
-      : `### Step 3 — Find the dispute case in the database (REQUIRED when outcome is approved or declined):
+\`\`\``;
+    } else if (dbQueried) {
+      step3 = `### Step 3 — Case lookup result (server pre-fetched):
+The server queried the database using the identifiers extracted from this email and found NO matching case in \`submitted_to_vg\` or \`for_review\` status.
+Set \`case_id\` to \`null\`. Do NOT query the database via MCP — the server result is authoritative.`;
+    } else {
+      step3 = `### Step 3 — Find the dispute case in the database (REQUIRED when outcome is approved or declined):
 
 \`\`\`sql
 SELECT dc.id AS case_id, dc.case_reference, dc.status, p.pid, p.address
@@ -320,6 +337,7 @@ WHERE lodgment_reference_number = '<lodgment_ref>'
   AND status IN ('submitted_to_vg', 'for_review')
 LIMIT 1
 \`\`\``;
+    }
 
     return `## Email Received from Valuer-General's Office
 

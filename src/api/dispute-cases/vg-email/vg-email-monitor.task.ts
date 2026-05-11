@@ -12,6 +12,7 @@ const DEFAULT_POLL_CRON = '0 22 * * *';
 @Injectable()
 export class VgEmailMonitorTask implements OnModuleInit {
   private readonly logger = new Logger(VgEmailMonitorTask.name);
+  private readonly processedMessageIds = new Set<string>();
 
   private readonly vgSenderEmails: Set<string>;
 
@@ -70,12 +71,28 @@ export class VgEmailMonitorTask implements OnModuleInit {
   }
 
   private async processMessage(message: GraphMessage): Promise<void> {
+    if (this.processedMessageIds.has(message.id)) {
+      this.logger.log(
+        `[VG-MONITOR] Skipping messageId=${message.id} — already processed this run`,
+      );
+      return;
+    }
+
+    if (message.isRead) {
+      this.logger.log(
+        `[VG-MONITOR] Skipping messageId=${message.id} — isRead=true (already handled)`,
+      );
+      this.processedMessageIds.add(message.id);
+      return;
+    }
+
     const senderAddress = message.from?.emailAddress?.address ?? '';
 
     if (!this.isVgSenderEmail(senderAddress)) {
       this.logger.debug(
         `[VG-MONITOR] Skipping messageId=${message.id} sender=${senderAddress} — not a known VG sender`,
       );
+      this.processedMessageIds.add(message.id);
       return;
     }
 
@@ -88,6 +105,8 @@ export class VgEmailMonitorTask implements OnModuleInit {
       message.subject ?? null,
       message.body?.content ?? null,
     );
+
+    this.processedMessageIds.add(message.id);
   }
 
   private isVgSenderEmail(senderAddress: string): boolean {
