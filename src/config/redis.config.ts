@@ -10,6 +10,9 @@ export function createRedisConfig(config: ConfigService): BullRootModuleOptions 
       ...(isProduction(config) && {
         password: config.getOrThrow<string>('REDIS_PASSWORD'),
         tls: {},
+        lazyConnect: true,
+        enableOfflineQueue: false,
+        maxRetriesPerRequest: 1,
       }),
     },
   };

@@ -9,6 +9,7 @@ on:
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
+
     permissions:
       contents: read
 
@@ -16,20 +17,23 @@ jobs:
       name: ${{ github.ref == 'refs/heads/main' && 'production' || github.ref == 'refs/heads/qa' && 'qa' || 'development' }}
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - name: Set up Node.js version
+      - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '24.x'
-          cache: 'npm'
+          node-version: '22.x'
+          cache: npm
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Build
+      - name: Build application
         run: npm run build
 
+      # RUN MIGRATIONS BEFORE DEPLOYMENT
+      # Prevents Azure startup delays/crashes
       - name: Run database migrations
         env:
           NODE_ENV: production
@@ -41,40 +45,23 @@ jobs:
           DB_SSL: ${{ github.ref == 'refs/heads/main' && secrets.DB_SSL_PROD || github.ref == 'refs/heads/qa' && secrets.DB_SSL_QA || secrets.DB_SSL_DEV }}
         run: npm run migration:run
 
+      # CREATE CLEAN DEPLOYMENT PACKAGE
       - name: Prepare deployment package
         run: |
-          mkdir -p deployment
+          mkdir deployment
+
           cp -r dist deployment/dist
           cp package.json deployment/package.json
           cp package-lock.json deployment/package-lock.json
 
-      - name: Cache production node_modules
-        id: cache-node-modules
-        uses: actions/cache@v4
-        with:
-          path: deployment/node_modules
-          key: node-modules-${{ hashFiles('package-lock.json') }}
-
-      - name: Install production dependencies
-        if: steps.cache-node-modules.outputs.cache-hit != 'true'
-        run: |
           cd deployment
+
           npm ci --omit=dev
 
-      - name: Zip deployment package
-        run: |
-          cd deployment
-          zip -r ../deployment.zip .
-
+      # DEPLOY DIRECTLY
       - name: Deploy to Azure Web App
-        env:
-          PUBLISH_PROFILE: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_A76461515FA9422A88808EE1E33679FD }}
-        run: |
-          USERNAME=$(echo "$PUBLISH_PROFILE" | grep -o 'userName="[^"]*"' | head -1 | cut -d'"' -f2)
-          PASSWORD=$(echo "$PUBLISH_PROFILE" | grep -o 'userPWD="[^"]*"' | head -1 | cut -d'"' -f2)
-          curl -X POST \
-            "https://landtaxdispute-server-gagne7hjaxcjd6b8.scm.australiacentral-01.azurewebsites.net/api/zipdeploy" \
-            -u "$USERNAME:$PASSWORD" \
-            -H "Content-Type: application/zip" \
-            --data-binary @deployment.zip \
-            --max-time 600
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: 'landtaxdispute-server'
+          publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_A76461515FA9422A88808EE1E33679FD }}
+          package: deployment
