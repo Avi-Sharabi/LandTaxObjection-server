@@ -618,4 +618,63 @@ export class DisputeCasesService {
     return { message: `Dispute case #${id} removed` };
   }
 
+  async recordVgResponse(
+    id: string,
+    status: DisputeStatus.VG_APPROVED | DisputeStatus.VG_DECLINED,
+    actorId: string,
+  ): Promise<DisputeCaseResponseDto> {
+    const disputeCase = await this.disputeCasesRepository.findOne({
+      where: { id },
+      relations: ['client', 'property', 'assigned_accountant'],
+    });
+    if (!disputeCase) throw new NotFoundException(`Dispute case #${id} not found`);
+
+    const allowedPriorStatuses: DisputeStatus[] = [
+      DisputeStatus.SUBMITTED_TO_VG,
+      DisputeStatus.AWAITING_VG_RESPONSE,
+    ];
+    if (!allowedPriorStatuses.includes(disputeCase.status)) {
+      throw new ConflictException(
+        `Cannot record VG response: case ${disputeCase.case_reference} is in status '${disputeCase.status}'.`,
+      );
+    }
+
+    if (!disputeCase.client.email) {
+      throw new ClientEmailMissingException(disputeCase.case_reference);
+    }
+
+    const resolvedAt = new Date();
+    disputeCase.status = status;
+    disputeCase.vg_response_received_at = resolvedAt;
+    const saved = await this.disputeCasesRepository.save(disputeCase);
+
+    const auditLog = this.dataSource.getRepository(AuditLog).create({
+      action: AuditAction.VG_RESPONSE_RECEIVED,
+      performedBy: actorId,
+      caseId: id,
+      lodgmentReferenceNumber: disputeCase.lodgment_reference_number ?? null,
+    });
+    await this.dataSource.getRepository(AuditLog).save(auditLog);
+
+    const resolvedAtStr = resolvedAt.toLocaleString('en-AU', {
+      day: '2-digit', month: 'long', year: 'numeric',
+      hour: '2-digit', minute: '2-digit',
+    });
+
+    this.azureEmailService
+      .sendVgResponseNotification({
+        clientEmail: disputeCase.client.email,
+        clientName: disputeCase.client.name,
+        caseReference: disputeCase.case_reference,
+        propertyAddress: this.buildPropertyAddress(disputeCase.property),
+        lodgmentReferenceNumber: disputeCase.lodgment_reference_number ?? 'N/A',
+        isApproved: status === DisputeStatus.VG_APPROVED,
+        assessorFullName: disputeCase.assigned_accountant?.fullName ?? 'Your YML Adviser',
+        resolvedAt: resolvedAtStr,
+      })
+      .catch((err) => this.logger.error('VG response notification email failed', err));
+
+    return saved;
+  }
+
 }

@@ -19,6 +19,8 @@ export enum DisputeStatus {
   CLIENT_APPROVED = 'client_approved',
   SUBMITTED_TO_VG = 'submitted_to_vg',
   AWAITING_VG_RESPONSE = 'awaiting_vg_response',
+  VG_APPROVED = 'vg_approved',
+  VG_DECLINED = 'vg_declined',
   OUTCOME_RECEIVED = 'outcome_received',
   CLOSED = 'closed',
   CLOSED_NO_OBJECTION = 'closed_no_objection',
@@ -139,6 +141,9 @@ export class DisputeCase {
 
   @Column({ type: 'timestamptz', nullable: true })
   last_vg_follow_up_sent_at: Date | null;
+
+  @Column({ type: 'timestamptz', nullable: true })
+  vg_response_received_at: Date | null;
 
   @Column({ type: 'timestamptz', nullable: true })
   closed_at: Date | null;
