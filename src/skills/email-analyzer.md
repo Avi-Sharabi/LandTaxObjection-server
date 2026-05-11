@@ -27,7 +27,7 @@ sending a procedural notice (acknowledgement, adjournment, or request for inform
 
 This prompt is triggered at **Phase 2, Step 11** of the workflow: after an objection
 package has been submitted to the VG (case status = `submitted_to_vg` or
-`awaiting_vg_response`). Your job is to read the incoming VG email and produce a
+`for_review`). Your job is to read the incoming VG email and produce a
 structured JSON classification that drives downstream case updates in the database.
 
 **Database:** PostgreSQL with UUID primary keys.
@@ -55,8 +55,8 @@ structured JSON object — with no prose before or after.
 
 **MUST:**
 - Extract every available identifier from the email (PID, property address) — do not stop at the first one found
-- Classify using the exact three values: `approved`, `declined`, or `needs_review`
-  (map VG's `upheld`/`partially_upheld` → `approved`; `rejected` → `declined`)
+- Classify using the exact three values: `vg_approved`, `vg_declined`, or `needs_review`
+  (map VG's `upheld`/`partially_upheld` → `vg_approved`; `rejected` → `vg_declined`)
 - Set `confidence` as a float between `0.0` and `1.0` using the scale defined below
 - Cite one exact signal phrase from the email in `reasoning` — not a paraphrase
 - Set `case_id` to `null` if no database match is found — never guess or fabricate a UUID
@@ -65,16 +65,16 @@ structured JSON object — with no prose before or after.
 
 **MUST NOT:**
 - Return any prose, preamble, or explanation outside the JSON object
-- Infer `approved` or `declined` from tone alone — a clear explicit determination must
+- Infer `vg_approved` or `vg_declined` from tone alone — a clear explicit determination must
   be present in the email body
-- Return `approved` or `declined` for acknowledgements, adjournments, or
+- Return `vg_approved` or `vg_declined` for acknowledgements, adjournments, or
   information requests — these are always `needs_review`
 - Assume a case match if the pre-fetched case data does not align with the identifiers
   found in the email
 
 **PREFER:**
 - PID match over address match when both are available (PID is authoritative)
-- `needs_review` over `declined` when the VG uses heavily qualified or conditional language
+- `needs_review` over `vg_declined` when the VG uses heavily qualified or conditional language
 
 **Confidence scoring guide:**
 | Score | Signal |
@@ -115,8 +115,8 @@ is.
 
 | Outcome | Criteria |
 |---|---|
-| `approved` | The VG explicitly upholds the objection or confirms a revised (lower) valuation. Any reduction counts — full or partial. Maps to VG terms: *upheld*, *partially upheld*, *revised valuation*, *reduction applied*. |
-| `declined` | The VG explicitly rejects the objection and confirms the original valuation stands. Maps to VG terms: *not upheld*, *objection dismissed*, *original valuation maintained*, *valuation will stand*. |
+| `vg_approved` | The VG explicitly upholds the objection or confirms a revised (lower) valuation. Any reduction counts — full or partial. Maps to VG terms: *upheld*, *partially upheld*, *revised valuation*, *reduction applied*. |
+| `vg_declined` | The VG explicitly rejects the objection and confirms the original valuation stands. Maps to VG terms: *not upheld*, *objection dismissed*, *original valuation maintained*, *valuation will stand*. |
 | `needs_review` | Anything that is not a clear final determination: acknowledgements, adjournments, requests for further information, referrals, or heavily hedged language. **When in doubt, use `needs_review`.** |
 
 ---
@@ -168,7 +168,7 @@ No prose before or after. Return only the JSON.
 {
   "pid": "<PID string or null>",
   "address": "<property address or null>",
-  "outcome": "approved" | "declined" | "needs_review",
+  "outcome": "vg_approved" | "vg_declined" | "needs_review",
   "confidence": 0.0–1.0,
   "reasoning": "Exact phrase from the email that determined this outcome.",
   "case_id": "<UUID from matched case or null>",
@@ -194,14 +194,14 @@ cases. In this scenario, also set `case_id: null` and `outcome: "needs_review"`.
 | Email is a **request for further information** from the VG | `outcome: "needs_review"` |
 | Email is **not from the VG** (e.g. forwarded unrelated email, client reply) | `outcome: "needs_review"`, `confidence: 0.3`, note in `reasoning` that sender is not identified as VG |
 | Matched case status is **not** `submitted_to_vg` | `case_id: null` — do not match; the case is not in the expected stage |
-| VG confirms a **partial reduction** (e.g. "reduced from $2.4M to $2.1M") | `outcome: "approved"` — any reduction counts |
+| VG confirms a **partial reduction** (e.g. "reduced from $2.4M to $2.1M") | `outcome: "vg_approved"` — any reduction counts |
 | VG uses conditional language (e.g. "subject to further review, the valuation may be revised") | `outcome: "needs_review"` — not a final determination |
 
 ---
 
 ## Few-Shot Examples
 
-### Example 1 — Approved (full upheld)
+### Example 1 — vg_approved (full upheld)
 
 **Email:**
 > Dear YML Group,
@@ -222,7 +222,7 @@ cases. In this scenario, also set `case_id: null` and `outcome: "needs_review"`.
 {
   "pid": "3007700",
   "address": "45 Harbour View Road, Mosman NSW 2088",
-  "outcome": "approved",
+  "outcome": "vg_approved",
   "confidence": 0.98,
   "reasoning": "the Valuer-General has determined that the objection is upheld",
   "case_id": "<matched UUID or null>",
@@ -232,7 +232,7 @@ cases. In this scenario, also set `case_id: null` and `outcome: "needs_review"`.
 
 ---
 
-### Example 2 — Declined
+### Example 2 — vg_declined
 
 **Email:**
 > Dear YML Group,
@@ -252,7 +252,7 @@ cases. In this scenario, also set `case_id: null` and `outcome: "needs_review"`.
 {
   "pid": null,
   "address": "12 Wentworth Avenue, Parramatta NSW 2150",
-  "outcome": "declined",
+  "outcome": "vg_declined",
   "confidence": 0.97,
   "reasoning": "The original valuation of $3,100,000 will stand. This determination is final.",
   "case_id": "<matched UUID or null>",
@@ -308,7 +308,7 @@ different cases — the PID and address are inconsistent in the database.
 {
   "pid": "4001122",
   "address": "8 Collins Street, Surry Hills NSW 2010",
-  "outcome": "needs_review",
+  "outcome": "for_review",
   "confidence": 0.99,
   "reasoning": "Objection upheld but PID and address resolve to different cases — conflict detected, manual review required.",
   "case_id": null,
