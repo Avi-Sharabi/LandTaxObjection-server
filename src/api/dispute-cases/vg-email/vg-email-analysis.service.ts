@@ -339,7 +339,7 @@ LIMIT 1
 \`\`\``;
     }
 
-    return `## Email Received from Valuer-General's Office
+    return `## Email to Classify
 
 Subject: ${subject ?? '(no subject)'}
 
@@ -348,45 +348,37 @@ ${plainBody}
 
 ---
 
-## Your Task — follow ALL steps in order
-
-### Step 1 — Extract property identifiers:
-Identify:
-- **PID** (e.g. "3007700" from "PID-3007700", "PID: 3007700", or "PID 3007700")
-- **Property address** (e.g. "1 Smith Street, Sydney NSW 2000")
-- **Case reference** (e.g. "LTD-2024-ABC-001")
-- **Lodgment reference** (e.g. "VG-DC-2025-001-1746000000")
-
-### Step 2 — Classify the outcome:
-Determine whether the VG has upheld or declined the objection based on the email's language and overall outcome.
-- **approved** — the objection was upheld in the client's favour (any reduction counts)
-- **declined** — the objection was rejected, original valuation stands
-- **needs_review** — ambiguous, procedural, or no clear final determination
-
-When in doubt, choose \`needs_review\`.
-
 ${step3}
 
-### Step 4 — Return a single JSON object only (no prose before or after):
+---
+
+## Required Output
+
+Classify this email and return a single JSON object. Follow the system prompt rules silently — do not narrate steps.
 
 \`\`\`json
 {
-  "pid": "<PID string from the email, or null>",
-  "address": "<property address from the email, or null>",
+  "pid": "<PID digits from email, or null>",
+  "address": "<property address from email, or null — always include if visible>",
   "outcome": "approved" | "declined" | "needs_review",
-  "confidence": 0.0–1.0,
-  "reasoning": "one sentence citing the key signal",
+  "confidence": 0.0,
+  "reasoning": "one sentence citing the matched phrase or reason",
   "case_id": "<UUID from matched case, or null>",
-  "conflict_detected": true | false
+  "conflict_detected": false
 }
 \`\`\`
 
-Set \`conflict_detected: true\` only when two or more identifiers (e.g. PID and address) resolve to **different** cases. In that scenario also set \`case_id: null\` and \`outcome: "needs_review"\`.`;
+Rules:
+- \`outcome\` must be exactly \`"approved"\`, \`"declined"\`, or \`"needs_review"\`
+- Always extract \`address\` if visible — even if no case match is possible
+- \`conflict_detected: true\` only when PID and address resolve to **different** cases`;
   }
 
   private parseResponse(raw: string): VgEmailResult {
-    const objectMatch = raw.match(/\{[\s\S]*\}/);
-    const arrayMatch = raw.match(/\[[\s\S]*\]/);
+    // Prefer extracting from a markdown code fence to avoid greedy-regex grabbing prose before the JSON block.
+    const fenceMatch = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
+    const objectMatch = fenceMatch ? fenceMatch[1].match(/\{[\s\S]*\}/) : raw.match(/\{[\s\S]*\}/);
+    const arrayMatch = fenceMatch ? fenceMatch[1].match(/\[[\s\S]*\]/) : raw.match(/\[[\s\S]*\]/);
 
     let item: unknown;
     try {
