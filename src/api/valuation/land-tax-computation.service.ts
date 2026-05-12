@@ -81,7 +81,7 @@ export class LandTaxComputationService {
         base_amount: baseAmount,
         marginal_rate_pct: marginalRatePct,
         land_tax_payable: round2(landTaxPayable),
-        foreign_surcharge_pct: isForeign ? FOREIGN_SURCHARGE_PCT : 0,
+        foreign_surcharge_pct: isForeign ? FOREIGN_SURCHARGE_PCT : null,
         foreign_surcharge: foreignSurcharge,
         total_tax_payable: totalTaxPayable,
         tax_saved: round2(taxSaved),
@@ -123,7 +123,10 @@ export class LandTaxComputationService {
     const threshold = ownershipType === OwnershipType.COMPANY_TRUST ? 0 : rates.threshold;
     if (landValue <= threshold) return { baseAmount: 0, marginalRatePct: 0 };
     if (landValue > rates.premiumThreshold) {
-      return { baseAmount: rates.premiumBaseAmount, marginalRatePct: rates.premiumRatePct };
+      const displayBase = ownershipType === OwnershipType.COMPANY_TRUST
+        ? rates.baseAmount + (rates.premiumThreshold * rates.marginalRatePct) / 100
+        : rates.premiumBaseAmount;
+      return { baseAmount: displayBase, marginalRatePct: rates.premiumRatePct };
     }
     return { baseAmount: rates.baseAmount, marginalRatePct: rates.marginalRatePct };
   }

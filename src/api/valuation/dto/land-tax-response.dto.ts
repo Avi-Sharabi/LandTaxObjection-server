@@ -52,8 +52,8 @@ export class LandTaxResponseDto {
   land_tax_payable: number;
 
   @Expose()
-  @ApiProperty({ description: 'Foreign surcharge rate applied (%)', example: 4 })
-  foreign_surcharge_pct: number;
+  @ApiProperty({ description: 'Foreign surcharge rate applied (%). Null when is_foreign is false.', example: 4, nullable: true })
+  foreign_surcharge_pct: number | null;
 
   @Expose()
   @ApiProperty({ description: 'Annual foreign surcharge on disputed value (0 if not foreign) ($)', example: 0 })

@@ -49,9 +49,9 @@ export class ValuationController {
   @ApiResponse({ status: 201, type: LandTaxResponseDto, description: 'Full land tax computation result with savings analysis' })
   @ApiResponse({ status: 400, description: 'Tax year not supported, or neither vg_assessed_value nor vg_year_values provided' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
-  computeLandTax(
+  async computeLandTax(
     @Body() dto: ComputeLandTaxDto,
-  ): LandTaxResponseDto {
+  ): Promise<LandTaxResponseDto> {
     return this.landTaxComputationService.computeLandTax(dto);
   }
 }
