@@ -20,6 +20,7 @@ import { PdfStorageHandler } from './intake/pdf-storage.handler';
 import { fyiStorageService } from 'src/common/fyi-storage/fyi-storage.service';
 import { ApprovalReminderTask } from './approval-reminder.task';
 import { VGResponseMonitorScheduler } from './vg-response-monitor.scheduler';
+import { DisputeCaseSubscriber } from './dispute-case.subscriber';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { AuditLogModule } from '../audit-log/audit-log.module';
 import { AuditLog } from '../audit-log/entities/audit-log.entity';
@@ -53,6 +54,7 @@ import { AuditLog } from '../audit-log/entities/audit-log.entity';
     fyiStorageService,
     ApprovalReminderTask,
     VGResponseMonitorScheduler,
+    DisputeCaseSubscriber,
   ],
 })
 export class DisputeCasesModule {}

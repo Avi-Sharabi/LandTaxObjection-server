@@ -265,7 +265,6 @@ export class DisputeCasesController {
     return this.disputeCasesService.submitToVg(id, req.user.id, req.user.fullName);
   }
 
-
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @Delete(':id')

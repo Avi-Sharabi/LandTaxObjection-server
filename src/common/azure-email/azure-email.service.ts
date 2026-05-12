@@ -59,7 +59,7 @@ export class AzureEmailService implements OnModuleInit {
             } else {
                 // Render {{#if key}}...{{/if}} blocks: include content when value is truthy, omit when falsy.
                 const ifRegex = new RegExp(
-                    `\\{\\{#if ${key}\\}\\}([\\s\\S]*?)\\{\\{/if\\}\\}`,
+                    `\\{\\{#if ${key}\\}\\}([\\s\\S]*?)\\{\\{/if(?:\\s+${key})?\\}\\}`,
                     'g',
                 );
                 html = html.replace(ifRegex, value ? '$1' : '');
