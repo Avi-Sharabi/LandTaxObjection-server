@@ -10,6 +10,9 @@ export function createRedisConfig(config: ConfigService): BullRootModuleOptions 
       ...(isProduction(config) && {
         password: config.getOrThrow<string>('REDIS_PASSWORD'),
         tls: {},
+        lazyConnect: true,
+        maxRetriesPerRequest: null,   // required by BullMQ
+        enableReadyCheck: false,      // recommended for Azure Redis
       }),
     },
   };
