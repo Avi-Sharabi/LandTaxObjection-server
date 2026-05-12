@@ -33,7 +33,7 @@ export class McpService implements OnModuleInit {
   constructor(@InjectDataSource() private dataSource: DataSource) {}
 
   async onModuleInit(): Promise<void> {
-    const skillsDir = path.join(process.cwd(), 'src', 'skills');
+    const skillsDir = path.join(__dirname, '..', 'skills');
     try {
       await fs.promises.access(skillsDir);
     } catch {
