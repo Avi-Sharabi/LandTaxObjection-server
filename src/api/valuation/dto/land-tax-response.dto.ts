@@ -16,16 +16,20 @@ export class LandTaxResponseDto {
   vg_average_land_value: number;
 
   @Expose()
-  @ApiProperty({ description: 'Land tax at the VG-assessed value + additional_land_values — before dispute ($)', example: 38900 })
-  vg_land_tax: number;
-
-  @Expose()
   @ApiProperty({ description: 'The disputed/appraised land value being argued to the VG ($)', example: 2500000 })
   disputed_land_value: number;
 
   @Expose()
   @ApiProperty({ description: 'Whether aggregation was applied (additional_land_values were provided)', example: false })
   is_aggregated: boolean;
+
+  @Expose()
+  @ApiProperty({ description: 'Ownership type: individual or company_trust', example: 'individual' })
+  ownership_type: string;
+
+  @Expose()
+  @ApiProperty({ description: 'Whether the owner is a foreign person/company (4% surcharge applies)', example: false })
+  is_foreign: boolean;
 
   @Expose()
   @ApiProperty({ description: 'Total land value used for threshold calculation: disputed_land_value + additional_land_values ($)', example: 2500000 })
@@ -48,7 +52,31 @@ export class LandTaxResponseDto {
   land_tax_payable: number;
 
   @Expose()
-  @ApiProperty({ description: 'Annual tax saved: vg_land_tax − land_tax_payable. Always ≥ 0 ($)', example: 16000 })
+  @ApiProperty({ description: 'Foreign surcharge rate applied (%)', example: 4 })
+  foreign_surcharge_pct: number;
+
+  @Expose()
+  @ApiProperty({ description: 'Annual foreign surcharge on disputed value (0 if not foreign) ($)', example: 0 })
+  foreign_surcharge: number;
+
+  @Expose()
+  @ApiProperty({ description: 'Total tax payable on disputed value including foreign surcharge ($)', example: 22900 })
+  total_tax_payable: number;
+
+  @Expose()
+  @ApiProperty({ description: 'Standard land tax at VG value before dispute ($)', example: 38900 })
+  vg_land_tax: number;
+
+  @Expose()
+  @ApiProperty({ description: 'Foreign surcharge at VG value (0 if not foreign) ($)', example: 0 })
+  vg_foreign_surcharge: number;
+
+  @Expose()
+  @ApiProperty({ description: 'Total tax at VG value including foreign surcharge ($)', example: 38900 })
+  vg_total_tax: number;
+
+  @Expose()
+  @ApiProperty({ description: 'Annual tax saved (total tax): vg_total_tax − total_tax_payable. Always ≥ 0 ($)', example: 16000 })
   tax_saved: number;
 
   // ── Client Savings & YML Profit Analysis ─────────────────────────────────

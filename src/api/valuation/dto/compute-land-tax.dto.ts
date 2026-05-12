@@ -2,6 +2,8 @@ import {
   ArrayMaxSize,
   ArrayMinSize,
   IsArray,
+  IsBoolean,
+  IsEnum,
   IsInt,
   IsNotEmpty,
   IsNumber,
@@ -12,6 +14,11 @@ import {
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
+
+export enum OwnershipType {
+  INDIVIDUAL = 'individual',
+  COMPANY_TRUST = 'company_trust',
+}
 
 export class ComputeLandTaxDto {
   @ApiProperty({
@@ -89,4 +96,25 @@ export class ComputeLandTaxDto {
   @Min(0)
   @Max(100)
   yml_fee_share_pct?: number;
+
+  @ApiPropertyOptional({
+    description:
+      'Ownership type of the property. Company/trust ownership removes the tax-free threshold — ' +
+      '1.6% applies to the full land value from $1. Defaults to "individual".',
+    enum: OwnershipType,
+    default: OwnershipType.INDIVIDUAL,
+  })
+  @IsOptional()
+  @IsEnum(OwnershipType)
+  ownership_type?: OwnershipType;
+
+  @ApiPropertyOptional({
+    description:
+      'Whether the owner is a foreign person or foreign company. ' +
+      'Adds a 4% surcharge on the taxable base (above threshold for individuals; full value for companies/trusts).',
+    default: false,
+  })
+  @IsOptional()
+  @IsBoolean()
+  is_foreign?: boolean;
 }

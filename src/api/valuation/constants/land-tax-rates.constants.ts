@@ -25,12 +25,13 @@ export const NSW_LAND_TAX_RATES: Record<number, NswLandTaxRates> = {
     premiumRatePct: 2.0,
   },
   // 2025–26 financial year (valuation date = 1 July 2025).
+  // premiumBaseAmount = $100 + ($6,571,000 − $1,075,000) × 1.6% = $88,036
   2026: {
     threshold: 1_075_000,
     baseAmount: 100,
     marginalRatePct: 1.6,
     premiumThreshold: 6_571_000,
-    premiumBaseAmount: 88_395,
+    premiumBaseAmount: 88_036,
     premiumRatePct: 2.0,
   },
 };
