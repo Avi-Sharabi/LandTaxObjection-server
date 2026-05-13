@@ -37,7 +37,7 @@ export class DisputeCaseSubscriber implements EntitySubscriberInterface<DisputeC
     try {
       const fullCase = await event.manager.findOne(DisputeCase, {
         where: { id: caseId },
-        relations: ['client', 'property', 'assigned_accountant'],
+        relations: ['client', 'property', 'assigned_accountant', 'valuation_notice'],
       });
 
       if (!fullCase) return;
@@ -46,6 +46,11 @@ export class DisputeCaseSubscriber implements EntitySubscriberInterface<DisputeC
         day: '2-digit', month: 'long', year: 'numeric',
         hour: '2-digit', minute: '2-digit',
       });
+
+      const rawAssessedValue = fullCase.original_assessed_value ?? fullCase.valuation_notice?.assessed_land_value;
+      const assessedLandValue = rawAssessedValue != null
+        ? new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' }).format(Number(rawAssessedValue))
+        : 'N/A';
 
       if (fullCase.client?.email) {
         this.azureEmailService
@@ -58,6 +63,7 @@ export class DisputeCaseSubscriber implements EntitySubscriberInterface<DisputeC
             isApproved: newStatus === DisputeStatus.VG_APPROVED,
             assessorFullName: fullCase.assigned_accountant?.fullName ?? 'Your YML Adviser',
             resolvedAt: resolvedAtStr,
+            assessedLandValue,
           })
           .catch((err) => this.logger.error('[VG-SUBSCRIBER] Email send failed', err));
       }

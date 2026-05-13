@@ -281,6 +281,7 @@ export class AzureEmailService implements OnModuleInit {
         isApproved: boolean;
         assessorFullName: string;
         resolvedAt: string;
+        assessedLandValue: string;
     }): Promise<void> {
         const contactEmail = this.config.getOrThrow<string>('CONTACT_EMAIL');
 
@@ -294,6 +295,7 @@ export class AzureEmailService implements OnModuleInit {
             outcomeLabel: params.isApproved ? 'Approved' : 'Declined',
             assessorFullName: params.assessorFullName,
             resolvedAt: params.resolvedAt,
+            assessedLandValue: params.assessedLandValue,
             contactEmail,
         });
 

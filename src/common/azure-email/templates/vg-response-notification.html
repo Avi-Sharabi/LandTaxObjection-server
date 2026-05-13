@@ -4,178 +4,160 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>VG Response Received — {{caseReference}}</title>
+  <title>YML Group — Land Tax Dispute</title>
+  <!--[if mso]>
+  <noscript>
+    <xml>
+      <o:OfficeDocumentSettings>
+        <o:PixelsPerInch>96</o:PixelsPerInch>
+      </o:OfficeDocumentSettings>
+    </xml>
+  </noscript>
+  <![endif]-->
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { margin: 0; padding: 0; background: #f4f4f4; font-family: Arial, Helvetica, sans-serif; font-size: 14px; color: #333; }
+  </style>
 </head>
 
-<body style="margin: 0; padding: 0; background-color: #f5f5f5; font-family: Arial, sans-serif; color: #333333;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background-color: #f5f5f5; padding: 40px 0;">
-    <tr>
-      <td align="center">
+<body style="margin: 0; padding: 0; background: #f4f4f4; font-family: Arial, Helvetica, sans-serif; font-size: 14px; color: #333;">
 
-        <!-- Card -->
-        <table width="560" cellpadding="0" cellspacing="0"
-          style="background-color: #ffffff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.08);">
+  <!-- Outer centering table -->
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background: #f4f4f4;">
+    <tr>
+      <td align="center" style="padding: 30px 20px;">
+
+        <!-- Email container -->
+        <table width="560" cellpadding="0" cellspacing="0" border="0" style="background: #ffffff; border: 1px solid #dddddd; max-width: 560px; width: 100%;">
 
           <!-- Header -->
           <tr>
-            <td style="background-color: #1976d2; padding: 24px 40px;">
-              <p style="margin: 0; color: #ffffff; font-size: 18px; font-weight: bold; letter-spacing: 0.5px;">
-                YML Group — Land Tax Dispute
-              </p>
+            <td bgcolor="#1a5fb4" style="background: #1a5fb4; padding: 16px 20px;">
+              <h1 style="margin: 0; color: #ffffff; font-size: 16px; font-weight: bold; font-family: Arial, Helvetica, sans-serif;">YML Group — Land Tax Dispute</h1>
             </td>
           </tr>
 
           <!-- Body -->
           <tr>
-            <td style="padding: 40px 40px 32px 40px;">
+            <td style="padding: 32px 40px 24px 40px;">
 
-              <!-- Approved: Icon + Title -->
+              <p style="font-size: 14px; margin-bottom: 14px; color: #333; font-family: Arial, Helvetica, sans-serif;">Dear {{clientName}},</p>
+
+              <!-- Approved body copy -->
               {{#if isApproved}}
-              <div style="text-align: center; margin-bottom: 28px;">
-                <svg xmlns="http://www.w3.org/2000/svg" width="56" height="56" viewBox="0 0 24 24" fill="#388e3c">
-                  <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z" />
-                </svg>
-                <h2 style="margin: 12px 0 4px 0; font-size: 20px; font-weight: 600; color: #1a1a1a;">
-                  VG Response Received — Objection Approved
-                </h2>
-                <p style="margin: 0; font-size: 14px; color: #666666;">
-                  The Valuer-General has reviewed your objection and approved the outcome.<br />
-                  Please contact your YML Internal Assessor if you have any questions.
-                </p>
-              </div>
+              <p style="font-size: 14px; line-height: 1.6; color: #333; margin-bottom: 16px; font-family: Arial, Helvetica, sans-serif;">
+                We are pleased to advise that the Valuer-General has reviewed and assessed your objection in relation to the land tax valuation for your property. After due consideration, the Valuer-General has approved the objection, and the assessed land value has been revised accordingly.
+              </p>
+              <p style="font-size: 14px; line-height: 1.6; color: #333; margin-bottom: 16px; font-family: Arial, Helvetica, sans-serif;">
+                This is a positive outcome, and we congratulate you on the successful resolution of your land tax dispute. Your assigned assessor will be in touch shortly to discuss the next steps and any further actions required on your behalf.
+              </p>
               {{/if isApproved}}
 
-              <!-- Declined: Icon + Title -->
+              <!-- Declined body copy -->
               {{#if isDeclined}}
-              <div style="text-align: center; margin-bottom: 28px;">
-                <svg xmlns="http://www.w3.org/2000/svg" width="56" height="56" viewBox="0 0 24 24" fill="#c62828">
-                  <path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z" />
-                </svg>
-                <h2 style="margin: 12px 0 4px 0; font-size: 20px; font-weight: 600; color: #1a1a1a;">
-                  VG Response Received — Objection Declined
-                </h2>
-                <p style="margin: 0; font-size: 14px; color: #666666;">
-                  The Valuer-General has reviewed your objection and declined the outcome.<br />
-                  Please contact your YML Internal Assessor to discuss your options.
-                </p>
-              </div>
+              <p style="font-size: 14px; line-height: 1.6; color: #333; margin-bottom: 16px; font-family: Arial, Helvetica, sans-serif;">
+                We wish to advise that the Valuer-General has reviewed and assessed your objection in relation to the land tax valuation for your property. After due consideration, the Valuer-General has declined to uphold the objection, and the original assessed value has been maintained.
+              </p>
+              <p style="font-size: 14px; line-height: 1.6; color: #333; margin-bottom: 16px; font-family: Arial, Helvetica, sans-serif;">
+                We understand this may not be the outcome you were hoping for. Should you wish to explore further options, we strongly recommend seeking independent legal advice or lodging a formal appeal through the appropriate legal channels.
+              </p>
               {{/if isDeclined}}
+
+              <p style="font-size: 14px; line-height: 1.6; color: #333; margin-bottom: 16px; font-family: Arial, Helvetica, sans-serif;">Your case details are below:</p>
 
               <!-- Case Reference -->
-              <div style="text-align: center; margin-bottom: 28px;">
-                <p
-                  style="margin: 0 0 6px 0; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #1976d2; font-weight: bold;">
-                  Case Reference
-                </p>
-                <span
-                  style="background-color: #e3f2fd; border: 1.5px solid #1976d2; border-radius: 6px; padding: 8px 24px; font-size: 20px; font-weight: bold; color: #1976d2; letter-spacing: 1px; display: inline-block; min-width: 200px;">
-                  {{caseReference}}
-                </span>
-              </div>
+              <p style="text-align: center; font-size: 11px; font-weight: bold; letter-spacing: 0.08em; color: #1a5fb4; text-transform: uppercase; margin-bottom: 6px; font-family: Arial, Helvetica, sans-serif;">Case Reference</p>
+              <p style="text-align: center; font-size: 22px; font-weight: bold; color: #1a5fb4; margin-bottom: 16px; font-family: Arial, Helvetica, sans-serif;">{{caseReference}}</p>
 
-              <!-- Outcome Badge -->
+              <!-- Outcome Badge — Approved -->
               {{#if isApproved}}
-              <div style="text-align: center; margin-bottom: 28px;">
-                <p
-                  style="margin: 0 0 6px 0; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #388e3c; font-weight: bold;">
-                  Outcome
-                </p>
-                <span
-                  style="background-color: #e8f5e9; border: 1.5px solid #388e3c; border-radius: 6px; padding: 8px 24px; font-size: 16px; font-weight: bold; color: #388e3c; letter-spacing: 1px; display: inline-block; min-width: 200px;">
-                  {{outcomeLabel}}
-                </span>
-              </div>
-              {{/if isApproved}}
-
-              {{#if isDeclined}}
-              <div style="text-align: center; margin-bottom: 28px;">
-                <p
-                  style="margin: 0 0 6px 0; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #c62828; font-weight: bold;">
-                  Outcome
-                </p>
-                <span
-                  style="background-color: #ffebee; border: 1.5px solid #c62828; border-radius: 6px; padding: 8px 24px; font-size: 16px; font-weight: bold; color: #c62828; letter-spacing: 1px; display: inline-block; min-width: 200px;">
-                  {{outcomeLabel}}
-                </span>
-              </div>
-              {{/if isDeclined}}
-
-              <!-- Details Table -->
-              <table width="100%" cellpadding="0" cellspacing="0"
-                style="border: 1px solid #e0e0e0; border-radius: 6px; overflow: hidden; margin-bottom: 28px;">
-                <tr style="background-color: #f5f5f5;">
-                  <td colspan="2"
-                    style="padding: 10px 16px; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #1976d2; font-weight: bold; border-bottom: 1px solid #e0e0e0;">
-                    Case Details
+              <p style="text-align: center; font-size: 11px; font-weight: bold; letter-spacing: 0.08em; color: #1e7e34; text-transform: uppercase; margin-bottom: 6px; font-family: Arial, Helvetica, sans-serif;">Outcome</p>
+              <table width="180" cellpadding="0" cellspacing="0" border="0" align="center" style="margin: 0 auto 24px auto;">
+                <tr>
+                  <td align="center" bgcolor="#f0fff4" style="background: #f0fff4; border: 1.5px solid #1e7e34; border-radius: 4px; padding: 7px 20px; font-family: Arial, Helvetica, sans-serif; font-size: 15px; font-weight: bold; color: #1e7e34;">
+                    {{outcomeLabel}}
                   </td>
                 </tr>
+              </table>
+              {{/if isApproved}}
+
+              <!-- Outcome Badge — Declined -->
+              {{#if isDeclined}}
+              <p style="text-align: center; font-size: 11px; font-weight: bold; letter-spacing: 0.08em; color: #c0392b; text-transform: uppercase; margin-bottom: 6px; font-family: Arial, Helvetica, sans-serif;">Outcome</p>
+              <table width="180" cellpadding="0" cellspacing="0" border="0" align="center" style="margin: 0 auto 24px auto;">
                 <tr>
-                  <td width="40%"
-                    style="padding: 10px 16px; font-size: 13px; color: #777777; border-bottom: 1px solid #f0f0f0;">
-                    Client</td>
-                  <td width="60%"
-                    style="padding: 10px 16px; font-size: 13px; color: #1a1a1a; font-weight: bold; border-bottom: 1px solid #f0f0f0;">
-                    {{clientName}}</td>
-                </tr>
-                <tr style="background-color: #fafafa;">
-                  <td style="padding: 10px 16px; font-size: 13px; color: #777777; border-bottom: 1px solid #f0f0f0;">
-                    Property Address</td>
-                  <td
-                    style="padding: 10px 16px; font-size: 13px; color: #1a1a1a; font-weight: bold; border-bottom: 1px solid #f0f0f0;">
-                    {{propertyAddress}}</td>
-                </tr>
-                <tr>
-                  <td style="padding: 10px 16px; font-size: 13px; color: #777777; border-bottom: 1px solid #f0f0f0;">
-                    Lodgment Reference</td>
-                  <td style="padding: 10px 16px; font-size: 13px; color: #1a1a1a; font-weight: bold; border-bottom: 1px solid #f0f0f0;">
-                    {{lodgmentReferenceNumber}}</td>
-                </tr>
-                <tr style="background-color: #fafafa;">
-                  <td style="padding: 10px 16px; font-size: 13px; color: #777777; border-bottom: 1px solid #f0f0f0;">
-                    Managed By</td>
-                  <td style="padding: 10px 16px; font-size: 13px; color: #1a1a1a; font-weight: bold; border-bottom: 1px solid #f0f0f0;">
-                    {{assessorFullName}}</td>
-                </tr>
-                <tr>
-                  <td style="padding: 10px 16px; font-size: 13px; color: #777777;">
-                    Response Received</td>
-                  <td style="padding: 10px 16px; font-size: 13px; color: #1a1a1a; font-weight: bold;">
-                    {{resolvedAt}}</td>
+                  <td align="center" bgcolor="#fff5f5" style="background: #fff5f5; border: 1.5px solid #c0392b; border-radius: 4px; padding: 7px 20px; font-family: Arial, Helvetica, sans-serif; font-size: 15px; font-weight: bold; color: #c0392b;">
+                    {{outcomeLabel}}
+                  </td>
                 </tr>
               </table>
+              {{/if isDeclined}}
 
-              <!-- Contact -->
-              <p style="margin: 0 0 4px 0; font-size: 13px; color: #555555; text-align: center;">
-                If you have any questions, contact us at
-                <a href="mailto:{{contactEmail}}" style="color: #1976d2; text-decoration: none;">{{contactEmail}}</a>
+              <!-- Case Details Table -->
+              <table width="100%" cellpadding="0" cellspacing="0" border="0" style="border-collapse: collapse; border: 1px solid #d0d0d0; margin-bottom: 24px;">
+                <thead>
+                  <tr>
+                    <th colspan="2" bgcolor="#e8f0fb" style="background: #e8f0fb; color: #1a5fb4; font-size: 11px; font-weight: bold; letter-spacing: 0.08em; text-transform: uppercase; padding: 10px 14px; text-align: left; border-bottom: 1px solid #d0d0d0; font-family: Arial, Helvetica, sans-serif;">
+                      Client and Property Information
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td width="42%" style="padding: 9px 14px; font-size: 14px; color: #555; border-bottom: 1px solid #e8e8e8; vertical-align: top; font-family: Arial, Helvetica, sans-serif;">Client Name</td>
+                    <td style="padding: 9px 14px; font-size: 14px; color: #333; font-weight: bold; border-bottom: 1px solid #e8e8e8; vertical-align: top; font-family: Arial, Helvetica, sans-serif;">{{clientName}}</td>
+                  </tr>
+                  <tr>
+                    <td width="42%" style="padding: 9px 14px; font-size: 14px; color: #555; border-bottom: 1px solid #e8e8e8; vertical-align: top; font-family: Arial, Helvetica, sans-serif;">Property Address</td>
+                    <td style="padding: 9px 14px; font-size: 14px; color: #333; font-weight: bold; border-bottom: 1px solid #e8e8e8; vertical-align: top; font-family: Arial, Helvetica, sans-serif;">{{propertyAddress}}</td>
+                  </tr>
+                  <tr>
+                    <td width="42%" style="padding: 9px 14px; font-size: 14px; color: #555; border-bottom: 1px solid #e8e8e8; vertical-align: top; font-family: Arial, Helvetica, sans-serif;">VG Assessed Value</td>
+                    <td style="padding: 9px 14px; font-size: 14px; color: #333; font-weight: bold; border-bottom: 1px solid #e8e8e8; vertical-align: top; font-family: Arial, Helvetica, sans-serif;">{{assessedLandValue}}</td>
+                  </tr>
+                  <tr>
+                    <td width="42%" style="padding: 9px 14px; font-size: 14px; color: #555; border-bottom: 1px solid #e8e8e8; vertical-align: top; font-family: Arial, Helvetica, sans-serif;">Lodgment Reference</td>
+                    <td style="padding: 9px 14px; font-size: 14px; color: #333; font-weight: bold; border-bottom: 1px solid #e8e8e8; vertical-align: top; font-family: Arial, Helvetica, sans-serif;">{{lodgmentReferenceNumber}}</td>
+                  </tr>
+                  <tr>
+                    <td width="42%" style="padding: 9px 14px; font-size: 14px; color: #555; border-bottom: 1px solid #e8e8e8; vertical-align: top; font-family: Arial, Helvetica, sans-serif;">Managed By</td>
+                    <td style="padding: 9px 14px; font-size: 14px; color: #333; font-weight: bold; border-bottom: 1px solid #e8e8e8; vertical-align: top; font-family: Arial, Helvetica, sans-serif;">{{assessorFullName}}</td>
+                  </tr>
+                  <tr>
+                    <td width="42%" style="padding: 9px 14px; font-size: 14px; color: #555; vertical-align: top; font-family: Arial, Helvetica, sans-serif;">Response Received</td>
+                    <td style="padding: 9px 14px; font-size: 14px; color: #333; font-weight: bold; vertical-align: top; font-family: Arial, Helvetica, sans-serif;">{{resolvedAt}}</td>
+                  </tr>
+                </tbody>
+              </table>
+
+              <!-- Enquiry -->
+              <p style="font-size: 14px; line-height: 1.6; color: #333; margin-bottom: 24px; font-family: Arial, Helvetica, sans-serif;">
+                Should you have any enquiries regarding this matter, please do not hesitate to contact our office at
+                <a href="mailto:{{contactEmail}}" style="color: #1a5fb4; text-decoration: none;">{{contactEmail}}</a>
               </p>
 
-            </td>
-          </tr>
+              <!-- Sign-off -->
+              <p style="font-size: 14px; color: #333; margin-bottom: 4px; margin-top: 8px; font-family: Arial, Helvetica, sans-serif;">Regards,</p>
+              <p style="font-size: 14px; font-weight: bold; font-family: Arial, Helvetica, sans-serif;">YML AI</p>
+              <p style="font-size: 13px; color: #555; font-family: Arial, Helvetica, sans-serif;">A YML Group Company</p>
 
-          <!-- Divider -->
-          <tr>
-            <td style="padding: 0 40px;">
-              <hr style="border: none; border-top: 1px solid #eeeeee; margin: 0;" />
             </td>
           </tr>
 
           <!-- Footer -->
           <tr>
-            <td style="padding: 20px 40px; text-align: center;">
-              <p style="margin: 0; font-size: 12px; color: #999999;">
-                This is an automated notification from the YML Group Land Tax Dispute platform.<br />
-                Please do not reply to this email.
-              </p>
+            <td bgcolor="#f9f9f9" style="background: #f9f9f9; border-top: 1px solid #e0e0e0; padding: 14px 40px; text-align: center; font-size: 11px; color: #888; line-height: 1.6; font-family: Arial, Helvetica, sans-serif;">
+              This is an automated notification from the YML Group Land Tax Dispute platform.<br />
+              Please do not reply to this email.
             </td>
           </tr>
 
         </table>
-        <!-- End Card -->
 
       </td>
     </tr>
   </table>
+
 </body>
 
 </html>
