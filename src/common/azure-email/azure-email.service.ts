@@ -69,8 +69,17 @@ export class AzureEmailService implements OnModuleInit {
         return html;
     }
 
-    async sendDisputeApplication(caseReferences: string[], sendTo: string): Promise<void> {
-        const html = this.loadTemplate('dispute-application-submitted', { caseReferences });
+    async sendDisputeApplication(
+        caseReferences: string[],
+        sendTo: string,
+        details?: { clientName?: string; assessorName?: string; propertyAddresses?: string[] },
+    ): Promise<void> {
+        const html = this.loadTemplate('dispute-application-submitted', {
+            caseReferences,
+            clientName: details?.clientName ?? '',
+            assessorName: details?.assessorName ?? 'Assessment Team',
+            propertyAddresses: details?.propertyAddresses ?? [],
+        });
 
         const subjectLabel = caseReferences.length === 1
             ? `[${caseReferences[0]}]`
@@ -106,6 +115,7 @@ export class AzureEmailService implements OnModuleInit {
         const contactEmail = this.config.getOrThrow<string>('CONTACT_EMAIL');
 
         const html = this.loadTemplate('advisory-letter-notification', {
+            clientName: data.clientName,
             caseReference: data.caseReference,
             propertyAddress: data.propertyAddress,
             vgAssessedValue: data.vgAssessedValue,
@@ -140,6 +150,8 @@ export class AzureEmailService implements OnModuleInit {
         approvalLink: string;
         firmName: string;
         contactEmail: string;
+        caseReference?: string;
+        assessorName?: string;
         attachments?: EmailAttachment[];
     }): Promise<void> {
         const html = this.loadTemplate('objection-package-approval', {
@@ -149,6 +161,8 @@ export class AzureEmailService implements OnModuleInit {
             approval_link: params.approvalLink,
             firm_name: params.firmName,
             contact_email: params.contactEmail,
+            case_reference: params.caseReference ?? '',
+            assessor_name: params.assessorName ?? '',
         });
 
         const message = {
@@ -157,7 +171,7 @@ export class AzureEmailService implements OnModuleInit {
                 to: [{ address: params.sendTo, displayName: params.clientName }],
             },
             content: {
-                subject: 'Action Required \u2013 Please Review and Approve Your Objection Package',
+                subject: `Objection Package Update \u2013 ${params.propertyAddress}`,
                 html,
             },
             ...(params.attachments?.length && { attachments: params.attachments }),
