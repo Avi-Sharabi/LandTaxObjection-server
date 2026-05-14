@@ -14,13 +14,11 @@ import {
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
+import { OwnershipType } from '../../../common/enums/ownership-type.enum';
 
-export enum OwnershipType {
-  INDIVIDUAL = 'individual',
-  COMPANY_TRUST = 'company_trust',
-}
+export { OwnershipType } from '../../../common/enums/ownership-type.enum';
 
-export class ComputeLandTaxDto {
+export class CalculateTaxDto {
   @ApiProperty({
     description: 'NSW tax year (e.g. 2026). Valuation date = 1 July of (tax_year - 1).',
     example: 2026,
@@ -56,7 +54,7 @@ export class ComputeLandTaxDto {
   @ApiPropertyOptional({
     description:
       'Three consecutive annual land values used by Revenue NSW to compute the 3-year average ' +
-      '(e.g. [1150000, 1100000, 1050000] for 2022–2024). ' +
+      '(e.g. [1150000, 1100000, 1050000] for T, T-1, T-2). ' +
       'When provided, overrides vg_assessed_value for tax comparison purposes.',
     type: [Number],
     example: [1150000, 1100000, 1050000],

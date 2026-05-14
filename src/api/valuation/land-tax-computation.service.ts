@@ -1,19 +1,23 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { Repository } from 'typeorm';
 import { plainToInstance } from 'class-transformer';
-import { ComputeLandTaxDto, OwnershipType } from './dto/compute-land-tax.dto';
+import { CalculateTaxDto, OwnershipType } from './dto/calculate-tax.dto';
 import { LandTaxResponseDto } from './dto/land-tax-response.dto';
-import { NSW_LAND_TAX_RATES, NswLandTaxRates } from './constants/land-tax-rates.constants';
-
-const DEFAULT_FEE_SHARE_PCT = 20;
-const FOREIGN_SURCHARGE_PCT = 4;
+import { LandTaxRate } from './entities/land-tax-rate.entity';
 
 @Injectable()
 export class LandTaxComputationService {
-  computeLandTax(dto: ComputeLandTaxDto): LandTaxResponseDto {
-    const rates = NSW_LAND_TAX_RATES[dto.tax_year];
+  constructor(
+    @InjectRepository(LandTaxRate)
+    private readonly landTaxRateRepo: Repository<LandTaxRate>,
+  ) {}
+
+  async computeLandTax(dto: CalculateTaxDto): Promise<LandTaxResponseDto> {
+    const rates = await this.landTaxRateRepo.findOne({ where: { tax_year: dto.tax_year } });
     if (!rates) {
       throw new BadRequestException(
-        `NSW land tax rates for tax year ${dto.tax_year} are not configured. Supported years: ${Object.keys(NSW_LAND_TAX_RATES).join(', ')}`,
+        `No land tax rates configured for tax year ${dto.tax_year}.`,
       );
     }
 
@@ -38,28 +42,26 @@ export class LandTaxComputationService {
     const additional = dto.additional_land_values?.reduce((sum, v) => sum + v, 0) ?? 0;
     const totalLandValue = disputedValue + additional;
 
-    // Tax on disputed value (standard land tax + foreign surcharge if applicable)
     const effectiveThreshold = ownershipType === OwnershipType.COMPANY_TRUST ? 0 : rates.threshold;
     const taxableValue = Math.max(0, totalLandValue - effectiveThreshold);
     const landTaxPayable = this.calcTax(totalLandValue, rates, ownershipType);
-    const foreignSurcharge = isForeign ? round2(this.calcSurcharge(totalLandValue, rates, ownershipType)) : 0;
+    const foreignSurcharge = isForeign
+      ? round2(this.calcSurcharge(totalLandValue, rates, ownershipType, rates.foreign_surcharge_pct))
+      : 0;
     const totalTaxPayable = round2(landTaxPayable + foreignSurcharge);
     const { baseAmount, marginalRatePct } = this.taxRateBand(totalLandValue, rates, ownershipType);
 
-    // Client Savings & YML Profit Analysis
-    // Include additional land values on both sides so threshold-band effects
-    // (e.g. crossing the premium threshold) are correctly reflected in the saving.
-    const feeSharePct = dto.yml_fee_share_pct ?? DEFAULT_FEE_SHARE_PCT;
+    const feeSharePct = dto.yml_fee_share_pct ?? 20;
     const vgTotal = vgAssessedValue + additional;
     const vgLandTax = this.calcTax(vgTotal, rates, ownershipType);
-    const vgForeignSurcharge = isForeign ? round2(this.calcSurcharge(vgTotal, rates, ownershipType)) : 0;
+    const vgForeignSurcharge = isForeign
+      ? round2(this.calcSurcharge(vgTotal, rates, ownershipType, rates.foreign_surcharge_pct))
+      : 0;
     const vgTotalTax = round2(vgLandTax + vgForeignSurcharge);
 
-    // taxSaved uses total tax (standard + surcharge) so foreign clients' full 5.6% saving is captured
     const taxSaved = Math.max(0, vgTotalTax - totalTaxPayable);
     const ymlRevenue = round2(taxSaved * feeSharePct / 100);
     const clientSavings = round2(taxSaved - ymlRevenue);
-    // 3-year cumulative (VG valuation typically holds 3 years)
     const taxSaved3yr = round2(taxSaved * 3);
     const clientSavings3yr = round2(clientSavings * 3);
 
@@ -81,7 +83,7 @@ export class LandTaxComputationService {
         base_amount: baseAmount,
         marginal_rate_pct: marginalRatePct,
         land_tax_payable: round2(landTaxPayable),
-        foreign_surcharge_pct: isForeign ? FOREIGN_SURCHARGE_PCT : null,
+        foreign_surcharge_pct: isForeign ? rates.foreign_surcharge_pct : null,
         foreign_surcharge: foreignSurcharge,
         total_tax_payable: totalTaxPayable,
         tax_saved: round2(taxSaved),
@@ -95,40 +97,43 @@ export class LandTaxComputationService {
     );
   }
 
-  private calcTax(landValue: number, rates: NswLandTaxRates, ownershipType: OwnershipType): number {
+  private calcTax(landValue: number, rates: LandTaxRate, ownershipType: OwnershipType): number {
     const threshold = ownershipType === OwnershipType.COMPANY_TRUST ? 0 : rates.threshold;
     if (landValue <= threshold) return 0;
-    if (landValue > rates.premiumThreshold) {
-      // For company/trust the premium base is recalculated without the individual threshold deduction
+    if (landValue > rates.premium_threshold) {
       const premiumBase = ownershipType === OwnershipType.COMPANY_TRUST
-        ? rates.baseAmount + (rates.premiumThreshold * rates.marginalRatePct) / 100
-        : rates.premiumBaseAmount;
-      return premiumBase + ((landValue - rates.premiumThreshold) * rates.premiumRatePct) / 100;
+        ? rates.base_amount + (rates.premium_threshold * rates.marginal_rate_pct) / 100
+        : rates.premium_base_amount;
+      return premiumBase + ((landValue - rates.premium_threshold) * rates.premium_rate_pct) / 100;
     }
-    return rates.baseAmount + ((landValue - threshold) * rates.marginalRatePct) / 100;
+    return rates.base_amount + ((landValue - threshold) * rates.marginal_rate_pct) / 100;
   }
 
-  // Foreign surcharge: 4% on value above threshold (individual) or full value (company/trust)
-  private calcSurcharge(landValue: number, rates: NswLandTaxRates, ownershipType: OwnershipType): number {
+  private calcSurcharge(
+    landValue: number,
+    rates: LandTaxRate,
+    ownershipType: OwnershipType,
+    foreignSurchargePct: number,
+  ): number {
     const threshold = ownershipType === OwnershipType.COMPANY_TRUST ? 0 : rates.threshold;
     const surchargeBase = Math.max(0, landValue - threshold);
-    return (surchargeBase * FOREIGN_SURCHARGE_PCT) / 100;
+    return (surchargeBase * foreignSurchargePct) / 100;
   }
 
   private taxRateBand(
     landValue: number,
-    rates: NswLandTaxRates,
+    rates: LandTaxRate,
     ownershipType: OwnershipType,
   ): { baseAmount: number; marginalRatePct: number } {
     const threshold = ownershipType === OwnershipType.COMPANY_TRUST ? 0 : rates.threshold;
     if (landValue <= threshold) return { baseAmount: 0, marginalRatePct: 0 };
-    if (landValue > rates.premiumThreshold) {
+    if (landValue > rates.premium_threshold) {
       const displayBase = ownershipType === OwnershipType.COMPANY_TRUST
-        ? rates.baseAmount + (rates.premiumThreshold * rates.marginalRatePct) / 100
-        : rates.premiumBaseAmount;
-      return { baseAmount: displayBase, marginalRatePct: rates.premiumRatePct };
+        ? rates.base_amount + (rates.premium_threshold * rates.marginal_rate_pct) / 100
+        : rates.premium_base_amount;
+      return { baseAmount: displayBase, marginalRatePct: rates.premium_rate_pct };
     }
-    return { baseAmount: rates.baseAmount, marginalRatePct: rates.marginalRatePct };
+    return { baseAmount: rates.base_amount, marginalRatePct: rates.marginal_rate_pct };
   }
 }
 

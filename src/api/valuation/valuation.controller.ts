@@ -9,7 +9,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ValuationService } from './valuation.service';
 import { SubmitAppraisalDto } from './dto/submit-appraisal.dto';
 import { AppraisalResponseDto } from './dto/appraisal-response.dto';
-import { ComputeLandTaxDto } from './dto/compute-land-tax.dto';
+import { CalculateTaxDto } from './dto/calculate-tax.dto';
 import { LandTaxResponseDto } from './dto/land-tax-response.dto';
 import { LandTaxComputationService } from './land-tax-computation.service';
 import { AuthResponseDto } from '../auth/dto/auth-response.dto';
@@ -50,7 +50,7 @@ export class ValuationController {
   @ApiResponse({ status: 400, description: 'Tax year not supported, or neither vg_assessed_value nor vg_year_values provided' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   async computeLandTax(
-    @Body() dto: ComputeLandTaxDto,
+    @Body() dto: CalculateTaxDto,
   ): Promise<LandTaxResponseDto> {
     return this.landTaxComputationService.computeLandTax(dto);
   }

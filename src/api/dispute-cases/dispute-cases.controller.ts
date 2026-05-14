@@ -34,6 +34,7 @@ import { CloseNoObjectionDto } from './dto/close-no-objection.dto';
 import { ApproveObjectionPackageDto } from './dto/approve-objection-package.dto';
 import { DisputeCaseResponseDto } from './dto/dispute-case-response.dto';
 import { AnalysisReportResponseDto } from './dto/analysis-report-response.dto';
+import { LandTaxResponseDto } from '../valuation/dto/land-tax-response.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from 'src/common/guards/roles.guard';
 import { Roles } from 'src/common/decorators/roles.decorator';
@@ -265,6 +266,19 @@ export class DisputeCasesController {
     return this.disputeCasesService.submitToVg(id, req.user.id, req.user.fullName);
   }
 
+
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @Post(':id/calculate-tax')
+  @ApiOperation({ summary: 'Compute land tax saved and profit for a dispute case' })
+  @ApiParam({ name: 'id', description: 'Dispute case UUID' })
+  @ApiResponse({ status: 201, type: LandTaxResponseDto })
+  @ApiResponse({ status: 400, description: 'Missing required data or unsupported tax year' })
+  @ApiResponse({ status: 401, description: 'Unauthorised' })
+  @ApiResponse({ status: 404, description: 'Dispute case not found' })
+  calculateTax(@Param('id') id: string): Promise<LandTaxResponseDto> {
+    return this.disputeCasesService.calculateTax(id);
+  }
 
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()

@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   GoneException,
   Injectable,
@@ -18,6 +19,10 @@ import { DisputeCaseResponseDto } from './dto/dispute-case-response.dto';
 import { AnalysisReportResponseDto } from './dto/analysis-report-response.dto';
 import { ApprovalDocumentsResponseDto } from './dto/approval-documents-response.dto';
 import { DisputeCase, DisputeStatus } from './entities/dispute-case.entity';
+import { ValuationNotice } from '../valuation-notices/entities/valuation-notice.entity';
+import { LandTaxComputationService } from '../valuation/land-tax-computation.service';
+import { LandTaxResponseDto } from '../valuation/dto/land-tax-response.dto';
+import { CalculateTaxDto, OwnershipType } from '../valuation/dto/calculate-tax.dto';
 import { DisputeIntakeOrchestrator } from './intake/dispute-intake.orchestrator';
 import { ComparablesService } from '../comparables/comparables.service';
 import { AzureEmailService } from 'src/common/azure-email/azure-email.service';
@@ -61,6 +66,9 @@ export class DisputeCasesService {
     private disputeCasesRepository: Repository<DisputeCase>,
     @InjectRepository(PackageDocument)
     private readonly packageDocumentRepo: Repository<PackageDocument>,
+    @InjectRepository(ValuationNotice)
+    private readonly valuationNoticeRepo: Repository<ValuationNotice>,
+    private readonly taxComputationService: LandTaxComputationService,
   ) { }
 
   async submitIntakeApplication(intakeDto: CreateDisputeIntakeDto): Promise<unknown> {
@@ -616,6 +624,75 @@ export class DisputeCasesService {
     if (!disputeCase) throw new NotFoundException(`Dispute case #${id} not found`);
     await this.disputeCasesRepository.remove(disputeCase);
     return { message: `Dispute case #${id} removed` };
+  }
+
+  async calculateTax(id: string): Promise<LandTaxResponseDto> {
+    const disputeCase = await this.disputeCasesRepository.findOne({
+      where: { id },
+      relations: ['valuation_notice'],
+    });
+    if (!disputeCase) throw new NotFoundException(`Dispute case #${id} not found`);
+
+    const notice = disputeCase.valuation_notice;
+    if (!notice) throw new BadRequestException('Dispute case has no associated valuation notice.');
+    if (!notice.valuation_date) throw new BadRequestException('Valuation notice is missing valuation_date.');
+    if (notice.appraised_value == null) {
+      throw new BadRequestException(
+        'Valuation notice has no appraised_value. Complete the appraisal before calculating tax.',
+      );
+    }
+
+    const taxYear = new Date(notice.valuation_date).getFullYear() + 1;
+
+    const dto: CalculateTaxDto = {
+      tax_year: taxYear,
+      disputed_land_value: Number(notice.appraised_value),
+      ownership_type: notice.ownership_type ?? OwnershipType.INDIVIDUAL,
+      is_foreign: notice.is_foreign ?? false,
+      yml_fee_share_pct: disputeCase.yml_fee_share_pct ?? undefined,
+    };
+
+    if (
+      notice.assessed_land_value != null &&
+      notice.prior_land_value != null &&
+      notice.land_value_2yr_prior != null
+    ) {
+      dto.vg_year_values = [
+        Number(notice.assessed_land_value),
+        Number(notice.prior_land_value),
+        Number(notice.land_value_2yr_prior),
+      ];
+    } else if (notice.assessed_land_value != null) {
+      dto.vg_assessed_value = Number(notice.assessed_land_value);
+    } else {
+      throw new BadRequestException(
+        'Valuation notice must have at least assessed_land_value to compute VG tax.',
+      );
+    }
+
+    // Aggregate other non-exempt notices for the same client
+    const otherNotices = await this.valuationNoticeRepo
+      .createQueryBuilder('vn')
+      .innerJoin('vn.dispute_cases', 'dc')
+      .where('dc.client_id = :clientId', { clientId: disputeCase.client_id })
+      .andWhere('dc.id != :caseId', { caseId: id })
+      .andWhere('vn.is_exempt = false')
+      .andWhere('vn.assessed_land_value IS NOT NULL')
+      .getMany();
+
+    if (otherNotices.length > 0) {
+      dto.additional_land_values = otherNotices.map((n) => Number(n.assessed_land_value));
+    }
+
+    const result = await this.taxComputationService.computeLandTax(dto);
+
+    await this.disputeCasesRepository.update(id, {
+      tax_saving: result.tax_saved,
+      yml_revenue: result.yml_revenue,
+      client_savings: result.client_savings,
+    });
+
+    return result;
   }
 
 }

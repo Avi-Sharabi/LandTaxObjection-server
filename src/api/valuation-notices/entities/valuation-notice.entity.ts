@@ -3,6 +3,7 @@ import { Property } from '../../properties/entities/property.entity';
 import { DisputeCase } from '../../dispute-cases/entities/dispute-case.entity';
 import { AssessmentDocument } from '../../dispute-cases/entities/assessment-document.entity';
 import { ValuationNoticeFile } from './valuation-notice-file.entity';
+import { OwnershipType } from '../../../common/enums/ownership-type.enum';
 
 export enum DecisionOutcome {
   OBJECTION = 'OBJECTION',
@@ -25,6 +26,20 @@ export class ValuationNotice {
 
   @Column({ type: 'numeric', precision: 15, scale: 2, nullable: true })
   prior_land_value: number | null;
+
+  @Column({ type: 'numeric', precision: 15, scale: 2, nullable: true })
+  land_value_2yr_prior: number | null;
+
+  @Column({
+    type: 'enum',
+    enum: OwnershipType,
+    enumName: 'valuation_notice_ownership_type_enum',
+    nullable: true,
+  })
+  ownership_type: OwnershipType | null;
+
+  @Column({ type: 'boolean', nullable: false, default: false })
+  is_foreign: boolean;
 
   @Column({ type: 'numeric', precision: 12, scale: 2, nullable: true })
   land_area_vg_sqm: number | null;
