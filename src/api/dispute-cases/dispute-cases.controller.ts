@@ -401,7 +401,7 @@ export class DisputeCasesController {
     );
   }
 
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @Post(':id/calculate-tax')
   @HttpCode(200)
