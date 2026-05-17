@@ -1,4 +1,4 @@
-import { Body, Controller, Post, Request, UseGuards } from '@nestjs/common';
+import { Body, Controller, HttpCode, Post, Request, UseGuards } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -38,15 +38,16 @@ export class ValuationController {
   }
 
   @Post('compute-land-tax')
+  @HttpCode(200)
   @ApiOperation({
     summary: 'Compute NSW land tax payable for a disputed property valuation',
     description:
-      'Applies the NSW Land Tax algorithm (2025–26, Revenue NSW) to a disputed land value. ' +
+      'Applies the NSW Land Tax algorithm (Revenue NSW) to a disputed land value. ' +
       'Supports the 3-year average input (Scenario 3), combined threshold across multiple properties (Scenario 1), ' +
       'and returns annual and 3-year cumulative client savings with YML fee analysis (Scenario 4). ' +
-      'No database calls — pure stateless computation.',
+      'Fetches the applicable rate band from the land_tax_rates table.',
   })
-  @ApiResponse({ status: 201, type: LandTaxResponseDto, description: 'Full land tax computation result with savings analysis' })
+  @ApiResponse({ status: 200, type: LandTaxResponseDto, description: 'Full land tax computation result with savings analysis' })
   @ApiResponse({ status: 400, description: 'Tax year not supported, or neither vg_assessed_value nor vg_year_values provided' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   async computeLandTax(

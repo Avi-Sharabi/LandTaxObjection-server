@@ -83,7 +83,7 @@ export class LandTaxResponseDto {
 
   @Expose()
   @ApiProperty({ description: 'YML success fee share % applied', example: 20 })
-  yml_fee: number;
+  yml_fee_share_pct: number;
 
   @Expose()
   @ApiProperty({ description: 'YML revenue: tax_saved × yml_fee / 100 ($)', example: 3200 })

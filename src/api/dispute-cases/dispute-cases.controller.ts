@@ -267,14 +267,17 @@ export class DisputeCasesController {
   }
 
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.INTERNAL_Assessor)
   @ApiBearerAuth()
   @Post(':id/calculate-tax')
+  @HttpCode(200)
   @ApiOperation({ summary: 'Compute land tax saved and profit for a dispute case' })
   @ApiParam({ name: 'id', description: 'Dispute case UUID' })
-  @ApiResponse({ status: 201, type: LandTaxResponseDto })
+  @ApiResponse({ status: 200, type: LandTaxResponseDto })
   @ApiResponse({ status: 400, description: 'Missing required data or unsupported tax year' })
   @ApiResponse({ status: 401, description: 'Unauthorised' })
+  @ApiResponse({ status: 403, description: 'Caller is not an Internal Assessor' })
   @ApiResponse({ status: 404, description: 'Dispute case not found' })
   calculateTax(@Param('id') id: string): Promise<LandTaxResponseDto> {
     return this.disputeCasesService.calculateTax(id);

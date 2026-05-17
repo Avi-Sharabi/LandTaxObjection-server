@@ -87,7 +87,7 @@ export class LandTaxComputationService {
         foreign_surcharge: foreignSurcharge,
         total_tax_payable: totalTaxPayable,
         tax_saved: round2(taxSaved),
-        yml_fee: feeSharePct,
+        yml_fee_share_pct: feeSharePct,
         yml_revenue: ymlRevenue,
         client_savings: clientSavings,
         tax_saved_3yr: taxSaved3yr,
@@ -98,15 +98,19 @@ export class LandTaxComputationService {
   }
 
   private calcTax(landValue: number, rates: LandTaxRate, ownershipType: OwnershipType): number {
-    const threshold = ownershipType === OwnershipType.COMPANY_TRUST ? 0 : rates.threshold;
+    const isCompanyTrust = ownershipType === OwnershipType.COMPANY_TRUST;
+    const threshold = isCompanyTrust ? 0 : rates.threshold;
     if (landValue <= threshold) return 0;
     if (landValue > rates.premium_threshold) {
-      const premiumBase = ownershipType === OwnershipType.COMPANY_TRUST
-        ? rates.base_amount + (rates.premium_threshold * rates.marginal_rate_pct) / 100
+      // Company/trust: no $100 base charge — marginal rate applies from $0
+      const premiumBase = isCompanyTrust
+        ? (rates.premium_threshold * rates.marginal_rate_pct) / 100
         : rates.premium_base_amount;
       return premiumBase + ((landValue - rates.premium_threshold) * rates.premium_rate_pct) / 100;
     }
-    return rates.base_amount + ((landValue - threshold) * rates.marginal_rate_pct) / 100;
+    // Company/trust: no $100 base charge
+    const baseCharge = isCompanyTrust ? 0 : rates.base_amount;
+    return baseCharge + ((landValue - threshold) * rates.marginal_rate_pct) / 100;
   }
 
   private calcSurcharge(
@@ -125,15 +129,16 @@ export class LandTaxComputationService {
     rates: LandTaxRate,
     ownershipType: OwnershipType,
   ): { baseAmount: number; marginalRatePct: number } {
-    const threshold = ownershipType === OwnershipType.COMPANY_TRUST ? 0 : rates.threshold;
+    const isCompanyTrust = ownershipType === OwnershipType.COMPANY_TRUST;
+    const threshold = isCompanyTrust ? 0 : rates.threshold;
     if (landValue <= threshold) return { baseAmount: 0, marginalRatePct: 0 };
     if (landValue > rates.premium_threshold) {
-      const displayBase = ownershipType === OwnershipType.COMPANY_TRUST
-        ? rates.base_amount + (rates.premium_threshold * rates.marginal_rate_pct) / 100
+      const displayBase = isCompanyTrust
+        ? (rates.premium_threshold * rates.marginal_rate_pct) / 100
         : rates.premium_base_amount;
       return { baseAmount: displayBase, marginalRatePct: rates.premium_rate_pct };
     }
-    return { baseAmount: rates.base_amount, marginalRatePct: rates.marginal_rate_pct };
+    return { baseAmount: isCompanyTrust ? 0 : rates.base_amount, marginalRatePct: rates.marginal_rate_pct };
   }
 }
 
