@@ -63,8 +63,8 @@ export class DisputeCaseResponseDto {
   @ApiPropertyOptional()
   tax_saving_achieved: number | null;
 
-  @ApiPropertyOptional()
-  yml_fee_share_pct: number | null;
+  @ApiProperty({ default: 20 })
+  yml_fee_share_pct: number;
 
   @ApiPropertyOptional()
   tax_saving: number | null;

@@ -642,33 +642,7 @@ export class DisputeCasesService {
       );
     }
 
-    const taxYear = new Date(notice.valuation_date).getUTCFullYear() + 1;
-
-    const dto: CalculateTaxDto = {
-      tax_year: taxYear,
-      disputed_land_value: Number(notice.appraised_value),
-      ownership_type: notice.ownership_type ?? OwnershipType.INDIVIDUAL,
-      is_foreign: notice.is_foreign ?? false,
-      yml_fee_share_pct: disputeCase.yml_fee_share_pct ?? undefined,
-    };
-
-    if (
-      notice.assessed_land_value != null &&
-      notice.prior_land_value != null &&
-      notice.land_value_2yr_prior != null
-    ) {
-      dto.vg_year_values = [
-        Number(notice.assessed_land_value),
-        Number(notice.prior_land_value),
-        Number(notice.land_value_2yr_prior),
-      ];
-    } else if (notice.assessed_land_value != null) {
-      dto.vg_assessed_value = Number(notice.assessed_land_value);
-    } else {
-      throw new BadRequestException(
-        'Valuation notice must have at least assessed_land_value to compute VG tax.',
-      );
-    }
+    const dto = this.buildCalculateTaxDto(notice, disputeCase.yml_fee_share_pct);
 
     // Aggregate other non-exempt notices for the same client
     const otherNotices = await this.valuationNoticeRepo
@@ -681,7 +655,7 @@ export class DisputeCasesService {
       .getMany();
 
     if (otherNotices.length > 0) {
-      dto.additional_land_values = otherNotices.map((n) => Number(n.assessed_land_value));
+      dto.additional_land_values = otherNotices.map((n) => n.assessed_land_value as number);
     }
 
     const result = await this.taxComputationService.computeLandTax(dto);
@@ -693,6 +667,39 @@ export class DisputeCasesService {
     });
 
     return result;
+  }
+
+  private buildCalculateTaxDto(notice: ValuationNotice, feeSharePct: number): CalculateTaxDto {
+    // NSW: valuation date is 1 July of (tax_year − 1), so tax year = valuation year + 1
+    const taxYear = new Date(notice.valuation_date).getUTCFullYear() + 1;
+
+    const dto: CalculateTaxDto = {
+      tax_year: taxYear,
+      disputed_land_value: notice.appraised_value as number,
+      ownership_type: notice.ownership_type ?? OwnershipType.INDIVIDUAL,
+      is_foreign: notice.is_foreign ?? false,
+      yml_fee_share_pct: feeSharePct ?? undefined,
+    };
+
+    if (
+      notice.assessed_land_value != null &&
+      notice.prior_land_value != null &&
+      notice.land_value_2yr_prior != null
+    ) {
+      dto.vg_year_values = [
+        notice.assessed_land_value,
+        notice.prior_land_value,
+        notice.land_value_2yr_prior,
+      ];
+    } else if (notice.assessed_land_value != null) {
+      dto.vg_assessed_value = notice.assessed_land_value;
+    } else {
+      throw new BadRequestException(
+        'Valuation notice must have at least assessed_land_value to compute VG tax.',
+      );
+    }
+
+    return dto;
   }
 
 }

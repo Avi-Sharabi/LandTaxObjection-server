@@ -10,6 +10,12 @@ export enum DecisionOutcome {
   ADVISORY = 'ADVISORY',
 }
 
+// PostgreSQL returns NUMERIC columns as strings; this transformer converts them to JS numbers.
+const numericTransformer = {
+  from: (v: string | null): number | null => (v == null ? null : parseFloat(v)),
+  to: (v: number | null): number | null => v,
+};
+
 @Entity('valuation_notices')
 export class ValuationNotice {
   @PrimaryGeneratedColumn('uuid')
@@ -21,13 +27,13 @@ export class ValuationNotice {
   @Column({ type: 'date', nullable: false })
   valuation_date: Date;
 
-  @Column({ type: 'numeric', precision: 15, scale: 2, nullable: true })
+  @Column({ type: 'numeric', precision: 15, scale: 2, nullable: true, transformer: numericTransformer })
   assessed_land_value: number | null;
 
-  @Column({ type: 'numeric', precision: 15, scale: 2, nullable: true })
+  @Column({ type: 'numeric', precision: 15, scale: 2, nullable: true, transformer: numericTransformer })
   prior_land_value: number | null;
 
-  @Column({ type: 'numeric', precision: 15, scale: 2, nullable: true })
+  @Column({ type: 'numeric', precision: 15, scale: 2, nullable: true, transformer: numericTransformer })
   land_value_2yr_prior: number | null;
 
   @Column({
@@ -41,13 +47,13 @@ export class ValuationNotice {
   @Column({ type: 'boolean', nullable: false, default: false })
   is_foreign: boolean;
 
-  @Column({ type: 'numeric', precision: 12, scale: 2, nullable: true })
+  @Column({ type: 'numeric', precision: 12, scale: 2, nullable: true, transformer: numericTransformer })
   land_area_vg_sqm: number | null;
 
   @Column({ type: 'boolean', nullable: false, default: false })
   is_exempt: boolean;
 
-  @Column({ type: 'numeric', precision: 6, scale: 3, nullable: true })
+  @Column({ type: 'numeric', precision: 6, scale: 3, nullable: true, transformer: numericTransformer })
   benchmark_uplift_pct: number;
 
   @Column({ type: 'text', nullable: true })
@@ -56,10 +62,10 @@ export class ValuationNotice {
   @Column({ type: 'uuid', nullable: true, name: 'source_document_id' })
   source_document_id: string | null;
 
-  @Column({ type: 'numeric', precision: 15, scale: 2, nullable: true })
+  @Column({ type: 'numeric', precision: 15, scale: 2, nullable: true, transformer: numericTransformer })
   appraised_value: number | null;
 
-  @Column({ type: 'numeric', precision: 15, scale: 2, nullable: true })
+  @Column({ type: 'numeric', precision: 15, scale: 2, nullable: true, transformer: numericTransformer })
   valuation_delta: number | null;
 
   @Column({ type: 'enum', enum: DecisionOutcome, nullable: true })
