@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   GoneException,
   Injectable,
@@ -6,7 +7,16 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Between, DataSource, FindOptionsWhere, ILike, In, LessThan, Not, Repository } from 'typeorm';
+import {
+  Between,
+  DataSource,
+  FindOptionsWhere,
+  ILike,
+  In,
+  LessThan,
+  Not,
+  Repository,
+} from 'typeorm';
 import { randomUUID, randomInt } from 'crypto';
 import { ConfigService } from '@nestjs/config';
 import { GetDisputeCasesQueryDto } from '../../common/dto/paginated-query.dto';
@@ -18,11 +28,21 @@ import { DisputeCaseResponseDto } from './dto/dispute-case-response.dto';
 import { AnalysisReportResponseDto } from './dto/analysis-report-response.dto';
 import { ApprovalDocumentsResponseDto } from './dto/approval-documents-response.dto';
 import { DisputeCase, DisputeStatus } from './entities/dispute-case.entity';
+import { ValuationNotice } from '../valuation-notices/entities/valuation-notice.entity';
+import { LandTaxComputationService } from '../valuation/land-tax-computation.service';
+import { LandTaxResponseDto } from '../valuation/dto/land-tax-response.dto';
+import {
+  CalculateTaxDto,
+  OwnershipType,
+} from '../valuation/dto/calculate-tax.dto';
 import { DisputeIntakeOrchestrator } from './intake/dispute-intake.orchestrator';
 import { ComparablesService } from '../comparables/comparables.service';
 import { AzureEmailService } from 'src/common/azure-email/azure-email.service';
 import { AzureBlobService } from 'src/common/azure-blob/azure-blob.service';
-import { PackageDocument, PackageDocumentStatus } from '../objection-package/entities/package-document.entity';
+import {
+  PackageDocument,
+  PackageDocumentStatus,
+} from '../objection-package/entities/package-document.entity';
 import { ClientEmailMissingException } from './exceptions/client-email-missing.exception';
 import { CaseNotClientApprovedException } from './exceptions/case-not-client-approved.exception';
 import { CaseAlreadySubmittedException } from './exceptions/case-already-submitted.exception';
@@ -44,7 +64,6 @@ const CLOSED_STATUSES: DisputeStatus[] = [
   DisputeStatus.CLOSED_NO_OBJECTION,
 ];
 
-
 @Injectable()
 export class DisputeCasesService {
   private readonly logger = new Logger(DisputeCasesService.name);
@@ -61,9 +80,14 @@ export class DisputeCasesService {
     private disputeCasesRepository: Repository<DisputeCase>,
     @InjectRepository(PackageDocument)
     private readonly packageDocumentRepo: Repository<PackageDocument>,
-  ) { }
+    @InjectRepository(ValuationNotice)
+    private readonly valuationNoticeRepo: Repository<ValuationNotice>,
+    private readonly taxComputationService: LandTaxComputationService,
+  ) {}
 
-  async submitIntakeApplication(intakeDto: CreateDisputeIntakeDto): Promise<unknown> {
+  async submitIntakeApplication(
+    intakeDto: CreateDisputeIntakeDto,
+  ): Promise<unknown> {
     return this.intakeOrchestrator.submitIntakeApplication(intakeDto);
   }
 
@@ -73,11 +97,22 @@ export class DisputeCasesService {
     });
   }
 
-  async findPaginated(query: GetDisputeCasesQueryDto): Promise<PaginatedDisputeCasesResponseDto> {
-    const { page, limit, search, status, jurisdiction, clientId, dashboardFilter } = query;
+  async findPaginated(
+    query: GetDisputeCasesQueryDto,
+  ): Promise<PaginatedDisputeCasesResponseDto> {
+    const {
+      page,
+      limit,
+      search,
+      status,
+      jurisdiction,
+      clientId,
+      dashboardFilter,
+    } = query;
     const skip = (page - 1) * limit;
 
-    const { startOfToday, endOf7Days } = DisputeCasesService.getDueThisWeekWindow();
+    const { startOfToday, endOf7Days } =
+      DisputeCasesService.getDueThisWeekWindow();
 
     const statusWhere = (() => {
       if (status) {
@@ -89,7 +124,11 @@ export class DisputeCasesService {
       return {};
     })();
 
-    const deadlineWhere = DisputeCasesService.resolveDeadlineWhere(dashboardFilter, startOfToday, endOf7Days);
+    const deadlineWhere = DisputeCasesService.resolveDeadlineWhere(
+      dashboardFilter,
+      startOfToday,
+      endOf7Days,
+    );
 
     const baseWhere: FindOptionsWhere<DisputeCase> = {
       ...(clientId && { client_id: clientId }),
@@ -127,28 +166,49 @@ export class DisputeCasesService {
   async findOne(id: string): Promise<DisputeCaseResponseDto> {
     const disputeCase = await this.disputeCasesRepository.findOne({
       where: { id },
-      relations: ['client', 'property', 'valuation_notice', 'assigned_accountant', 'assigned_lawyer', 'legal_grounds', "dispute_constraints"],
+      relations: [
+        'client',
+        'property',
+        'valuation_notice',
+        'assigned_accountant',
+        'assigned_lawyer',
+        'legal_grounds',
+        'dispute_constraints',
+      ],
     });
-    if (!disputeCase) throw new NotFoundException(`Dispute case #${id} not found`);
+    if (!disputeCase)
+      throw new NotFoundException(`Dispute case #${id} not found`);
     return disputeCase;
   }
 
-  async update(id: string, updateDisputeCaseDto: UpdateDisputeCaseDto): Promise<DisputeCaseResponseDto> {
-    const disputeCase = await this.disputeCasesRepository.findOne({ where: { id } });
-    if (!disputeCase) throw new NotFoundException(`Dispute case #${id} not found`);
+  async update(
+    id: string,
+    updateDisputeCaseDto: UpdateDisputeCaseDto,
+  ): Promise<DisputeCaseResponseDto> {
+    const disputeCase = await this.disputeCasesRepository.findOne({
+      where: { id },
+    });
+    if (!disputeCase)
+      throw new NotFoundException(`Dispute case #${id} not found`);
     Object.assign(disputeCase, updateDisputeCaseDto);
     return await this.disputeCasesRepository.save(disputeCase);
   }
 
   async advanceToAppraisal(id: string): Promise<DisputeCaseResponseDto> {
-    const disputeCase = await this.disputeCasesRepository.findOne({ where: { id } });
-    if (!disputeCase) throw new NotFoundException(`Dispute case #${id} not found`);
+    const disputeCase = await this.disputeCasesRepository.findOne({
+      where: { id },
+    });
+    if (!disputeCase)
+      throw new NotFoundException(`Dispute case #${id} not found`);
     await this.comparablesService.assertMinimumComparables(id);
     disputeCase.status = DisputeStatus.APPRAISAL;
     return await this.disputeCasesRepository.save(disputeCase);
   }
 
-  async closeNoObjection(caseId: string, dto: CloseNoObjectionDto): Promise<DisputeCaseResponseDto> {
+  async closeNoObjection(
+    caseId: string,
+    dto: CloseNoObjectionDto,
+  ): Promise<DisputeCaseResponseDto> {
     const disputeCase = await this.disputeCasesRepository.findOne({
       where: { id: caseId },
       relations: [
@@ -167,12 +227,14 @@ export class DisputeCasesService {
       throw new ConflictException(`Dispute case #${caseId} is already closed`);
     }
 
-    const vgAssessedValue = Number(disputeCase.valuation_notice?.assessed_land_value ?? 0);
+    const vgAssessedValue = Number(
+      disputeCase.valuation_notice?.assessed_land_value ?? 0,
+    );
 
     if (dto.internalAssessmentValue < vgAssessedValue) {
       throw new ConflictException(
         `Internal assessment value ($${dto.internalAssessmentValue.toLocaleString()}) is less than the VG assessed value ` +
-        `($${vgAssessedValue.toLocaleString()}). The case has viable objection grounds and should not be closed without objection.`,
+          `($${vgAssessedValue.toLocaleString()}). The case has viable objection grounds and should not be closed without objection.`,
       );
     }
 
@@ -206,7 +268,13 @@ export class DisputeCasesService {
 
     this.azureEmailService
       .sendAdvisoryLetterNotification(
-        this.buildAdvisoryEmailPayload(disputeCase, dto, vgAssessedValue, closedAtDate, viewReportUrl),
+        this.buildAdvisoryEmailPayload(
+          disputeCase,
+          dto,
+          vgAssessedValue,
+          closedAtDate,
+          viewReportUrl,
+        ),
       )
       .catch((err: unknown) => {
         this.logger.error(
@@ -228,7 +296,9 @@ export class DisputeCasesService {
     }
 
     if (disputeCase.client_approved_at !== null) {
-      throw new ConflictException(`Dispute case #${caseId} has already been approved by the client`);
+      throw new ConflictException(
+        `Dispute case #${caseId} has already been approved by the client`,
+      );
     }
 
     const token = randomUUID();
@@ -239,7 +309,9 @@ export class DisputeCasesService {
     const approvalLink = `${frontendUrl}/approve-package?token=${token}`;
     const clientName = disputeCase.client.name;
     const propertyAddress = this.buildPropertyAddress(disputeCase.property);
-    const taxYear = String(new Date(disputeCase.valuation_notice.valuation_date).getFullYear());
+    const taxYear = String(
+      new Date(disputeCase.valuation_notice.valuation_date).getFullYear(),
+    );
 
     // Send email first — only persist state if the send succeeds.
     await this.azureEmailService.sendObjectionPackageApproval({
@@ -260,7 +332,9 @@ export class DisputeCasesService {
     return await this.disputeCasesRepository.save(disputeCase);
   }
 
-  async approveObjectionPackage(token: string): Promise<{ alreadyApproved: boolean; propertyAddress?: string }> {
+  async approveObjectionPackage(
+    token: string,
+  ): Promise<{ alreadyApproved: boolean; propertyAddress?: string }> {
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
@@ -274,7 +348,9 @@ export class DisputeCasesService {
       });
 
       if (!disputeCase) {
-        throw new NotFoundException('Approval token is invalid or does not exist');
+        throw new NotFoundException(
+          'Approval token is invalid or does not exist',
+        );
       }
 
       if (disputeCase.client_approved_at !== null) {
@@ -282,8 +358,14 @@ export class DisputeCasesService {
         return { alreadyApproved: true };
       }
 
-      if (DisputeCasesService.isExpired(disputeCase.client_approval_token_expires_at)) {
-        throw new GoneException('Approval token has expired — please request a new package from your adviser');
+      if (
+        DisputeCasesService.isExpired(
+          disputeCase.client_approval_token_expires_at,
+        )
+      ) {
+        throw new GoneException(
+          'Approval token has expired — please request a new package from your adviser',
+        );
       }
 
       disputeCase.client_approved_at = new Date();
@@ -301,7 +383,9 @@ export class DisputeCasesService {
         relations: ['property'],
       });
 
-      const propertyAddress = this.buildPropertyAddress(withProperty?.property ?? null);
+      const propertyAddress = this.buildPropertyAddress(
+        withProperty?.property ?? null,
+      );
 
       return { alreadyApproved: false, propertyAddress };
     } catch (err) {
@@ -312,18 +396,28 @@ export class DisputeCasesService {
     }
   }
 
-  async getApprovalDocuments(token: string): Promise<ApprovalDocumentsResponseDto> {
+  async getApprovalDocuments(
+    token: string,
+  ): Promise<ApprovalDocumentsResponseDto> {
     const disputeCase = await this.disputeCasesRepository.findOne({
       where: { client_approval_token: token },
       relations: ['property', 'valuation_notice'],
     });
 
     if (!disputeCase) {
-      throw new NotFoundException('Approval token is invalid or does not exist');
+      throw new NotFoundException(
+        'Approval token is invalid or does not exist',
+      );
     }
 
-    if (DisputeCasesService.isExpired(disputeCase.client_approval_token_expires_at)) {
-      throw new GoneException('Approval token has expired — please request a new package from your adviser');
+    if (
+      DisputeCasesService.isExpired(
+        disputeCase.client_approval_token_expires_at,
+      )
+    ) {
+      throw new GoneException(
+        'Approval token has expired — please request a new package from your adviser',
+      );
     }
 
     if (disputeCase.client_approved_at !== null) {
@@ -331,65 +425,99 @@ export class DisputeCasesService {
     }
 
     const docs = await this.packageDocumentRepo.find({
-      where: { dispute_case_id: disputeCase.id, status: PackageDocumentStatus.READY },
+      where: {
+        dispute_case_id: disputeCase.id,
+        status: PackageDocumentStatus.READY,
+      },
     });
 
     const propertyAddress = this.buildPropertyAddress(disputeCase.property);
-    const taxYear = String(new Date(disputeCase.valuation_notice.valuation_date).getFullYear());
+    const taxYear = String(
+      new Date(disputeCase.valuation_notice.valuation_date).getFullYear(),
+    );
 
     return {
       alreadyApproved: false,
       propertyAddress,
       taxYear,
       documents: docs
-        .filter((doc): doc is PackageDocument & { blob_name: string } => doc.blob_name !== null)
+        .filter(
+          (doc): doc is PackageDocument & { blob_name: string } =>
+            doc.blob_name !== null,
+        )
         .map((doc) => ({
           id: doc.id,
           name: doc.name,
-          viewUrl: this.azureBlobService.getFileUrl(doc.blob_name, THREE_DAY_WINDOW_MINUTES),
+          viewUrl: this.azureBlobService.getFileUrl(
+            doc.blob_name,
+            THREE_DAY_WINDOW_MINUTES,
+          ),
         })),
     };
   }
 
-
   async findAdvisoryView(token: string): Promise<AnalysisReportResponseDto> {
     const disputeCase = await this.disputeCasesRepository.findOne({
       where: { advisory_view_token: token },
-      select: ['id', 'case_reference', 'analysis_report_blob_path', 'advisory_view_token_expires_at'],
+      select: [
+        'id',
+        'case_reference',
+        'analysis_report_blob_path',
+        'advisory_view_token_expires_at',
+      ],
     });
 
     if (!disputeCase) {
-      throw new NotFoundException('Advisory view token is invalid or does not exist');
+      throw new NotFoundException(
+        'Advisory view token is invalid or does not exist',
+      );
     }
 
-    if (DisputeCasesService.isExpired(disputeCase.advisory_view_token_expires_at)) {
-      throw new GoneException('Advisory view link has expired — please contact your adviser to request a new one');
+    if (
+      DisputeCasesService.isExpired(disputeCase.advisory_view_token_expires_at)
+    ) {
+      throw new GoneException(
+        'Advisory view link has expired — please contact your adviser to request a new one',
+      );
     }
 
     if (!disputeCase.analysis_report_blob_path) {
-      throw new NotFoundException('Analysis report is not yet available for this case');
+      throw new NotFoundException(
+        'Analysis report is not yet available for this case',
+      );
     }
 
     return {
       id: disputeCase.id,
       case_reference: disputeCase.case_reference,
-      analysis_report_url: this.azureBlobService.getFileUrl(disputeCase.analysis_report_blob_path, THREE_DAY_WINDOW_MINUTES),
+      analysis_report_url: this.azureBlobService.getFileUrl(
+        disputeCase.analysis_report_blob_path,
+        THREE_DAY_WINDOW_MINUTES,
+      ),
     };
   }
 
-  async findNoObjectionReportUrl(id: string): Promise<AnalysisReportResponseDto> {
+  async findNoObjectionReportUrl(
+    id: string,
+  ): Promise<AnalysisReportResponseDto> {
     const disputeCase = await this.disputeCasesRepository.findOne({
       where: { id },
       select: ['id', 'case_reference', 'analysis_report_blob_path'],
     });
-    if (!disputeCase) throw new NotFoundException(`Dispute case #${id} not found`);
+    if (!disputeCase)
+      throw new NotFoundException(`Dispute case #${id} not found`);
     if (!disputeCase.analysis_report_blob_path) {
-      throw new NotFoundException(`Analysis report is not yet available for case #${id}`);
+      throw new NotFoundException(
+        `Analysis report is not yet available for case #${id}`,
+      );
     }
     return {
       id: disputeCase.id,
       case_reference: disputeCase.case_reference,
-      analysis_report_url: this.azureBlobService.getFileUrl(disputeCase.analysis_report_blob_path, THREE_DAY_WINDOW_MINUTES),
+      analysis_report_url: this.azureBlobService.getFileUrl(
+        disputeCase.analysis_report_blob_path,
+        THREE_DAY_WINDOW_MINUTES,
+      ),
     };
   }
 
@@ -407,7 +535,10 @@ export class DisputeCasesService {
     return {};
   }
 
-  private static getDueThisWeekWindow(): { startOfToday: Date; endOf7Days: Date } {
+  private static getDueThisWeekWindow(): {
+    startOfToday: Date;
+    endOf7Days: Date;
+  } {
     const startOfToday = new Date();
     startOfToday.setHours(0, 0, 0, 0);
     const endOf7Days = new Date(startOfToday);
@@ -421,10 +552,20 @@ export class DisputeCasesService {
   }
 
   private buildPropertyAddress(
-    property: { address: string | null; suburb: string | null; state: string | null; postcode: string | null } | null,
+    property: {
+      address: string | null;
+      suburb: string | null;
+      state: string | null;
+      postcode: string | null;
+    } | null,
   ): string {
     if (!property) return 'Address not available';
-    return [property.address, property.suburb, property.state, property.postcode]
+    return [
+      property.address,
+      property.suburb,
+      property.state,
+      property.postcode,
+    ]
       .filter(Boolean)
       .join(', ');
   }
@@ -446,17 +587,27 @@ export class DisputeCasesService {
       caseReference: disputeCase.case_reference,
       propertyAddress: this.buildPropertyAddress(disputeCase.property),
       vgAssessedValue: DisputeCasesService.formatAud(vgAssessedValue),
-      internalAssessedValue: DisputeCasesService.formatAud(dto.internalAssessmentValue),
-      assessorFullName: disputeCase.assigned_accountant?.fullName ?? 'Your YML Adviser',
+      internalAssessedValue: DisputeCasesService.formatAud(
+        dto.internalAssessmentValue,
+      ),
+      assessorFullName:
+        disputeCase.assigned_accountant?.fullName ?? 'Your YML Adviser',
       closedAt: closedAtDate.toLocaleString('en-AU', {
-        day: '2-digit', month: 'long', year: 'numeric',
-        hour: '2-digit', minute: '2-digit',
+        day: '2-digit',
+        month: 'long',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
       }),
       viewReportUrl,
     };
   }
 
-  async submitToVg(id: string, assessorId: string, assessorFullName: string): Promise<DisputeCaseResponseDto> {
+  async submitToVg(
+    id: string,
+    assessorId: string,
+    assessorFullName: string,
+  ): Promise<DisputeCaseResponseDto> {
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
@@ -536,7 +687,10 @@ export class DisputeCasesService {
       .leftJoinAndSelect('dc.property', 'property')
       .leftJoinAndSelect('dc.valuation_notice', 'valuation_notice')
       .where('dc.status = :status', { status: DisputeStatus.SUBMITTED_TO_VG })
-      .andWhere('COALESCE(dc.last_vg_follow_up_sent_at, dc.submitted_at) <= :threshold', { threshold: fiveDaysAgo })
+      .andWhere(
+        'COALESCE(dc.last_vg_follow_up_sent_at, dc.submitted_at) <= :threshold',
+        { threshold: fiveDaysAgo },
+      )
       .andWhere('dc.vg_follow_up_count < :max', { max: MAX_VG_FOLLOW_UPS })
       .getMany();
   }
@@ -581,14 +735,17 @@ export class DisputeCasesService {
         caseReference: resolvedCase.case_reference,
         propertyAddress: this.buildPropertyAddress(resolvedCase.property),
         lodgmentReferenceNumber: resolvedCase.lodgment_reference_number ?? '',
-        submittedAt: (resolvedCase.submitted_at ?? now).toLocaleString('en-AU', {
-          timeZone: 'Australia/Melbourne',
-          day: '2-digit',
-          month: 'long',
-          year: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit',
-        }),
+        submittedAt: (resolvedCase.submitted_at ?? now).toLocaleString(
+          'en-AU',
+          {
+            timeZone: 'Australia/Melbourne',
+            day: '2-digit',
+            month: 'long',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+          },
+        ),
         followUpCount: String(newFollowUpCount),
       });
 
@@ -612,10 +769,143 @@ export class DisputeCasesService {
   }
 
   async remove(id: string): Promise<{ message: string }> {
-    const disputeCase = await this.disputeCasesRepository.findOne({ where: { id } });
-    if (!disputeCase) throw new NotFoundException(`Dispute case #${id} not found`);
+    const disputeCase = await this.disputeCasesRepository.findOne({
+      where: { id },
+    });
+    if (!disputeCase)
+      throw new NotFoundException(`Dispute case #${id} not found`);
     await this.disputeCasesRepository.remove(disputeCase);
     return { message: `Dispute case #${id} removed` };
   }
 
+  async updateVgOutcome(
+    caseId: string,
+    newStatus: DisputeStatus,
+    reasoning?: string,
+  ): Promise<void> {
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    let resolvedCase: DisputeCase | null = null;
+
+    try {
+      resolvedCase = await queryRunner.manager.findOne(DisputeCase, {
+        where: { id: caseId },
+        relations: ['client', 'property', 'assigned_accountant'],
+        lock: { mode: 'pessimistic_write' },
+      });
+
+      if (!resolvedCase) {
+        throw new NotFoundException(`Dispute case #${caseId} not found`);
+      }
+
+      resolvedCase.status = newStatus;
+      if (
+        (newStatus === DisputeStatus.VG_DECLINED ||
+          newStatus === DisputeStatus.FOR_REVIEW) &&
+        reasoning
+      ) {
+        resolvedCase.vg_response_notes = reasoning;
+      }
+      await queryRunner.manager.save(DisputeCase, resolvedCase);
+      await queryRunner.commitTransaction();
+    } catch (err) {
+      await queryRunner.rollbackTransaction();
+      throw err;
+    } finally {
+      await queryRunner.release();
+    }
+  }
+
+  async calculateTax(id: string): Promise<LandTaxResponseDto> {
+    const disputeCase = await this.disputeCasesRepository.findOne({
+      where: { id },
+      relations: ['valuation_notice'],
+    });
+    if (!disputeCase)
+      throw new NotFoundException(`Dispute case #${id} not found`);
+
+    const notice = disputeCase.valuation_notice;
+    if (!notice)
+      throw new BadRequestException(
+        'Dispute case has no associated valuation notice.',
+      );
+    if (!notice.valuation_date)
+      throw new BadRequestException(
+        'Valuation notice is missing valuation_date.',
+      );
+    if (notice.appraised_value == null) {
+      throw new BadRequestException(
+        'Valuation notice has no appraised_value. Complete the appraisal before calculating tax.',
+      );
+    }
+
+    const dto = this.buildCalculateTaxDto(
+      notice,
+      disputeCase.yml_fee_share_pct,
+    );
+
+    // Aggregate other non-exempt notices for the same client
+    const otherNotices = await this.valuationNoticeRepo
+      .createQueryBuilder('vn')
+      .innerJoin('vn.dispute_cases', 'dc')
+      .where('dc.client_id = :clientId', { clientId: disputeCase.client_id })
+      .andWhere('dc.id != :caseId', { caseId: id })
+      .andWhere('vn.is_exempt = false')
+      .andWhere('vn.assessed_land_value IS NOT NULL')
+      .getMany();
+
+    if (otherNotices.length > 0) {
+      dto.additional_land_values = otherNotices.map(
+        (n) => n.assessed_land_value as number,
+      );
+    }
+
+    const result = await this.taxComputationService.computeLandTax(dto);
+
+    await this.disputeCasesRepository.update(id, {
+      tax_saving: result.tax_saved,
+      yml_revenue: result.yml_revenue,
+      client_savings: result.client_savings,
+    });
+
+    return result;
+  }
+
+  private buildCalculateTaxDto(
+    notice: ValuationNotice,
+    feeSharePct: number,
+  ): CalculateTaxDto {
+    // NSW: valuation date is 1 July of (tax_year − 1), so tax year = valuation year + 1
+    const taxYear = new Date(notice.valuation_date).getUTCFullYear() + 1;
+
+    const dto: CalculateTaxDto = {
+      tax_year: taxYear,
+      disputed_land_value: notice.appraised_value as number,
+      ownership_type: notice.ownership_type ?? OwnershipType.INDIVIDUAL,
+      is_foreign: notice.is_foreign ?? false,
+      yml_fee_share_pct: feeSharePct ?? undefined,
+    };
+
+    if (
+      notice.assessed_land_value != null &&
+      notice.prior_land_value != null &&
+      notice.land_value_2yr_prior != null
+    ) {
+      dto.vg_year_values = [
+        notice.assessed_land_value,
+        notice.prior_land_value,
+        notice.land_value_2yr_prior,
+      ];
+    } else if (notice.assessed_land_value != null) {
+      dto.vg_assessed_value = notice.assessed_land_value;
+    } else {
+      throw new BadRequestException(
+        'Valuation notice must have at least assessed_land_value to compute VG tax.',
+      );
+    }
+
+    return dto;
+  }
 }

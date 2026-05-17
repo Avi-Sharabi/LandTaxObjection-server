@@ -19,6 +19,7 @@ const TEMPLATE_NAMES = [
     'objection-package-reminder',
     'vg-submission-confirmation',
     'vg-follow-up-enquiry',
+    'vg-response-notification',
 ] as const;
 
 type TemplateName = (typeof TEMPLATE_NAMES)[number];
@@ -58,7 +59,7 @@ export class AzureEmailService implements OnModuleInit {
             } else {
                 // Render {{#if key}}...{{/if}} blocks: include content when value is truthy, omit when falsy.
                 const ifRegex = new RegExp(
-                    `\\{\\{#if ${key}\\}\\}([\\s\\S]*?)\\{\\{/if\\}\\}`,
+                    `\\{\\{#if ${key}\\}\\}([\\s\\S]*?)\\{\\{/if(?:\\s+${key})?\\}\\}`,
                     'g',
                 );
                 html = html.replace(ifRegex, value ? '$1' : '');
@@ -263,6 +264,50 @@ export class AzureEmailService implements OnModuleInit {
             },
             content: {
                 subject: `[${params.caseReference}] Follow-Up Enquiry #${params.followUpCount} — Awaiting VG Response`,
+                html,
+            },
+        };
+
+        const poller = await this.emailClient.beginSend(message);
+        await poller.pollUntilDone();
+    }
+
+    async sendVgResponseNotification(params: {
+        clientEmail: string;
+        clientName: string;
+        caseReference: string;
+        propertyAddress: string;
+        lodgmentReferenceNumber: string;
+        isApproved: boolean;
+        assessorFullName: string;
+        resolvedAt: string;
+        assessedLandValue: string;
+    }): Promise<void> {
+        const contactEmail = this.config.getOrThrow<string>('CONTACT_EMAIL');
+
+        const html = this.loadTemplate('vg-response-notification', {
+            clientName: params.clientName,
+            caseReference: params.caseReference,
+            propertyAddress: params.propertyAddress,
+            lodgmentReferenceNumber: params.lodgmentReferenceNumber,
+            isApproved: params.isApproved ? '1' : '',
+            isDeclined: params.isApproved ? '' : '1',
+            outcomeLabel: params.isApproved ? 'Approved' : 'Declined',
+            assessorFullName: params.assessorFullName,
+            resolvedAt: params.resolvedAt,
+            assessedLandValue: params.assessedLandValue,
+            contactEmail,
+        });
+
+        const outcomeText = params.isApproved ? 'Approved' : 'Declined';
+
+        const message = {
+            senderAddress: this.sender,
+            recipients: {
+                to: [{ address: params.clientEmail, displayName: params.clientName }],
+            },
+            content: {
+                subject: `[${params.caseReference}] VG Response Received – Objection ${outcomeText}`,
                 html,
             },
         };
