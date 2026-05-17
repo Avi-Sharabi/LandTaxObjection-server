@@ -778,6 +778,46 @@ export class DisputeCasesService {
     return { message: `Dispute case #${id} removed` };
   }
 
+  async updateVgOutcome(
+    caseId: string,
+    newStatus: DisputeStatus,
+    reasoning?: string,
+  ): Promise<void> {
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    let resolvedCase: DisputeCase | null = null;
+
+    try {
+      resolvedCase = await queryRunner.manager.findOne(DisputeCase, {
+        where: { id: caseId },
+        relations: ['client', 'property', 'assigned_accountant'],
+        lock: { mode: 'pessimistic_write' },
+      });
+
+      if (!resolvedCase) {
+        throw new NotFoundException(`Dispute case #${caseId} not found`);
+      }
+
+      resolvedCase.status = newStatus;
+      if (
+        (newStatus === DisputeStatus.VG_DECLINED ||
+          newStatus === DisputeStatus.FOR_REVIEW) &&
+        reasoning
+      ) {
+        resolvedCase.vg_response_notes = reasoning;
+      }
+      await queryRunner.manager.save(DisputeCase, resolvedCase);
+      await queryRunner.commitTransaction();
+    } catch (err) {
+      await queryRunner.rollbackTransaction();
+      throw err;
+    } finally {
+      await queryRunner.release();
+    }
+  }
+
   async calculateTax(id: string): Promise<LandTaxResponseDto> {
     const disputeCase = await this.disputeCasesRepository.findOne({
       where: { id },
