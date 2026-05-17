@@ -24,6 +24,7 @@ import { DisputeCaseSubscriber } from './dispute-case.subscriber';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { AuditLogModule } from '../audit-log/audit-log.module';
 import { AuditLog } from '../audit-log/entities/audit-log.entity';
+import { ValuationModule } from '../valuation/valuation.module';
 
 @Module({
   imports: [
@@ -33,6 +34,7 @@ import { AuditLog } from '../audit-log/entities/audit-log.entity';
     ComparablesModule,
     AuditLogModule,
     NotificationsModule,
+    ValuationModule,
     TypeOrmModule.forFeature([
       DisputeCase,
       AssessmentDocument,

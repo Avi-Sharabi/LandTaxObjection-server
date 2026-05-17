@@ -24,7 +24,11 @@
     "migration:revert": "npm run typeorm -- migration:revert",
     "seed": "ts-node -r tsconfig-paths/register src/database/seeds/seed.ts",
     "seed:vg-email-test": "ts-node -r tsconfig-paths/register src/database/seeds/test-vg-email.seeder.ts",
-   "redis:start": "docker compose rm -s -f redis && docker volume rm landtaxdispute-server_redis_data && docker compose up redis -d",    "redis:stop": "docker compose stop redis",
+    "seed:dev": "cross-env NODE_ENV=development ts-node -r tsconfig-paths/register src/database/seeds/seed.ts",
+    "seed:qa": "cross-env NODE_ENV=qa ts-node -r tsconfig-paths/register src/database/seeds/seed.ts",
+    "seed:prod": "cross-env NODE_ENV=production ts-node -r tsconfig-paths/register src/database/seeds/seed.ts",
+    "redis:start": "docker compose rm -s -f redis && docker volume rm landtaxdispute-server_redis_data && docker compose up redis -d",
+    "redis:stop": "docker compose stop redis",
     "reset": "docker compose down -v && docker compose up -d && npm run migration:run && npm run seed"
   },
   "dependencies": {
