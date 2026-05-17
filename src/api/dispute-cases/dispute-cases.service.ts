@@ -642,7 +642,7 @@ export class DisputeCasesService {
       );
     }
 
-    const taxYear = new Date(notice.valuation_date).getFullYear() + 1;
+    const taxYear = new Date(notice.valuation_date).getUTCFullYear() + 1;
 
     const dto: CalculateTaxDto = {
       tax_year: taxYear,
