@@ -26,6 +26,7 @@ import { AuditLog } from '../audit-log/entities/audit-log.entity';
 import { McpModule } from 'src/mcp/mcp.module';
 import { VgEmailMonitorTask } from './vg-email/vg-email-monitor.task';
 import { VgEmailAnalysisService } from './vg-email/vg-email-analysis.service';
+import { ValuationModule } from '../valuation/valuation.module';
 
 @Module({
   imports: [
@@ -37,6 +38,7 @@ import { VgEmailAnalysisService } from './vg-email/vg-email-analysis.service';
     McpModule,
     AuditLogModule,
     NotificationsModule,
+    ValuationModule,
     TypeOrmModule.forFeature([
       DisputeCase,
       AssessmentDocument,

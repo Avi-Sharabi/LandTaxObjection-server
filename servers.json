@@ -1,0 +1,13 @@
+{
+  "Servers": {
+    "1": {
+      "Name": "Nest Postgres",
+      "Group": "Servers",
+      "Host": "postgres",
+      "Port": 5432,
+      "MaintenanceDB": "landtaxDisputeDb",
+      "Username": "postgres",
+      "SSLMode": "prefer"
+    }
+  }
+}
