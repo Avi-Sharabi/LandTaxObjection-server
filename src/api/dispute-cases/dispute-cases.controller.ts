@@ -416,7 +416,7 @@ export class DisputeCasesController {
   })
   @ApiResponse({ status: 401, description: 'Unauthorised' })
   @ApiResponse({ status: 404, description: 'Dispute case not found' })
-  calculateTax(@Param('id', ParseUUIDPipe) id: string): Promise<LandTaxResponseDto> {
+  calculateTax(@Param('id') id: string): Promise<LandTaxResponseDto> {
     return this.disputeCasesService.calculateTax(id);
   }
 
