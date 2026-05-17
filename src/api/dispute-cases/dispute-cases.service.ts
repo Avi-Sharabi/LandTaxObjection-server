@@ -790,13 +790,10 @@ export class DisputeCasesService {
     let resolvedCase: DisputeCase | null = null;
 
     try {
-      await queryRunner.manager.findOne(DisputeCase, {
-        where: { id: caseId },
-        lock: { mode: 'pessimistic_write' },
-      });
       resolvedCase = await queryRunner.manager.findOne(DisputeCase, {
         where: { id: caseId },
         relations: ['client', 'property', 'assigned_accountant'],
+        lock: { mode: 'pessimistic_write' },
       });
 
       if (!resolvedCase) {

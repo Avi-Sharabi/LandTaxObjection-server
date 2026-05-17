@@ -14,7 +14,7 @@ export class DisputeCaseSubscriber implements EntitySubscriberInterface<DisputeC
   private readonly logger = new Logger(DisputeCaseSubscriber.name);
 
   constructor(
-    private readonly dataSource: DataSource,
+    dataSource: DataSource,
     private readonly azureEmailService: AzureEmailService,
     private readonly notificationsService: NotificationsService,
   ) {
@@ -45,6 +45,7 @@ export class DisputeCaseSubscriber implements EntitySubscriberInterface<DisputeC
       const resolvedAtStr = new Date().toLocaleString('en-AU', {
         day: '2-digit', month: 'long', year: 'numeric',
         hour: '2-digit', minute: '2-digit',
+        timeZone: 'Australia/Sydney',
       });
 
       const rawAssessedValue = fullCase.original_assessed_value ?? fullCase.valuation_notice?.assessed_land_value;
@@ -72,7 +73,7 @@ export class DisputeCaseSubscriber implements EntitySubscriberInterface<DisputeC
         const label = newStatus === DisputeStatus.VG_APPROVED ? 'approved' : 'declined';
         await this.notificationsService.create(
           fullCase.assigned_accountant_id,
-          NotificationType.VG_FOLLOW_UP_SENT,
+          NotificationType.VG_RESPONSE_RECEIVED,
           `VG response received for case ${fullCase.case_reference} — outcome: ${label}.`,
           caseId,
         );
