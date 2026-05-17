@@ -3,7 +3,6 @@ import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn } from 'typeor
 export enum AuditAction {
   SUBMITTED_TO_VG = 'SUBMITTED_TO_VG',
   VG_FOLLOW_UP_SENT = 'VG_FOLLOW_UP_SENT',
-  
 }
 
 @Entity('audit_logs')

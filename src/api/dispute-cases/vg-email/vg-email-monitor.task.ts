@@ -2,7 +2,10 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { SchedulerRegistry } from '@nestjs/schedule';
 import { CronJob } from 'cron';
 import { ConfigService } from '@nestjs/config';
-import { MsGraphService, GraphMessage } from 'src/common/ms-graph/ms-graph.service';
+import {
+  MsGraphService,
+  GraphMessage,
+} from 'src/common/ms-graph/ms-graph.service';
 import { VgEmailAnalysisService } from './vg-email-analysis.service';
 
 const MAX_INBOX_MESSAGES_PER_POLL = 50;
@@ -24,7 +27,10 @@ export class VgEmailMonitorTask implements OnModuleInit {
   ) {
     const raw = this.config.get<string>('VG_SENDER_EMAILS') ?? '';
     this.vgSenderEmails = new Set(
-      raw.split(',').map((e) => e.trim().toLowerCase()).filter(Boolean),
+      raw
+        .split(',')
+        .map((e) => e.trim().toLowerCase())
+        .filter(Boolean),
     );
     this.logger.log(
       `[VG-MONITOR] Watching for responses from ${this.vgSenderEmails.size} known VG sender(s)`,
@@ -32,14 +38,18 @@ export class VgEmailMonitorTask implements OnModuleInit {
   }
 
   onModuleInit() {
-    const expression = this.config.get<string>('VG_EMAIL_POLL_CRON') ?? DEFAULT_POLL_CRON;
-    const job = new CronJob(expression, () => { void this.pollVgMailbox(); });
+    const expression =
+      this.config.get<string>('VG_EMAIL_POLL_CRON') ?? DEFAULT_POLL_CRON;
+    const job = new CronJob(expression, () => {
+      void this.pollVgMailbox();
+    });
     this.schedulerRegistry.addCronJob('vg-email-monitor', job);
     job.start();
     this.logger.log(`[VG-MONITOR] Scheduled with cron: "${expression}"`);
   }
 
   public async pollVgMailbox(): Promise<void> {
+    this.processedMessageIds.clear();
     this.logger.log(
       `[VG-MONITOR] Starting VG mailbox poll — inbox=${this.msGraphService.mailboxUserId}`,
     );
@@ -47,7 +57,9 @@ export class VgEmailMonitorTask implements OnModuleInit {
     let messages: GraphMessage[];
 
     try {
-      messages = await this.msGraphService.fetchInboxMessages(MAX_INBOX_MESSAGES_PER_POLL);
+      messages = await this.msGraphService.fetchInboxMessages(
+        MAX_INBOX_MESSAGES_PER_POLL,
+      );
     } catch (err) {
       this.logger.error(
         `[VG-MONITOR] Failed to fetch inbox — ${err instanceof Error ? err.message : String(err)}`,
