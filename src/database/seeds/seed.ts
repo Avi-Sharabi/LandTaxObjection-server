@@ -11,6 +11,7 @@ import { seedCasesPagination } from './cases-pagination.seeder';
 import { seedComparablesTest } from './comparables-test.seeder';
 import { seedLandTaxRates } from './land-tax-rates.seeder';
 import { seedTaxSavingsTest } from './tax-savings-test.seeder';
+import { testVgEmail } from './test-vg-email.seeder';
 
 const logger = new Logger('Seed');
 
@@ -27,6 +28,7 @@ async function runSeeders(dataSource: DataSource): Promise<void> {
     await seedCasesPagination(dataSource);
     await seedComparablesTest(dataSource);
     await seedTaxSavingsTest(dataSource);
+    await testVgEmail(dataSource);
   }
 }
 
