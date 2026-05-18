@@ -19,7 +19,10 @@ const STATUS_ORDER: DisputeStatus[] = [
   DisputeStatus.AWAITING_CLIENT_APPROVAL,
   DisputeStatus.CLIENT_APPROVED,
   DisputeStatus.SUBMITTED_TO_VG,
-
+  DisputeStatus.VG_RESPONSE_RECEIVED,
+  DisputeStatus.VG_APPROVED,
+  DisputeStatus.VG_DECLINED,
+  DisputeStatus.FOR_REVIEW,
   DisputeStatus.OUTCOME_RECEIVED,
   DisputeStatus.CLOSED,
   DisputeStatus.CLOSED_NO_OBJECTION,

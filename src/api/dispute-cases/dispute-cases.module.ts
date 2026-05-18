@@ -20,12 +20,16 @@ import { PdfStorageHandler } from './intake/pdf-storage.handler';
 import { fyiStorageService } from 'src/common/fyi-storage/fyi-storage.service';
 import { ApprovalReminderTask } from './approval-reminder.task';
 import { MsGraphModule } from 'src/common/ms-graph/ms-graph.module';
-import { NotificationsModule } from '../notifications/notifications.module';
-import { AuditLogModule } from '../audit-log/audit-log.module';
-import { AuditLog } from '../audit-log/entities/audit-log.entity';
+
 import { McpModule } from 'src/mcp/mcp.module';
 import { VgEmailMonitorTask } from './vg-email/vg-email-monitor.task';
 import { VgEmailAnalysisService } from './vg-email/vg-email-analysis.service';
+import { VGResponseMonitorScheduler } from './vg-response-monitor.scheduler';
+import { DisputeCaseSubscriber } from './dispute-case.subscriber';
+import { NotificationsModule } from '../notifications/notifications.module';
+import { AuditLogModule } from '../audit-log/audit-log.module';
+import { AuditLog } from '../audit-log/entities/audit-log.entity';
+import { ValuationModule } from '../valuation/valuation.module';
 
 @Module({
   imports: [
@@ -37,6 +41,7 @@ import { VgEmailAnalysisService } from './vg-email/vg-email-analysis.service';
     McpModule,
     AuditLogModule,
     NotificationsModule,
+    ValuationModule,
     TypeOrmModule.forFeature([
       DisputeCase,
       AssessmentDocument,
@@ -59,6 +64,8 @@ import { VgEmailAnalysisService } from './vg-email/vg-email-analysis.service';
     ApprovalReminderTask,
     VgEmailMonitorTask,
     VgEmailAnalysisService,
+    VGResponseMonitorScheduler,
+    DisputeCaseSubscriber,
   ],
 })
-export class DisputeCasesModule {}
+export class DisputeCasesModule { }

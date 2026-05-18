@@ -129,6 +129,18 @@ export class DisputeCase {
   @Column({ type: 'numeric', precision: 15, scale: 2, nullable: true })
   tax_saving_achieved: number | null;
 
+  @Column({ type: 'numeric', precision: 5, scale: 2, nullable: false, default: 20 })
+  yml_fee_share_pct: number;
+
+  @Column({ type: 'numeric', precision: 15, scale: 2, nullable: true })
+  tax_saving: number | null;
+
+  @Column({ type: 'numeric', precision: 15, scale: 2, nullable: true })
+  yml_revenue: number | null;
+
+  @Column({ type: 'numeric', precision: 15, scale: 2, nullable: true })
+  client_savings: number | null;
+
   @Column({ type: 'text', nullable: true })
   notes: string | null;
 
@@ -143,6 +155,9 @@ export class DisputeCase {
 
   @Column({ type: 'timestamptz', nullable: true })
   last_vg_follow_up_sent_at: Date | null;
+
+  @Column({ type: 'text', nullable: true })
+  vg_response_notes: string | null;
 
   @Column({ type: 'timestamptz', nullable: true })
   closed_at: Date | null;
