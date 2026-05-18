@@ -43,15 +43,14 @@ import {
   PackageDocument,
   PackageDocumentStatus,
 } from '../objection-package/entities/package-document.entity';
-import { ClientEmailMissingException } from './exceptions/client-email-missing.exception';
-import { CaseNotClientApprovedException } from './exceptions/case-not-client-approved.exception';
 import { CaseAlreadySubmittedException } from './exceptions/case-already-submitted.exception';
-import { AuditLog, AuditAction } from '../audit-log/entities/audit-log.entity';
+import { CaseNotClientApprovedException } from './exceptions/case-not-client-approved.exception';
+import { ClientEmailMissingException } from './exceptions/client-email-missing.exception';
+import { CaseAlreadySubmittedException } from './exceptions/case-already-submitted.exception';
+import { CaseNotClientApprovedException } from './exceptions/case-not-client-approved.exception';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/entities/notification.entity';
-
-/** Nil UUID used as the actor ID for system-initiated audit log entries (e.g. cron jobs). */
-const SYSTEM_ACTOR_ID = '00000000-0000-0000-0000-000000000000';
+import { AuditAction, AuditLog } from '../audit-log/entities/audit-log.entity';
 
 const MAX_VG_FOLLOW_UPS = 3;
 
@@ -83,7 +82,7 @@ export class DisputeCasesService {
     @InjectRepository(ValuationNotice)
     private readonly valuationNoticeRepo: Repository<ValuationNotice>,
     private readonly taxComputationService: LandTaxComputationService,
-  ) {}
+  ) { }
 
   async submitIntakeApplication(
     intakeDto: CreateDisputeIntakeDto,
@@ -234,7 +233,7 @@ export class DisputeCasesService {
     if (dto.internalAssessmentValue < vgAssessedValue) {
       throw new ConflictException(
         `Internal assessment value ($${dto.internalAssessmentValue.toLocaleString()}) is less than the VG assessed value ` +
-          `($${vgAssessedValue.toLocaleString()}). The case has viable objection grounds and should not be closed without objection.`,
+        `($${vgAssessedValue.toLocaleString()}). The case has viable objection grounds and should not be closed without objection.`,
       );
     }
 
@@ -623,7 +622,18 @@ export class DisputeCasesService {
         throw new NotFoundException(`Dispute case #${id} not found`);
       }
 
-      if (disputeCase.status === DisputeStatus.SUBMITTED_TO_VG) {
+      const postSubmissionStatuses: DisputeStatus[] = [
+        DisputeStatus.SUBMITTED_TO_VG,
+        DisputeStatus.VG_RESPONSE_RECEIVED,
+        DisputeStatus.VG_APPROVED,
+        DisputeStatus.VG_DECLINED,
+        DisputeStatus.FOR_REVIEW,
+        DisputeStatus.OUTCOME_RECEIVED,
+        DisputeStatus.CLOSED,
+        DisputeStatus.CLOSED_NO_OBJECTION,
+      ];
+
+      if (postSubmissionStatuses.includes(disputeCase.status)) {
         throw new CaseAlreadySubmittedException(id);
       }
 
@@ -721,14 +731,6 @@ export class DisputeCasesService {
       resolvedCase.last_vg_follow_up_sent_at = now;
       await queryRunner.manager.save(DisputeCase, resolvedCase);
 
-      const auditEntry = queryRunner.manager.create(AuditLog, {
-        action: AuditAction.VG_FOLLOW_UP_SENT,
-        performedBy: SYSTEM_ACTOR_ID,
-        caseId,
-        lodgmentReferenceNumber: resolvedCase.lodgment_reference_number,
-      });
-      await queryRunner.manager.save(AuditLog, auditEntry);
-
       const vgEmail = this.config.getOrThrow<string>('VG_SUBMISSION_EMAIL');
       await this.azureEmailService.sendVgFollowUpEnquiry({
         sendTo: vgEmail,
@@ -768,16 +770,6 @@ export class DisputeCasesService {
     }
   }
 
-  async remove(id: string): Promise<{ message: string }> {
-    const disputeCase = await this.disputeCasesRepository.findOne({
-      where: { id },
-    });
-    if (!disputeCase)
-      throw new NotFoundException(`Dispute case #${id} not found`);
-    await this.disputeCasesRepository.remove(disputeCase);
-    return { message: `Dispute case #${id} removed` };
-  }
-
   async updateVgOutcome(
     caseId: string,
     newStatus: DisputeStatus,
@@ -792,7 +784,6 @@ export class DisputeCasesService {
     try {
       resolvedCase = await queryRunner.manager.findOne(DisputeCase, {
         where: { id: caseId },
-        relations: ['client', 'property', 'assigned_accountant'],
         lock: { mode: 'pessimistic_write' },
       });
 
@@ -801,14 +792,11 @@ export class DisputeCasesService {
       }
 
       resolvedCase.status = newStatus;
-      if (
-        (newStatus === DisputeStatus.VG_DECLINED ||
-          newStatus === DisputeStatus.FOR_REVIEW) &&
-        reasoning
-      ) {
+      if (reasoning) {
         resolvedCase.vg_response_notes = reasoning;
       }
       await queryRunner.manager.save(DisputeCase, resolvedCase);
+
       await queryRunner.commitTransaction();
     } catch (err) {
       await queryRunner.rollbackTransaction();
@@ -816,7 +804,33 @@ export class DisputeCasesService {
     } finally {
       await queryRunner.release();
     }
+
+    if (resolvedCase?.assigned_accountant_id) {
+      const label =
+        newStatus === DisputeStatus.VG_APPROVED
+          ? 'approved'
+          : newStatus === DisputeStatus.VG_DECLINED
+            ? 'declined'
+            : 'flagged for review';
+      await this.notificationsService.create(
+        resolvedCase.assigned_accountant_id,
+        NotificationType.VG_RESPONSE_RECEIVED,
+        `VG response received for case ${resolvedCase.case_reference} — outcome: ${label}.`,
+        caseId,
+      );
+    }
   }
+
+  async remove(id: string): Promise<{ message: string }> {
+    const disputeCase = await this.disputeCasesRepository.findOne({
+      where: { id },
+    });
+    if (!disputeCase)
+      throw new NotFoundException(`Dispute case #${id} not found`);
+    await this.disputeCasesRepository.remove(disputeCase);
+    return { message: `Dispute case #${id} removed` };
+  }
+
 
   async calculateTax(id: string): Promise<LandTaxResponseDto> {
     const disputeCase = await this.disputeCasesRepository.findOne({

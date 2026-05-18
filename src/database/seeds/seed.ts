@@ -6,6 +6,7 @@ import { seedClients } from './client.seeder';
 import { seedObjectionPackage } from './objection-package.seeder';
 import { seedCaseClosedNoObjection } from './case-closed-no-objection.seeder';
 import { seedNotifications } from './notification.seeder';
+import { seedVgMonitorTest } from './vg-monitor-test.seeder';
 import { seedSubmitToVG } from './submit-to-vg.seeder';
 import { seedCasesPagination } from './cases-pagination.seeder';
 import { seedComparablesTest } from './comparables-test.seeder';
@@ -24,6 +25,7 @@ async function runSeeders(dataSource: DataSource): Promise<void> {
     await seedObjectionPackage(dataSource);
     await seedCaseClosedNoObjection(dataSource);
     await seedNotifications(dataSource);
+    await seedVgMonitorTest(dataSource);
     await seedSubmitToVG(dataSource);
     await seedCasesPagination(dataSource);
     await seedComparablesTest(dataSource);

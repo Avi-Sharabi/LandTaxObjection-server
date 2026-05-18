@@ -10,9 +10,9 @@ import {
   UseGuards,
   HttpCode,
   Query,
-  Req,
   Version,
   ParseUUIDPipe,
+  Req,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -360,8 +360,7 @@ export class DisputeCasesController {
     return this.disputeCasesService.sendObjectionPackage(id);
   }
 
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.INTERNAL_Assessor)
+  @UseGuards(JwtAuthGuard,)
   @ApiBearerAuth()
   @Post(':id/submit-to-vg')
   @HttpCode(200)
