@@ -1,7 +1,5 @@
-import { NestFactory } from '@nestjs/core';
 import { Logger } from '@nestjs/common';
 import { DataSource } from 'typeorm';
-import { AppModule } from '../../app.module';
 import {
   DisputeCase,
   DisputeStatus,
@@ -21,10 +19,7 @@ const IDS = {
 
 const TEST_EMAIL = process.env.VG_SENDER_EMAILS;
 
-async function main() {
-  const app = await NestFactory.createApplicationContext(AppModule);
-  const dataSource = app.get(DataSource);
-
+export async function testVgEmail(dataSource: DataSource): Promise<void> {
   // ── Resolve accountant ───────────────────────────────────────────────────
   const [accountant] = await dataSource.query<
     { id: string; fullName: string }[]
@@ -177,11 +172,4 @@ async function main() {
   declinedCase.vg_response_notes = 'VG upheld original valuation.';
   await dataSource.manager.save(DisputeCase, declinedCase);
   logger.log(`vg_declined — subscriber fired for case SEED-VGEMAIL-002`);
-
-  await app.close();
 }
-
-main().catch((err) => {
-  logger.error(err);
-  process.exit(1);
-});
