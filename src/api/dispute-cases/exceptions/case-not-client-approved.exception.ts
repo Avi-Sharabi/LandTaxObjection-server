@@ -1,7 +1,11 @@
 import { DomainException } from 'src/common/exceptions/domain.exception';
 
 export class CaseNotClientApprovedException extends DomainException {
-  constructor(caseId: string) {
-    super('CASE_NOT_CLIENT_APPROVED', `Dispute case #${caseId} must be client-approved before submitting to VG`, 422);
+  constructor(id: string) {
+    super(
+      'CASE_NOT_CLIENT_APPROVED',
+      `Dispute case #${id} must be in CLIENT_APPROVED status before submitting to the VG.`,
+      422,
+    );
   }
 }

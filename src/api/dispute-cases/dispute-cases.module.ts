@@ -20,16 +20,15 @@ import { PdfStorageHandler } from './intake/pdf-storage.handler';
 import { fyiStorageService } from 'src/common/fyi-storage/fyi-storage.service';
 import { ApprovalReminderTask } from './approval-reminder.task';
 import { MsGraphModule } from 'src/common/ms-graph/ms-graph.module';
-
-import { McpModule } from 'src/mcp/mcp.module';
-import { VgEmailMonitorTask } from './vg-email/vg-email-monitor.task';
-import { VgEmailAnalysisService } from './vg-email/vg-email-analysis.service';
-import { VGResponseMonitorScheduler } from './vg-response-monitor.scheduler';
-import { DisputeCaseSubscriber } from './dispute-case.subscriber';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { AuditLogModule } from '../audit-log/audit-log.module';
 import { AuditLog } from '../audit-log/entities/audit-log.entity';
+import { McpModule } from 'src/mcp/mcp.module';
+import { VgEmailMonitorTask } from './vg-email/vg-email-monitor.task';
+import { VgEmailAnalysisService } from './vg-email/vg-email-analysis.service';
 import { ValuationModule } from '../valuation/valuation.module';
+import { DisputeCaseSubscriber } from './dispute-case.subscriber';
+import { VGResponseMonitorScheduler } from './vg-response-monitor.scheduler';
 
 @Module({
   imports: [

@@ -5,8 +5,8 @@ import { isProduction } from './environment';
 export function createRedisConfig(config: ConfigService): BullRootModuleOptions {
   return {
     connection: {
-      host: config.get<string>('REDIS_HOST', 'localhost'),
-      port: config.get<number>('REDIS_PORT', 6379),
+      host: config.getOrThrow<string>('REDIS_HOST'),
+      port: config.getOrThrow<number>('REDIS_PORT'),
       lazyConnect: true,
       enableOfflineQueue: false,
       ...(isProduction(config) && {

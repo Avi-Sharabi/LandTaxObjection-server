@@ -36,6 +36,9 @@ import { DisputeCaseResponseDto } from './dto/dispute-case-response.dto';
 import { AnalysisReportResponseDto } from './dto/analysis-report-response.dto';
 import { LandTaxResponseDto } from '../valuation/dto/land-tax-response.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from 'src/common/guards/roles.guard';
+import { Roles } from 'src/common/decorators/roles.decorator';
+import { UserRole } from '../users/entities/user.entity';
 
 @ApiTags('dispute-cases')
 @Controller({
@@ -43,8 +46,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
   version: '1',
 })
 export class DisputeCasesController {
-  constructor(private readonly disputeCasesService: DisputeCasesService) { }
-
+  constructor(private readonly disputeCasesService: DisputeCasesService) {}
 
   /**
    * Submit a new dispute case via intake form
@@ -359,7 +361,6 @@ export class DisputeCasesController {
   }
 
   @UseGuards(JwtAuthGuard,)
-
   @ApiBearerAuth()
   @Post(':id/submit-to-vg')
   @HttpCode(200)

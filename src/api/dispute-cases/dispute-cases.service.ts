@@ -43,6 +43,8 @@ import {
   PackageDocument,
   PackageDocumentStatus,
 } from '../objection-package/entities/package-document.entity';
+import { CaseAlreadySubmittedException } from './exceptions/case-already-submitted.exception';
+import { CaseNotClientApprovedException } from './exceptions/case-not-client-approved.exception';
 import { ClientEmailMissingException } from './exceptions/client-email-missing.exception';
 import { CaseAlreadySubmittedException } from './exceptions/case-already-submitted.exception';
 import { CaseNotClientApprovedException } from './exceptions/case-not-client-approved.exception';
@@ -768,7 +770,11 @@ export class DisputeCasesService {
     }
   }
 
-  async updateVgOutcome(caseId: string, newStatus: DisputeStatus, reasoning?: string): Promise<void> {
+  async updateVgOutcome(
+    caseId: string,
+    newStatus: DisputeStatus,
+    reasoning?: string,
+  ): Promise<void> {
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
@@ -786,7 +792,7 @@ export class DisputeCasesService {
       }
 
       resolvedCase.status = newStatus;
-      if ((newStatus === DisputeStatus.VG_DECLINED || newStatus === DisputeStatus.FOR_REVIEW) && reasoning) {
+      if (reasoning) {
         resolvedCase.vg_response_notes = reasoning;
       }
       await queryRunner.manager.save(DisputeCase, resolvedCase);
@@ -800,16 +806,20 @@ export class DisputeCasesService {
     }
 
     if (resolvedCase?.assigned_accountant_id) {
-      const label = newStatus === DisputeStatus.VG_APPROVED ? 'approved' : 'declined';
+      const label =
+        newStatus === DisputeStatus.VG_APPROVED
+          ? 'approved'
+          : newStatus === DisputeStatus.VG_DECLINED
+            ? 'declined'
+            : 'flagged for review';
       await this.notificationsService.create(
         resolvedCase.assigned_accountant_id,
-        NotificationType.VG_FOLLOW_UP_SENT,
+        NotificationType.VG_RESPONSE_RECEIVED,
         `VG response received for case ${resolvedCase.case_reference} — outcome: ${label}.`,
         caseId,
       );
     }
   }
-
 
   async remove(id: string): Promise<{ message: string }> {
     const disputeCase = await this.disputeCasesRepository.findOne({
