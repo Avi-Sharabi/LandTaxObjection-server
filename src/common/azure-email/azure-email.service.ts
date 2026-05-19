@@ -2,7 +2,7 @@
 
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { EmailClient } from '@azure/communication-email';
+import { EmailClient, EmailMessage } from '@azure/communication-email';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -70,6 +70,14 @@ export class AzureEmailService implements OnModuleInit {
         return html;
     }
 
+    private async send(message: EmailMessage): Promise<void> {
+        const poller = await this.emailClient.beginSend(message);
+        const result = await poller.pollUntilDone();
+        if (result.status !== 'Succeeded') {
+            throw new Error(`Azure ACS email delivery failed — status=${result.status} id=${result.id}`);
+        }
+    }
+
     async sendDisputeApplication(caseReferences: string[], sendTo: string): Promise<void> {
         const html = this.loadTemplate('dispute-application-submitted', { caseReferences });
 
@@ -88,8 +96,7 @@ export class AzureEmailService implements OnModuleInit {
             },
         };
 
-        const poller = await this.emailClient.beginSend(message);
-        await poller.pollUntilDone();
+        await this.send(message);
     }
 
     async sendAdvisoryLetterNotification(data: {
@@ -129,8 +136,7 @@ export class AzureEmailService implements OnModuleInit {
             ...(data.attachments?.length && { attachments: data.attachments }),
         };
 
-        const poller = await this.emailClient.beginSend(message);
-        await poller.pollUntilDone();
+        await this.send(message);
     }
 
     async sendObjectionPackageApproval(params: {
@@ -164,8 +170,7 @@ export class AzureEmailService implements OnModuleInit {
             ...(params.attachments?.length && { attachments: params.attachments }),
         };
 
-        const poller = await this.emailClient.beginSend(message);
-        await poller.pollUntilDone();
+        await this.send(message);
     }
 
     async sendObjectionPackageReminder(params: {
@@ -199,8 +204,7 @@ export class AzureEmailService implements OnModuleInit {
             ...(params.attachments?.length && { attachments: params.attachments }),
         };
 
-        const poller = await this.emailClient.beginSend(message);
-        await poller.pollUntilDone();
+        await this.send(message);
     }
 
     async sendVgSubmissionConfirmation(params: {
@@ -234,12 +238,12 @@ export class AzureEmailService implements OnModuleInit {
             },
         };
 
-        const poller = await this.emailClient.beginSend(message);
-        await poller.pollUntilDone();
+        await this.send(message);
     }
 
     async sendVgFollowUpEnquiry(params: {
         sendTo: string;
+        recipientName?: string;
         caseReference: string;
         propertyAddress: string;
         lodgmentReferenceNumber: string;
@@ -260,7 +264,7 @@ export class AzureEmailService implements OnModuleInit {
         const message = {
             senderAddress: this.sender,
             recipients: {
-                to: [{ address: params.sendTo, displayName: 'Valuer-General Office' }],
+                to: [{ address: params.sendTo, displayName: params.recipientName ?? 'Valuer-General Office' }],
             },
             content: {
                 subject: `[${params.caseReference}] Follow-Up Enquiry #${params.followUpCount} — Awaiting VG Response`,
@@ -268,8 +272,7 @@ export class AzureEmailService implements OnModuleInit {
             },
         };
 
-        const poller = await this.emailClient.beginSend(message);
-        await poller.pollUntilDone();
+        await this.send(message);
     }
 
     async sendVgResponseNotification(params: {
@@ -312,7 +315,6 @@ export class AzureEmailService implements OnModuleInit {
             },
         };
 
-        const poller = await this.emailClient.beginSend(message);
-        await poller.pollUntilDone();
+        await this.send(message);
     }
 }
