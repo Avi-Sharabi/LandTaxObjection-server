@@ -20,6 +20,7 @@ import {
   QueryArgsDto,
   SearchComparableSalesArgsDto,
 } from './dto/tool-args.dto';
+import { UpdateDatabaseService } from './update-database.service';
 
 type ToolResult = { content: { type: string; text: string }[]; isError?: boolean };
 type CacheEntry = { data: unknown; expiresAt: number };
@@ -30,7 +31,10 @@ export class McpService implements OnModuleInit {
   private readonly toolCache = new Map<string, CacheEntry>();
   private readonly skills = new Map<string, string>();
 
-  constructor(@InjectDataSource() private dataSource: DataSource) {}
+  constructor(
+    @InjectDataSource() private dataSource: DataSource,
+    private readonly updateDatabaseService: UpdateDatabaseService,
+  ) {}
 
   async onModuleInit(): Promise<void> {
     const skillsDir = path.join(__dirname, '..', 'skills');
@@ -159,6 +163,26 @@ export class McpService implements OnModuleInit {
               required: ['table_name'],
             },
           },
+          {
+            name: 'update_database',
+            description:
+              'AI WRITE — pass plain-text instructions describing a database update. ' +
+              'Claude reasoning mode interprets the instruction using the update-database skill and executes it. ' +
+              'Example: "Update dispute_cases, set status to vg_approved for record <uuid>, performed by <uuid>". ' +
+              'Writes are validated against allowed tables from update-database.md. ' +
+              'Returns the write-back schema from update-database.md.',
+            inputSchema: {
+              type: 'object',
+              additionalProperties: false,
+              properties: {
+                Instructions: {
+                  type: 'string',
+                  description: 'Plain-text description of the database update to perform.',
+                },
+              },
+              required: ['Instructions'],
+            },
+          },
         ],
       };
     });
@@ -188,6 +212,12 @@ export class McpService implements OnModuleInit {
           result = await this.withTimeout(
             this.describeTable(args ?? {}, correlationId),
             10_000,
+            name,
+          );
+        } else if (name === 'update_database') {
+          result = await this.withTimeout(
+            this.updateDatabase(args ?? {}, correlationId),
+            30_000,
             name,
           );
         } else {
@@ -331,5 +361,23 @@ export class McpService implements OnModuleInit {
     const result: ToolResult = { content: [{ type: 'text', text: JSON.stringify(rows) }] };
     this.setCached(cacheKey, result, 5 * 60 * 1000);
     return result;
+  }
+
+  private async updateDatabase(
+    args: Record<string, unknown>,
+    correlationId: string,
+  ): Promise<ToolResult> {
+    const timestamp = new Date().toISOString();
+    const skillContent = this.skills.get('update-database');
+    if (!skillContent) {
+      this.logger.warn('update-database skill not loaded — cannot process update_database tool call');
+      return {
+        content: [{ type: 'text', text: JSON.stringify({
+          success: false, reason: 'update-database skill is not loaded on this server.', timestamp,
+        }) }],
+        isError: true,
+      };
+    }
+    return this.updateDatabaseService.execute(args, skillContent, correlationId);
   }
 }
