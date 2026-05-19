@@ -1,4 +1,4 @@
-import { IsDateString, IsNumber, IsOptional, IsString, Max, Min } from 'class-validator';
+import { IsDateString, IsNumber, IsOptional, IsString, Max, Min, MinLength } from 'class-validator';
 
 export class SearchComparableSalesArgsDto {
   @IsOptional()
@@ -42,4 +42,10 @@ export class QueryArgsDto {
 export class DescribeTableArgsDto {
   @IsString()
   table_name: string;
+}
+
+export class UpdateDatabaseArgsDto {
+  @IsString()
+  @MinLength(10)
+  Instructions: string;
 }
