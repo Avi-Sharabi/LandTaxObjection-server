@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AiModule } from 'src/ai/ai.module';
+import { AiUpdateLogModule } from 'src/api/ai-update-log/ai-update-log.module';
 import { McpController } from './mcp.controller';
 import { McpService } from './mcp.service';
 import { McpAuthGuard } from './mcp-auth.guard';
@@ -13,7 +14,7 @@ import { DescribeTableTool } from './tools/describe-table.tool';
 import { UpdateDatabaseTool } from './tools/update-database.tool';
 
 @Module({
-  imports: [AiModule],
+  imports: [AiModule, AiUpdateLogModule],
   controllers: [McpController, UpdateDatabaseController],
   providers: [
     McpService,

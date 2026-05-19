@@ -23,7 +23,7 @@ for the LandTaxValuationDispute NestJS/TypeORM/PostgreSQL backend.
 | User | `users` | System users (accountants, admins, assessors) |
 | Client | `clients` | Clients from XPM and intake forms |
 | Property | `properties` | Real properties under dispute |
-| DisputeCase | `dispute_cases` | Core dispute case records |
+| DisputeCase | `dispute_cases` | Core dispute case records — includes `jurisdiction` (NSW/VIC/QLD/WA) |
 | ValuationNotice | `valuation_notices` | Valuation notices linked to properties |
 | ValuationNoticeFile | `valuation_notice_files` | Documents for valuation notices |
 | AssessmentDocument | `assessment_documents` | Assessment documents linked to clients |
@@ -323,9 +323,17 @@ status that requires human action or financial commitment.
 | `outcome` | `upheld`, `partially_upheld`, `rejected`, `withdrawn` | Only after status = `vg_approved` or `vg_declined` |
 | `final_agreed_value` | Yes | Only when `outcome` is set; round to 2dp |
 | `tax_saving_achieved` | Yes | Derived from original vs. final value |
+| `tax_saving` | Yes | Computed net tax saving (KAN-164); round to 2dp |
+| `yml_revenue` | Yes | YML fee share derived from tax_saving × yml_fee_share_pct; round to 2dp |
+| `client_savings` | Yes | Client net saving after YML fee; round to 2dp |
+| `lodgment_reference_number` | Yes | Only when VG lodgment reference is confirmed |
 | `vg_response_notes` | Append only — never overwrite | Prefix each entry with ISO timestamp |
+| `analysis_report_blob_path` | Yes | Blob storage path set by AI analysis service |
 | `closed_at` | Never | Human action only |
 | `client_approval_token` | Never | System-generated only |
+| `advisory_view_token` | Never | System-generated only |
+| `advisory_view_token_expires_at` | Never | System-generated only |
+| `yml_fee_share_pct` | Never | Admin-configured value; do not override |
 
 #### `valuation_notices`
 
@@ -353,9 +361,9 @@ status that requires human action or financial commitment.
 | Column | AI can write | Notes |
 |---|---|---|
 | `action` | `SUBMITTED_TO_VG`, `VG_FOLLOW_UP_SENT` | From AuditAction enum only |
-| `performedBy` | Yes | UUID of the triggering user or system user |
-| `caseId` | Yes | Must match the case being acted upon |
-| `lodgmentReferenceNumber` | Yes | If available from VG response |
+| `performed_by` | Yes | UUID of the triggering user or system user |
+| `case_id` | Yes | Must match the case being acted upon |
+| `lodgment_reference_number` | Yes | If available from VG response |
 
 #### Tables AI must NOT write to
 
@@ -496,6 +504,66 @@ pending | scanning | complete | failed | rejected
 
 ```
 accountant | admin | Internal Assessor
+```
+
+### Jurisdiction
+
+```
+NSW | VIC | QLD | WA
+```
+
+Used on both `properties.state` and `dispute_cases.jurisdiction`.
+
+### Decision Outcome
+
+```
+OBJECTION | ADVISORY
+```
+
+Used on `valuation_notices.decision_outcome`.
+
+### Ownership Type
+
+```
+INDIVIDUAL | COMPANY_TRUST
+```
+
+Used on `valuation_notices.ownership_type`.
+
+### Client Status
+
+```
+PROSPECT | TC_NEGOTIATION | ACTIVE | REJECTED
+```
+
+Used on `clients.status`.
+
+### Uploaded By Role
+
+```
+CLIENT | STAFF | STAFF_ON_BEHALF_OF_CLIENT
+```
+
+Used on document upload entities.
+
+### Package Document Category
+
+```
+NOTICE_OF_OBJECTION | COMPARABLE_SALES_REPORT | MASS_APPRAISAL_DEVIATION |
+SITE_CONSTRAINTS_SUMMARY | SUPPORTING_UPLOADS
+```
+
+### Package Document Status
+
+```
+READY | MISSING | PENDING
+```
+
+### Document Type
+
+```
+VALUATION_NOTICE | LAND_TAX_ASSESSMENT | LAND_TITLE_SEARCH | INDEPENDENT_VALUATION |
+PROPERTY_REPORT | PHOTOGRAPH | LEGAL_DOCUMENT | GENERATED_OBJECTION | ADVISORY_LETTER | OTHER
 ```
 
 ---

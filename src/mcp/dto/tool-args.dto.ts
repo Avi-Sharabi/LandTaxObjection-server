@@ -46,7 +46,7 @@ export class DescribeTableArgsDto {
 }
 
 export class UpdateDatabaseArgsDto {
-  @ApiProperty({ description: 'Plain-text description of the database update to perform.', example: 'Update dispute_cases, set status to vg_approved for record <uuid>, performed by <uuid>' })
+  @ApiProperty({ description: 'Plain-text description of the database update to perform.', example: 'Set status to vg_approved for the dispute case with reference LT-2024-001.' })
   @IsString()
   @MinLength(10)
   instruction: string;

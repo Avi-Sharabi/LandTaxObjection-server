@@ -1,11 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
+import { ConfigService } from '@nestjs/config';
 import { plainToInstance } from 'class-transformer';
 import { validateOrReject } from 'class-validator';
 import { isAxiosError } from 'axios';
 import { UpdateDatabaseArgsDto } from './dto/tool-args.dto';
 import { AnthropicService } from 'src/ai/anthropic.service';
+import { AiUpdateAction } from 'src/api/ai-update-log/entities/ai-update-log.entity';
 
 type ToolResult = { content: { type: string; text: string }[]; isError?: boolean };
 
@@ -18,14 +20,44 @@ interface SchemaColumn {
 
 type SchemaMap = Map<string, Set<string>>; // table_name → Set<column_name>
 
+const AI_ALLOWED_STATUSES = new Set(['vg_approved', 'vg_declined', 'for_review']);
+const REQUIRED_CURRENT_STATUS_FOR_AI = 'vg_response_received';
+
 @Injectable()
 export class UpdateDatabaseService {
   private readonly logger = new Logger(UpdateDatabaseService.name);
 
+  // Tables the AI is never allowed to write to
   private readonly BLOCKED_TABLES = new Set([
-    'users', 'clients', 'properties', 'land_tax_rates',
-    'package_documents', 'client_approval_token',
+    // Core reference data
+    'clients', 'properties',
+    // Dispute workflow tables — human-managed only
+    'dispute_cases', 'valuation_notices', 'notifications',
+    // Auto-generated / system-managed
+    'package_documents', 'ai_update_logs', 'comparable_sales',
+    // File upload managed tables
+    'valuation_notice_files', 'constraint_files', 'dispute_documents', 'assessment_documents',
+    // User-action only tables
+    'dispute_legal_grounds', 'dispute_constraints',
   ]);
+
+  // Explicit per-table allowlist of columns the AI may write
+  private readonly ALLOWED_WRITES: Record<string, Set<string>> = {
+    users: new Set(['full_name', 'role', 'phone', 'is_active']),
+    land_tax_rates: new Set([
+      'tax_year', 'threshold', 'base_amount', 'marginal_rate_pct',
+      'premium_threshold', 'premium_base_amount', 'premium_rate_pct', 'foreign_surcharge_pct',
+    ]),
+  };
+
+  // These fields must be appended to, never overwritten
+  private readonly APPEND_ONLY_FIELDS = new Set<string>();
+
+  // Tables with an updated_at column that must be refreshed on raw SQL writes
+  private readonly TABLES_WITH_UPDATED_AT = new Set<string>();
+
+  // All AI-writable tables require an ai_update_logs entry
+  private readonly AUDIT_REQUIRED_TABLES = new Set(['users', 'land_tax_rates']);
 
   private schemaCache: { schema: string; map: SchemaMap; expiresAt: number } | null = null;
   private readonly SCHEMA_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -33,6 +65,7 @@ export class UpdateDatabaseService {
   constructor(
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly anthropic: AnthropicService,
+    private readonly config: ConfigService,
   ) {}
 
   private async fetchLiveSchema(): Promise<{ schema: string; map: SchemaMap }> {
@@ -135,11 +168,11 @@ export class UpdateDatabaseService {
         matchedRows = await this.dataSource.query(`SELECT * FROM (${sql}) _search_q LIMIT 10`);
       }
     } catch {
-      // non-fatal — proceed with empty context, Claude will explain it can't find the record
+      // non-fatal — proceed with empty context
     }
 
     // 3b. Call Claude with the found rows — it decides the exact update
-    let parsed: { table: string; record_id: string; updates: Record<string, unknown>; performed_by?: string };
+    let parsed: { table: string; record_id: string; updates: Record<string, unknown> };
     try {
       const result = await this.anthropic.call({
         systemBlocks: [{ text: skillContent }],
@@ -178,7 +211,7 @@ export class UpdateDatabaseService {
       };
     }
 
-    // 4. Validate Claude output — if Claude returned a failure object, pass it through directly
+    // 4. Validate Claude output — pass through Claude failure objects directly
     const raw = parsed as Record<string, unknown>;
     if (raw['success'] === false) {
       return {
@@ -186,7 +219,7 @@ export class UpdateDatabaseService {
         isError: true,
       };
     }
-    const { table, record_id, updates, performed_by } = parsed;
+    const { table, record_id, updates } = parsed;
     if (!table || !record_id || !updates || !Object.keys(updates).length) {
       return {
         content: [{ type: 'text', text: JSON.stringify({
@@ -206,6 +239,31 @@ export class UpdateDatabaseService {
         }) }],
         isError: true,
       };
+    }
+
+    // 5b. Column-level allowlist — only permitted columns per table may be written
+    const allowedColumns = this.ALLOWED_WRITES[table];
+    if (!allowedColumns) {
+      return {
+        content: [{ type: 'text', text: JSON.stringify({
+          success: false, table, record_id,
+          reason: `Table '${table}' is not in the AI write allowlist.`,
+          action_required: 'manual_review', timestamp,
+        }) }],
+        isError: true,
+      };
+    }
+    for (const col of Object.keys(updates)) {
+      if (!allowedColumns.has(col)) {
+        return {
+          content: [{ type: 'text', text: JSON.stringify({
+            success: false, table, record_id,
+            reason: `Column '${col}' on table '${table}' is not permitted for AI writes.`,
+            action_required: 'manual_review', timestamp,
+          }) }],
+          isError: true,
+        };
+      }
     }
 
     // 6. Validate that every column Claude chose actually exists in the live schema
@@ -234,11 +292,12 @@ export class UpdateDatabaseService {
       }
     }
 
-    // 7. Confirm row exists (read-only pre-flight check)
-    let exists: { id: string }[];
+    // 7. Pre-flight: confirm record exists and read current status for transition guard
+    let currentRow: Record<string, unknown>[];
     try {
-      exists = await this.dataSource.query(
-        `SELECT id FROM "${table}" WHERE id = $1 LIMIT 1`,
+      const extraCols = table === 'dispute_cases' ? ', "status"' : '';
+      currentRow = await this.dataSource.query(
+        `SELECT "id"${extraCols} FROM "${table}" WHERE id = $1 LIMIT 1`,
         [record_id],
       );
     } catch (err) {
@@ -251,7 +310,7 @@ export class UpdateDatabaseService {
         isError: true,
       };
     }
-    if (!exists.length) {
+    if (!currentRow.length) {
       return {
         content: [{ type: 'text', text: JSON.stringify({
           success: false, table, record_id,
@@ -261,14 +320,64 @@ export class UpdateDatabaseService {
       };
     }
 
-    // 8. Read previous values + execute UPDATE inside a single transaction
-    const columns = Object.keys(updates);
-    const values  = Object.values(updates);
-    const colList = columns.map((c) => `"${c}"`).join(', ');
-    const setClauses = columns.map((col, i) => `"${col}" = $${i + 1}`).join(', ');
-    const updateSql  = `UPDATE "${table}" SET ${setClauses} WHERE id = $${columns.length + 1}`;
-    const params     = [...values, record_id];
+    // 7b. Status transition guard — AI may only move dispute_cases to specific statuses
+    //     and only when the current status is vg_response_received
+    if (table === 'dispute_cases' && 'status' in updates) {
+      const currentStatus = currentRow[0]['status'] as string;
+      const newStatus = updates['status'] as string;
+      if (currentStatus !== REQUIRED_CURRENT_STATUS_FOR_AI) {
+        return {
+          content: [{ type: 'text', text: JSON.stringify({
+            success: false, table, record_id,
+            reason: `Status transition not allowed: current status is '${currentStatus}', must be '${REQUIRED_CURRENT_STATUS_FOR_AI}' for AI to update.`,
+            action_required: 'manual_review', timestamp,
+          }) }],
+          isError: true,
+        };
+      }
+      if (!AI_ALLOWED_STATUSES.has(newStatus)) {
+        return {
+          content: [{ type: 'text', text: JSON.stringify({
+            success: false, table, record_id,
+            reason: `AI may not set status to '${newStatus}'. Allowed values: ${[...AI_ALLOWED_STATUSES].join(', ')}.`,
+            action_required: 'manual_review', timestamp,
+          }) }],
+          isError: true,
+        };
+      }
+    }
 
+    // 8. Build parameterized UPDATE SQL
+    //    Append-only fields use CASE … COALESCE to concatenate rather than overwrite.
+    //    updated_at is injected via NOW() for tables that track it.
+    const columns = Object.keys(updates);
+    const params: unknown[] = [];
+    const setClauses: string[] = [];
+
+    for (const col of columns) {
+      params.push(updates[col]);
+      if (this.APPEND_ONLY_FIELDS.has(col)) {
+        setClauses.push(
+          `"${col}" = CASE WHEN "${col}" IS NULL THEN $${params.length} ELSE "${col}" || E'\\n' || $${params.length} END`,
+        );
+      } else {
+        setClauses.push(`"${col}" = $${params.length}`);
+      }
+    }
+
+    if (this.TABLES_WITH_UPDATED_AT.has(table)) {
+      setClauses.push(`"updated_at" = NOW()`);
+    }
+
+    params.push(record_id);
+    const updateSql = `UPDATE "${table}" SET ${setClauses.join(', ')} WHERE id = $${params.length}`;
+
+
+    const systemUserId =
+      this.config.get<string>('MCP_SYSTEM_USER_ID') ?? '00000000-0000-0000-0000-000000000000';
+    const colList = columns.map((c) => `"${c}"`).join(', ');
+
+    // 9. Execute UPDATE + audit log insert in a single transaction
     let previousValues: Record<string, unknown> = {};
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
@@ -279,7 +388,17 @@ export class UpdateDatabaseService {
         [record_id],
       );
       previousValues = prevRows[0] ?? {};
+
       await queryRunner.query(updateSql, params);
+
+      if (this.AUDIT_REQUIRED_TABLES.has(table)) {
+        await queryRunner.query(
+          `INSERT INTO "ai_update_logs" ("id", "action", "performed_by", "created_at")
+           VALUES (uuid_generate_v4(), $1, $2, NOW())`,
+          [AiUpdateAction.AI_DB_WRITE, systemUserId],
+        );
+      }
+
       await queryRunner.commitTransaction();
     } catch (err) {
       await queryRunner.rollbackTransaction();
@@ -298,18 +417,18 @@ export class UpdateDatabaseService {
     this.logger.log(JSON.stringify({
       context: 'MCP.db.write',
       correlationId, tool: 'update_database',
-      table, record_id, columns, performed_by,
+      table, record_id, columns, performed_by: systemUserId,
       ts: timestamp,
     }));
 
-    // 9. Return write-back output schema (update-database.md §B.5)
+    // 10. Return write-back output schema (update-database.md §B.5)
     return {
       content: [{ type: 'text', text: JSON.stringify({
         success: true, table, record_id,
         fields_updated: columns,
         previous_values: previousValues,
         new_values: updates,
-        audit_logged: false,
+        audit_logged: this.AUDIT_REQUIRED_TABLES.has(table),
         timestamp,
       }) }],
     };
