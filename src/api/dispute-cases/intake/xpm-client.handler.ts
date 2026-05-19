@@ -47,7 +47,7 @@ export class XpmClientHandler {
     intakeDto: CreateDisputeIntakeDto,
     xpmClient: any,
   ): Promise<Client> {
-    const existing = await this.findClientByEmail(xpmClient.email ?? intakeDto.email);
+    const existing = await this.findClientByName(intakeDto.fullName);
     const mapped = this.mapXpmToClient(xpmClient, ClientStatus.ACTIVE, intakeDto.accountantId);
 
     if (existing) {
@@ -59,9 +59,6 @@ export class XpmClientHandler {
   }
 
   async handleNewProspect(intakeDto: CreateDisputeIntakeDto): Promise<Client> {
-    const existing = await this.findClientByEmail(intakeDto.email);
-    if (existing) return existing;
-
     const client = this.clientsRepository.create({
       name: intakeDto.fullName,
       email: intakeDto.email,
@@ -72,8 +69,8 @@ export class XpmClientHandler {
     return this.clientsRepository.save(client);
   }
 
-  async findClientByEmail(email: string): Promise<Client | null> {
-    return this.clientsRepository.findOne({ where: { email } });
+  async findClientByName(name: string): Promise<Client | null> {
+    return this.clientsRepository.findOne({ where: { name } });
   }
 
   private mapXpmToClient(
