@@ -39,6 +39,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from 'src/common/guards/roles.guard';
 import { Roles } from 'src/common/decorators/roles.decorator';
 import { UserRole } from '../users/entities/user.entity';
+import { VGResponseMonitorScheduler } from './vg-response-monitor.scheduler';
 
 @ApiTags('dispute-cases')
 @Controller({
@@ -46,7 +47,10 @@ import { UserRole } from '../users/entities/user.entity';
   version: '1',
 })
 export class DisputeCasesController {
-  constructor(private readonly disputeCasesService: DisputeCasesService) {}
+  constructor(
+    private readonly disputeCasesService: DisputeCasesService,
+    private readonly vgResponseMonitorScheduler: VGResponseMonitorScheduler,
+  ) {}
 
   /**
    * Submit a new dispute case via intake form
@@ -421,6 +425,26 @@ export class DisputeCasesController {
 
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
+  @Post('internal/run-vg-follow-up')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: '[Internal] Manually trigger the VG follow-up scheduler',
+    description:
+      'Runs the same logic as the nightly cron job. Use in test/staging to verify follow-up emails and audit entries without waiting for the schedule.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Run complete — returns counts of cases checked, emails sent, and failures',
+    schema: {
+      example: { checked: 2, sent: 2, failed: 0 },
+    },
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorised' })
+  @ApiResponse({ status: 403, description: 'Forbidden — admin role required' })
+  runVGFollowUp(): Promise<{ checked: number; sent: number; failed: number }> {
+    return this.vgResponseMonitorScheduler.runVGFollowUpCheck();
+  }
+
   @Delete(':id')
   @ApiOperation({ summary: 'Delete a dispute case' })
   @ApiParam({ name: 'id', description: 'Dispute case UUID' })

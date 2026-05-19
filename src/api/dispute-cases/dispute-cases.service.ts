@@ -50,7 +50,8 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/entities/notification.entity';
 import { AuditAction, AuditLog } from '../audit-log/entities/audit-log.entity';
 
-const MAX_VG_FOLLOW_UPS = 3;
+const VG_FOLLOW_UP_WINDOW_DAYS = 90;
+const SYSTEM_ACTOR_ID = '00000000-0000-0000-0000-000000000000';
 
 const THREE_DAY_WINDOW_DAYS = 3;
 const THREE_DAY_WINDOW_MINUTES = THREE_DAY_WINDOW_DAYS * 24 * 60;
@@ -690,31 +691,39 @@ export class DisputeCasesService {
 
   async findCasesDueForVGFollowUp(): Promise<DisputeCase[]> {
     const fiveDaysAgo = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000);
+    const ninetyDaysAgo = new Date(
+      Date.now() - VG_FOLLOW_UP_WINDOW_DAYS * 24 * 60 * 60 * 1000,
+    );
     return this.disputeCasesRepository
       .createQueryBuilder('dc')
       .leftJoinAndSelect('dc.property', 'property')
       .leftJoinAndSelect('dc.valuation_notice', 'valuation_notice')
+      .leftJoinAndSelect('dc.assigned_accountant', 'assigned_accountant')
       .where('dc.status = :status', { status: DisputeStatus.SUBMITTED_TO_VG })
+      .andWhere('dc.vg_follow_up_count < :maxFollowUps', { maxFollowUps: 5 })
       .andWhere(
-        'COALESCE(dc.last_vg_follow_up_sent_at, dc.submitted_at) <= :threshold',
-        { threshold: fiveDaysAgo },
+        '(dc.last_vg_follow_up_sent_at IS NULL AND dc.submitted_at <= :ninetyDaysAgo)' +
+          ' OR (dc.last_vg_follow_up_sent_at IS NOT NULL AND dc.last_vg_follow_up_sent_at <= :fiveDaysAgo)',
+        { ninetyDaysAgo, fiveDaysAgo },
       )
-      .andWhere('dc.vg_follow_up_count < :max', { max: MAX_VG_FOLLOW_UPS })
       .getMany();
   }
 
   async sendVGFollowUp(caseId: string): Promise<void> {
+
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
 
     let resolvedCase: DisputeCase | null = null;
     let newFollowUpCount = 0;
+    let now = new Date();
 
     try {
+      // Lock only the bare row — PostgreSQL rejects FOR UPDATE on the nullable
+      // side of a LEFT JOIN, so relations must be loaded in a separate query.
       resolvedCase = await queryRunner.manager.findOne(DisputeCase, {
         where: { id: caseId },
-        relations: ['property'],
         lock: { mode: 'pessimistic_write' },
       });
 
@@ -723,31 +732,27 @@ export class DisputeCasesService {
       }
 
       newFollowUpCount = resolvedCase.vg_follow_up_count + 1;
-      const now = new Date();
+      now = new Date();
 
       resolvedCase.vg_follow_up_count = newFollowUpCount;
       resolvedCase.last_vg_follow_up_sent_at = now;
       await queryRunner.manager.save(DisputeCase, resolvedCase);
 
-      const vgEmail = this.config.getOrThrow<string>('VG_SUBMISSION_EMAIL');
-      await this.azureEmailService.sendVgFollowUpEnquiry({
-        sendTo: vgEmail,
-        caseReference: resolvedCase.case_reference,
-        propertyAddress: this.buildPropertyAddress(resolvedCase.property),
-        lodgmentReferenceNumber: resolvedCase.lodgment_reference_number ?? '',
-        submittedAt: (resolvedCase.submitted_at ?? now).toLocaleString(
-          'en-AU',
-          {
-            timeZone: 'Australia/Melbourne',
-            day: '2-digit',
-            month: 'long',
-            year: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit',
-          },
-        ),
-        followUpCount: String(newFollowUpCount),
+      // Load relations after the write, within the same transaction — no lock needed.
+      const caseWithRelations = await queryRunner.manager.findOne(DisputeCase, {
+        where: { id: caseId },
+        relations: ['property', 'assigned_accountant'],
       });
+      resolvedCase.property = caseWithRelations?.property ?? resolvedCase.property;
+      resolvedCase.assigned_accountant = caseWithRelations?.assigned_accountant ?? resolvedCase.assigned_accountant;
+
+      const auditEntry = queryRunner.manager.create(AuditLog, {
+        action: AuditAction.VG_FOLLOW_UP_SENT,
+        performedBy: SYSTEM_ACTOR_ID,
+        caseId,
+        lodgmentReferenceNumber: resolvedCase.lodgment_reference_number ?? null,
+      });
+      await queryRunner.manager.save(AuditLog, auditEntry);
 
       await queryRunner.commitTransaction();
     } catch (err) {
@@ -757,7 +762,31 @@ export class DisputeCasesService {
       await queryRunner.release();
     }
 
-    // Notification fires only after a successful commit; failure here is non-critical
+    // Email and notification fire only after a successful commit — failures here do not
+    // roll back the DB state (follow-up count and audit log are already persisted).
+    const vgEmail = this.config.get<string>('VG_SUBMISSION_EMAIL');
+    if (vgEmail) {
+      await this.azureEmailService.sendVgFollowUpEnquiry({
+        sendTo: vgEmail,
+        caseReference: resolvedCase!.case_reference,
+        propertyAddress: this.buildPropertyAddress(resolvedCase!.property),
+        lodgmentReferenceNumber: resolvedCase!.lodgment_reference_number ?? '',
+        submittedAt: (resolvedCase!.submitted_at ?? now).toLocaleString('en-AU', {
+          timeZone: 'Australia/Melbourne',
+          day: '2-digit',
+          month: 'long',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+        }),
+        followUpCount: String(newFollowUpCount),
+      });
+    } else {
+      this.logger.warn(
+        `[VG-FOLLOW-UP] VG_SUBMISSION_EMAIL not configured — email skipped for caseId=${caseId}`,
+      );
+    }
+
     if (resolvedCase?.assigned_accountant_id) {
       await this.notificationsService.create(
         resolvedCase.assigned_accountant_id,
