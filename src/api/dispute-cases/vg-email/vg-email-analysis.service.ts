@@ -275,7 +275,7 @@ export class VgEmailAnalysisService implements OnModuleInit {
     );
 
     const addressMatch = text.match(
-      /\d+\s+[A-Z][a-zA-Z\s]+(Street|Road|Avenue|Court|Drive|Place|Close)\s+[A-Z][a-zA-Z\s]+/i,
+      /\d+\s+[A-Z][a-zA-Z\s]+(Street|St|Road|Rd|Avenue|Ave|Court|Ct|Drive|Dr|Place|Pl|Close|Cl|Crescent|Cres|Parade|Pde|Terrace|Tce|Highway|Hwy|Grove|Gr)\b\s+[A-Z][a-zA-Z\s]+/i,
     );
     const addresses = addressMatch ? [addressMatch[0].trim()] : [];
 
@@ -423,36 +423,31 @@ export class VgEmailAnalysisService implements OnModuleInit {
           .trim() || null;
       streetPart = expanded.slice(0, commaIdx).trim();
     } else {
-      // No comma — last alpha word before optional state/postcode is the suburb
-      const suburbMatch = expanded.match(
-        /([A-Za-z]+)\s*(?:NSW|VIC|QLD|WA|SA|TAS|NT|ACT)?\s*\d{0,4}\s*$/i,
+      // No comma — extract suburb as everything after the street type keyword
+      const streetTypeAnchor = expanded.match(
+        /\b(?:STREET|ROAD|AVENUE|COURT|DRIVE|PLACE|CLOSE|CRESCENT|PARADE|TERRACE|HIGHWAY|GROVE)\b\s+(.+?)(?:\s+(?:NSW|VIC|QLD|WA|SA|TAS|NT|ACT)\b)?(?:\s+\d{4})?\s*$/i,
       );
-      suburb = suburbMatch?.[1]?.trim() || null;
+      suburb =
+        streetTypeAnchor?.[1]
+          ?.replace(/\b(?:NSW|VIC|QLD|WA|SA|TAS|NT|ACT)\b/gi, '')
+          ?.replace(/\b\d{4}\b/g, '')
+          ?.trim() || null;
     }
 
-    // Extract street name (skip leading street number)
-    const streetNameMatch = streetPart.match(/^\d+\s+(.+)/);
-    const streetToken = streetNameMatch
-      ? streetNameMatch[1].split(/\s+/).slice(0, 2).join(' ').trim() || null
+    // Include street number in the token so "1 PID TEST" and "2 PID TEST" stay distinct.
+    const streetNumberMatch = streetPart.match(/^(\d+)\s+(.+)/);
+    const streetToken = streetNumberMatch
+      ? `${streetNumberMatch[1]} ${streetNumberMatch[2].split(/\s+/).slice(0, 2).join(' ')}`.trim() || null
       : null;
 
     return { streetToken, suburb };
   }
 
   private normaliseForSearch(address: string): string {
+    // Do NOT expand abbreviations — the DB stores raw values (e.g. "ST" not "STREET").
+    // Expanding causes a mismatch in the ILIKE query and silently falls through to Tier 2/3.
     return address
       .toUpperCase()
-      .replace(/\bST\b/g, 'STREET')
-      .replace(/\bRD\b/g, 'ROAD')
-      .replace(/\bAVE?\b/g, 'AVENUE')
-      .replace(/\bCT\b/g, 'COURT')
-      .replace(/\bDR\b/g, 'DRIVE')
-      .replace(/\bPL\b/g, 'PLACE')
-      .replace(/\bCL\b/g, 'CLOSE')
-      .replace(/\bCRES\b/g, 'CRESCENT')
-      .replace(/\bHWY\b/g, 'HIGHWAY')
-      .replace(/\bPDE\b/g, 'PARADE')
-      .replace(/\bTCE\b/g, 'TERRACE')
       .replace(/[^A-Z0-9\s]/g, ' ')
       .replace(/\s+/g, ' ')
       .trim();
