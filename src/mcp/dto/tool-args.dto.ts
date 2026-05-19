@@ -1,3 +1,4 @@
+import { ApiProperty } from '@nestjs/swagger';
 import { IsDateString, IsNumber, IsOptional, IsString, Max, Min, MinLength } from 'class-validator';
 
 export class SearchComparableSalesArgsDto {
@@ -45,7 +46,8 @@ export class DescribeTableArgsDto {
 }
 
 export class UpdateDatabaseArgsDto {
+  @ApiProperty({ description: 'Plain-text description of the database update to perform.', example: 'Update dispute_cases, set status to vg_approved for record <uuid>, performed by <uuid>' })
   @IsString()
   @MinLength(10)
-  Instructions: string;
+  instruction: string;
 }

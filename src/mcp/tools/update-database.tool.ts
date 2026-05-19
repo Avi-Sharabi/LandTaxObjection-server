@@ -17,12 +17,12 @@ export class UpdateDatabaseTool implements IMcpTool {
     type: 'object',
     additionalProperties: false,
     properties: {
-      Instructions: {
+      instruction: {
         type: 'string',
         description: 'Plain-text description of the database update to perform.',
       },
     },
-    required: ['Instructions'],
+    required: ['instruction'],
   };
 
   constructor(

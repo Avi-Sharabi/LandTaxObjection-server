@@ -1,14 +1,15 @@
 import { randomUUID } from 'crypto';
 import { Body, Controller, HttpCode, HttpStatus, Post, UseGuards } from '@nestjs/common';
-import { ApiOperation, ApiTags } from '@nestjs/swagger';
-import { McpAuthGuard } from './mcp-auth.guard';
+import { ApiCookieAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { JwtAuthGuard } from 'src/api/auth/guards/jwt-auth.guard';
 import { SkillRegistryService } from './skill-registry.service';
 import { UpdateDatabaseService } from './update-database.service';
 import { UpdateDatabaseArgsDto } from './dto/tool-args.dto';
 
+@ApiCookieAuth()
 @ApiTags('AI Tools')
 @Controller({ path: 'update-database', version: '1' })
-@UseGuards(McpAuthGuard)
+@UseGuards(JwtAuthGuard)
 export class UpdateDatabaseController {
   constructor(
     private readonly skillRegistry: SkillRegistryService,

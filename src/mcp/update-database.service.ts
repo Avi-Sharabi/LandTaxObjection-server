@@ -118,7 +118,7 @@ export class UpdateDatabaseService {
       const result = await this.anthropic.call({
         systemBlocks: [{ text: skillContent }],
         userMessage: [
-          dto.Instructions,
+          dto.instruction,
           '',
           'DATABASE SCHEMA (live — use these exact column names, do not invent any):',
           liveSchema,
@@ -148,7 +148,14 @@ export class UpdateDatabaseService {
       };
     }
 
-    // 4. Validate Claude output
+    // 4. Validate Claude output — if Claude returned a failure object, pass it through directly
+    const raw = parsed as Record<string, unknown>;
+    if (raw['success'] === false) {
+      return {
+        content: [{ type: 'text', text: JSON.stringify({ ...raw, timestamp }) }],
+        isError: true,
+      };
+    }
     const { table, record_id, updates, performed_by } = parsed;
     if (!table || !record_id || !performed_by || !updates || !Object.keys(updates).length) {
       return {
