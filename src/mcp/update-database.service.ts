@@ -112,25 +112,55 @@ export class UpdateDatabaseService {
       };
     }
 
-    // 3. Call Claude with reasoning mode — inject live schema into user message
-    let parsed: { table: string; record_id: string; updates: Record<string, unknown>; performed_by: string };
+    // 3a. Ask Claude to generate a SELECT query to find the matching record
+    let matchedRows: unknown[] = [];
+    try {
+      const searchResult = await this.anthropic.call({
+        systemBlocks: [{ text: skillContent }],
+        userMessage: [
+          'INSTRUCTION: ' + dto.instruction,
+          '',
+          'DATABASE SCHEMA:',
+          liveSchema,
+          '',
+          'Write a single SQL SELECT query that finds the record(s) matching the details in the instruction.',
+          'Return ONLY the raw SQL — no prose, no markdown fences, no explanation.',
+        ].join('\n'),
+        maxTokens: 500,
+      });
+
+      const sql = searchResult.text.trim().replace(/;$/, '').replace(/```(?:sql)?/gi, '').trim();
+      const normalized = sql.replace(/\/\*[\s\S]*?\*\//g, '').replace(/--[^\n]*/g, '').trim().toUpperCase();
+      if (normalized.startsWith('SELECT') || normalized.startsWith('WITH')) {
+        matchedRows = await this.dataSource.query(`SELECT * FROM (${sql}) _search_q LIMIT 10`);
+      }
+    } catch {
+      // non-fatal — proceed with empty context, Claude will explain it can't find the record
+    }
+
+    // 3b. Call Claude with the found rows — it decides the exact update
+    let parsed: { table: string; record_id: string; updates: Record<string, unknown>; performed_by?: string };
     try {
       const result = await this.anthropic.call({
         systemBlocks: [{ text: skillContent }],
         userMessage: [
+          'INSTRUCTION FROM USER:',
           dto.instruction,
           '',
-          'DATABASE SCHEMA (live — use these exact column names, do not invent any):',
+          'DATABASE SCHEMA (live — use these exact column names):',
           liveSchema,
+          '',
+          'MATCHING RECORDS FOUND IN DATABASE:',
+          matchedRows.length ? JSON.stringify(matchedRows, null, 2) : '(none found)',
+          '',
           'RULES:',
+          '- Use only the record(s) above — do not invent IDs.',
           '- Only use column names that appear in the schema above.',
-          '- If the column you need is not listed, return { "success": false, "reason": "Column not found in schema" }.',
           '- Tables marked [PROTECTED] must not be written to.',
-          '- record_id and performed_by must be UUID format (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx).',
-          '- If any identifier is not a UUID, return { "success": false, "reason": "Non-UUID identifier provided" }.',
+          '- If no record was found or the match is ambiguous, return { "success": false, "reason": "<explanation>" }.',
           '',
           'Return a single raw JSON object — no prose, no markdown fences.',
-          'Fields: table, record_id, updates (object with column→value pairs), performed_by.',
+          'Fields: table, record_id (UUID from the matched record), updates (column→value pairs).',
         ].join('\n'),
         maxTokens: 4000,
         thinking: { budgetTokens: 2000 },
@@ -157,7 +187,7 @@ export class UpdateDatabaseService {
       };
     }
     const { table, record_id, updates, performed_by } = parsed;
-    if (!table || !record_id || !performed_by || !updates || !Object.keys(updates).length) {
+    if (!table || !record_id || !updates || !Object.keys(updates).length) {
       return {
         content: [{ type: 'text', text: JSON.stringify({
           success: false, reason: 'Claude returned incomplete data.', timestamp,
