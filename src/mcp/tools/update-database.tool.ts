@@ -12,7 +12,7 @@ export class UpdateDatabaseTool implements IMcpTool {
     'Example: "Update dispute_cases, set status to vg_approved for record <uuid>, performed by <uuid>". ' +
     'Writes are validated against allowed tables from update-database.md. ' +
     'Returns the write-back schema from update-database.md.';
-  readonly timeoutMs = 30_000;
+  readonly timeoutMs = 60_000;
   readonly inputSchema = {
     type: 'object',
     additionalProperties: false,
