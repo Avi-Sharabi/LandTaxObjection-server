@@ -59,9 +59,9 @@ jobs:
           cp package.json deployment/
           cp package-lock.json deployment/
 
-      - name: Deploy to Azure Web App
+      - name: Deploy to Azure App Service
         uses: azure/webapps-deploy@v3
         with:
-          app-name: 'landtaxdispute-server'
+          app-name: landtaxdispute-server-qa
           publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE_QA }}
           package: deployment
