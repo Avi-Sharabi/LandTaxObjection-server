@@ -7,6 +7,8 @@ export function createRedisConfig(config: ConfigService): BullRootModuleOptions 
     connection: {
       host: config.getOrThrow<string>('REDIS_HOST'),
       port: config.getOrThrow<number>('REDIS_PORT'),
+      lazyConnect: true,
+      enableOfflineQueue: false,
       ...(isProduction(config) && {
         password: config.getOrThrow<string>('REDIS_PASSWORD'),
         tls: {},

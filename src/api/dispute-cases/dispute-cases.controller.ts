@@ -10,9 +10,9 @@ import {
   UseGuards,
   HttpCode,
   Query,
-  Req,
   Version,
   ParseUUIDPipe,
+  Req,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
@@ -34,10 +34,12 @@ import { CloseNoObjectionDto } from './dto/close-no-objection.dto';
 import { ApproveObjectionPackageDto } from './dto/approve-objection-package.dto';
 import { DisputeCaseResponseDto } from './dto/dispute-case-response.dto';
 import { AnalysisReportResponseDto } from './dto/analysis-report-response.dto';
+import { LandTaxResponseDto } from '../valuation/dto/land-tax-response.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from 'src/common/guards/roles.guard';
 import { Roles } from 'src/common/decorators/roles.decorator';
 import { UserRole } from '../users/entities/user.entity';
+import { VGResponseMonitorScheduler } from './vg-response-monitor.scheduler';
 
 @ApiTags('dispute-cases')
 @Controller({
@@ -45,19 +47,35 @@ import { UserRole } from '../users/entities/user.entity';
   version: '1',
 })
 export class DisputeCasesController {
-  constructor(private readonly disputeCasesService: DisputeCasesService) { }
+  constructor(
+    private readonly disputeCasesService: DisputeCasesService,
+    private readonly vgResponseMonitorScheduler: VGResponseMonitorScheduler,
+  ) {}
 
   /**
    * Submit a new dispute case via intake form
    * Accepts application/json with base64-encoded PDF
    */
-  @ApiOperation({ summary: 'Submit a new dispute intake application', description: 'Creates a new dispute case with client, property, and legal grounds' })
+  @ApiOperation({
+    summary: 'Submit a new dispute intake application',
+    description:
+      'Creates a new dispute case with client, property, and legal grounds',
+  })
   @ApiBody({ type: CreateDisputeIntakeDto })
-  @ApiResponse({ status: 201, description: 'Dispute case successfully created' })
-  @ApiResponse({ status: 400, description: 'Validation error — missing required fields or invalid base64 attachment' })
+  @ApiResponse({
+    status: 201,
+    description: 'Dispute case successfully created',
+  })
+  @ApiResponse({
+    status: 400,
+    description:
+      'Validation error — missing required fields or invalid base64 attachment',
+  })
   @ApiResponse({ status: 500, description: 'Internal server error' })
   @Post('intake/submit')
-  async submitIntake(@Body() intakeDto: CreateDisputeIntakeDto): Promise<unknown> {
+  async submitIntake(
+    @Body() intakeDto: CreateDisputeIntakeDto,
+  ): Promise<unknown> {
     return this.disputeCasesService.submitIntakeApplication(intakeDto);
   }
 
@@ -67,13 +85,24 @@ export class DisputeCasesController {
    */
   @Version('2')
   @Post('intake/submit')
-  @ApiOperation({ summary: 'Submit a new dispute intake application (v2)', description: 'Simplified intake — no legal grounds or YML contact required at submission time' })
+  @ApiOperation({
+    summary: 'Submit a new dispute intake application (v2)',
+    description:
+      'Simplified intake — no legal grounds or YML contact required at submission time',
+  })
   @ApiBody({ type: CreateDisputeIntakeV2Dto })
-  @ApiResponse({ status: 201, description: 'Dispute case successfully created' })
+  @ApiResponse({
+    status: 201,
+    description: 'Dispute case successfully created',
+  })
   @ApiResponse({ status: 400, description: 'Validation error' })
   @ApiResponse({ status: 500, description: 'Internal server error' })
-  async submitIntakeV2(@Body() intakeDto: CreateDisputeIntakeV2Dto): Promise<unknown> {
-    return this.disputeCasesService.submitIntakeApplication(intakeDto as unknown as CreateDisputeIntakeDto);
+  async submitIntakeV2(
+    @Body() intakeDto: CreateDisputeIntakeV2Dto,
+  ): Promise<unknown> {
+    return this.disputeCasesService.submitIntakeApplication(
+      intakeDto as unknown as CreateDisputeIntakeDto,
+    );
   }
 
   @Post('approve')
@@ -85,7 +114,11 @@ export class DisputeCasesController {
       'Validates the token, records approval, and clears the token. Idempotent on repeat calls.',
   })
   @ApiBody({ type: ApproveObjectionPackageDto })
-  @ApiResponse({ status: 200, description: 'Package approved or already approved — { alreadyApproved: boolean, propertyAddress?: string }' })
+  @ApiResponse({
+    status: 200,
+    description:
+      'Package approved or already approved — { alreadyApproved: boolean, propertyAddress?: string }',
+  })
   @ApiResponse({ status: 404, description: 'Token not found or invalid' })
   @ApiResponse({ status: 410, description: 'Token has expired' })
   approveObjectionPackage(
@@ -98,15 +131,31 @@ export class DisputeCasesController {
   @HttpCode(200)
   @ApiOperation({
     summary: 'Get objection package documents for client review',
-    description: 'Public endpoint. Returns signed document view URLs for the given approval token. Used by the client-facing approval page before the client submits their approval.',
+    description:
+      'Public endpoint. Returns signed document view URLs for the given approval token. Used by the client-facing approval page before the client submits their approval.',
   })
-  @ApiQuery({ name: 'token', required: true, description: 'Approval token UUID' })
-  @ApiResponse({ status: 200, description: 'Document list returned', type: ApprovalDocumentsResponseDto })
+  @ApiQuery({
+    name: 'token',
+    required: true,
+    description: 'Approval token UUID',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Document list returned',
+    type: ApprovalDocumentsResponseDto,
+  })
   @ApiResponse({ status: 400, description: 'Missing or malformed token' })
   @ApiResponse({ status: 404, description: 'Token not found or invalid' })
   @ApiResponse({ status: 410, description: 'Token has expired' })
-  getApprovalDocuments(@Query('token') token: string): Promise<ApprovalDocumentsResponseDto> {
-    if (!token || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(token)) {
+  getApprovalDocuments(
+    @Query('token') token: string,
+  ): Promise<ApprovalDocumentsResponseDto> {
+    if (
+      !token ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
+        token,
+      )
+    ) {
       throw new BadRequestException('Invalid or missing approval token');
     }
     return this.disputeCasesService.getApprovalDocuments(token);
@@ -116,34 +165,64 @@ export class DisputeCasesController {
   @ApiBearerAuth()
   @Get()
   @ApiOperation({ summary: 'List all dispute cases' })
-  @ApiQuery({ name: 'clientId', required: false, description: 'Filter by client UUID' })
-  @ApiResponse({ status: 200, description: 'List of dispute cases', type: [DisputeCaseResponseDto] })
+  @ApiQuery({
+    name: 'clientId',
+    required: false,
+    description: 'Filter by client UUID',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'List of dispute cases',
+    type: [DisputeCaseResponseDto],
+  })
   @ApiResponse({ status: 401, description: 'Unauthorised' })
-  findAll(@Query('clientId', new ParseUUIDPipe({ optional: true })) clientId?: string): Promise<DisputeCaseResponseDto[]> {
+  findAll(
+    @Query('clientId', new ParseUUIDPipe({ optional: true })) clientId?: string,
+  ): Promise<DisputeCaseResponseDto[]> {
     return this.disputeCasesService.findAll(clientId);
   }
 
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @Get('paginated')
-  @ApiOperation({ summary: 'List dispute cases with pagination, search, and filtering' })
-  @ApiResponse({ status: 200, description: 'Paginated list of dispute cases', type: PaginatedDisputeCasesResponseDto })
+  @ApiOperation({
+    summary: 'List dispute cases with pagination, search, and filtering',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Paginated list of dispute cases',
+    type: PaginatedDisputeCasesResponseDto,
+  })
   @ApiResponse({ status: 401, description: 'Unauthorised' })
-  findPaginated(@Query() query: GetDisputeCasesQueryDto): Promise<PaginatedDisputeCasesResponseDto> {
+  findPaginated(
+    @Query() query: GetDisputeCasesQueryDto,
+  ): Promise<PaginatedDisputeCasesResponseDto> {
     return this.disputeCasesService.findPaginated(query);
   }
 
   // Public endpoint — no auth guard. Accessed via time-limited token link in the advisory letter email.
   @Get('advisory-view')
   @ApiOperation({
-    summary: 'Public advisory document view — validates token and returns case summary with a signed PDF URL',
-    description: 'Token is single-use per link and expires 72 hours after the case is closed.',
+    summary:
+      'Public advisory document view — validates token and returns case summary with a signed PDF URL',
+    description:
+      'Token is single-use per link and expires 72 hours after the case is closed.',
   })
-  @ApiQuery({ name: 'token', required: true, description: 'Advisory view token UUID from the email link' })
-  @ApiResponse({ status: 200, description: 'Case summary and signed report URL', type: AnalysisReportResponseDto })
+  @ApiQuery({
+    name: 'token',
+    required: true,
+    description: 'Advisory view token UUID from the email link',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Case summary and signed report URL',
+    type: AnalysisReportResponseDto,
+  })
   @ApiResponse({ status: 404, description: 'Token not found or invalid' })
   @ApiResponse({ status: 410, description: 'Token has expired' })
-  findAdvisoryView(@Query('token') token: string): Promise<AnalysisReportResponseDto> {
+  findAdvisoryView(
+    @Query('token') token: string,
+  ): Promise<AnalysisReportResponseDto> {
     return this.disputeCasesService.findAdvisoryView(token);
   }
 
@@ -152,7 +231,11 @@ export class DisputeCasesController {
   @Get(':id')
   @ApiOperation({ summary: 'Get a single dispute case by ID' })
   @ApiParam({ name: 'id', description: 'Dispute case UUID' })
-  @ApiResponse({ status: 200, description: 'Dispute case found', type: DisputeCaseResponseDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Dispute case found',
+    type: DisputeCaseResponseDto,
+  })
   @ApiResponse({ status: 401, description: 'Unauthorised' })
   @ApiResponse({ status: 404, description: 'Dispute case not found' })
   findOne(@Param('id') id: string): Promise<DisputeCaseResponseDto> {
@@ -162,12 +245,20 @@ export class DisputeCasesController {
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @Get(':id/no-objection-report-url')
-  @ApiOperation({ summary: 'Get signed URL for the no-objection analysis report' })
+  @ApiOperation({
+    summary: 'Get signed URL for the no-objection analysis report',
+  })
   @ApiParam({ name: 'id', description: 'Dispute case UUID' })
-  @ApiResponse({ status: 200, description: 'Case ID, reference, and signed report URL', type: AnalysisReportResponseDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Case ID, reference, and signed report URL',
+    type: AnalysisReportResponseDto,
+  })
   @ApiResponse({ status: 401, description: 'Unauthorised' })
   @ApiResponse({ status: 404, description: 'Dispute case not found' })
-  getNoObjectionReportUrl(@Param('id') id: string): Promise<AnalysisReportResponseDto> {
+  getNoObjectionReportUrl(
+    @Param('id') id: string,
+  ): Promise<AnalysisReportResponseDto> {
     return this.disputeCasesService.findNoObjectionReportUrl(id);
   }
 
@@ -177,10 +268,17 @@ export class DisputeCasesController {
   @ApiOperation({ summary: 'Update a dispute case' })
   @ApiParam({ name: 'id', description: 'Dispute case UUID' })
   @ApiBody({ type: UpdateDisputeCaseDto })
-  @ApiResponse({ status: 200, description: 'Dispute case updated', type: DisputeCaseResponseDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Dispute case updated',
+    type: DisputeCaseResponseDto,
+  })
   @ApiResponse({ status: 401, description: 'Unauthorised' })
   @ApiResponse({ status: 404, description: 'Dispute case not found' })
-  update(@Param('id') id: string, @Body() updateDisputeCaseDto: UpdateDisputeCaseDto): Promise<DisputeCaseResponseDto> {
+  update(
+    @Param('id') id: string,
+    @Body() updateDisputeCaseDto: UpdateDisputeCaseDto,
+  ): Promise<DisputeCaseResponseDto> {
     return this.disputeCasesService.update(id, updateDisputeCaseDto);
   }
 
@@ -189,10 +287,17 @@ export class DisputeCasesController {
   @Post(':id/advance-to-appraisal')
   @ApiOperation({ summary: 'Advance a dispute case to valuation appraisal' })
   @ApiParam({ name: 'id', description: 'Dispute case UUID' })
-  @ApiResponse({ status: 201, description: 'Case advanced to appraisal', type: DisputeCaseResponseDto })
+  @ApiResponse({
+    status: 201,
+    description: 'Case advanced to appraisal',
+    type: DisputeCaseResponseDto,
+  })
   @ApiResponse({ status: 401, description: 'Unauthorised' })
   @ApiResponse({ status: 404, description: 'Dispute case not found' })
-  @ApiResponse({ status: 422, description: 'Fewer than 3 comparable sales exist' })
+  @ApiResponse({
+    status: 422,
+    description: 'Fewer than 3 comparable sales exist',
+  })
   advanceToAppraisal(@Param('id') id: string): Promise<DisputeCaseResponseDto> {
     return this.disputeCasesService.advanceToAppraisal(id);
   }
@@ -209,10 +314,20 @@ export class DisputeCasesController {
   })
   @ApiParam({ name: 'id', description: 'Dispute case UUID' })
   @ApiBody({ type: CloseNoObjectionDto })
-  @ApiResponse({ status: 200, description: 'Case closed — no objection warranted', type: DisputeCaseResponseDto })
+  @ApiResponse({
+    status: 200,
+    description: 'Case closed — no objection warranted',
+    type: DisputeCaseResponseDto,
+  })
   @ApiResponse({ status: 401, description: 'Unauthorised' })
-  @ApiResponse({ status: 409, description: 'Case is already closed, or internal value is below VG value' })
-  @ApiResponse({ status: 422, description: 'Client has no email address on record' })
+  @ApiResponse({
+    status: 409,
+    description: 'Case is already closed, or internal value is below VG value',
+  })
+  @ApiResponse({
+    status: 422,
+    description: 'Client has no email address on record',
+  })
   closeNoObjection(
     @Param('id') id: string,
     @Body() dto: CloseNoObjectionDto,
@@ -232,16 +347,24 @@ export class DisputeCasesController {
       'Returns 409 if the client has already approved the package.',
   })
   @ApiParam({ name: 'id', description: 'Dispute case UUID' })
-  @ApiResponse({ status: 201, description: 'Email dispatched — token stored on record', type: DisputeCaseResponseDto })
+  @ApiResponse({
+    status: 201,
+    description: 'Email dispatched — token stored on record',
+    type: DisputeCaseResponseDto,
+  })
   @ApiResponse({ status: 401, description: 'Unauthorised' })
   @ApiResponse({ status: 404, description: 'Dispute case not found' })
-  @ApiResponse({ status: 409, description: 'Package has already been approved by the client' })
-  sendObjectionPackage(@Param('id') id: string): Promise<DisputeCaseResponseDto> {
+  @ApiResponse({
+    status: 409,
+    description: 'Package has already been approved by the client',
+  })
+  sendObjectionPackage(
+    @Param('id') id: string,
+  ): Promise<DisputeCaseResponseDto> {
     return this.disputeCasesService.sendObjectionPackage(id);
   }
 
-  @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.INTERNAL_Assessor)
+  @UseGuards(JwtAuthGuard,)
   @ApiBearerAuth()
   @Post(':id/submit-to-vg')
   @HttpCode(200)
@@ -253,21 +376,75 @@ export class DisputeCasesController {
       'The DB update and audit log are rolled back if the email send fails.',
   })
   @ApiParam({ name: 'id', description: 'Dispute case UUID' })
-  @ApiResponse({ status: 200, description: 'Case submitted — lodgmentReferenceNumber and submittedAt returned', type: DisputeCaseResponseDto })
+  @ApiResponse({
+    status: 200,
+    description:
+      'Case submitted — lodgmentReferenceNumber and submittedAt returned',
+    type: DisputeCaseResponseDto,
+  })
   @ApiResponse({ status: 401, description: 'Unauthorised' })
-  @ApiResponse({ status: 403, description: 'Case is not in CLIENT_APPROVED status, or caller is not an Internal Assessor' })
+  @ApiResponse({
+    status: 403,
+    description:
+      'Case is not in CLIENT_APPROVED status, or caller is not an Internal Assessor',
+  })
   @ApiResponse({ status: 404, description: 'Dispute case not found' })
-  @ApiResponse({ status: 409, description: 'Case has already been submitted to VG' })
+  @ApiResponse({
+    status: 409,
+    description: 'Case has already been submitted to VG',
+  })
   submitToVg(
     @Param('id') id: string,
     @Req() req: { user: { id: string; fullName: string } },
   ): Promise<DisputeCaseResponseDto> {
-    return this.disputeCasesService.submitToVg(id, req.user.id, req.user.fullName);
+    return this.disputeCasesService.submitToVg(
+      id,
+      req.user.id,
+      req.user.fullName,
+    );
   }
-
 
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
+  @Post(':id/calculate-tax')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Compute land tax saved and profit for a dispute case',
+  })
+  @ApiParam({ name: 'id', description: 'Dispute case UUID' })
+  @ApiResponse({ status: 200, type: LandTaxResponseDto })
+  @ApiResponse({
+    status: 400,
+    description: 'Missing required data or unsupported tax year',
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorised' })
+  @ApiResponse({ status: 404, description: 'Dispute case not found' })
+  calculateTax(@Param('id') id: string): Promise<LandTaxResponseDto> {
+    return this.disputeCasesService.calculateTax(id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @Post('internal/run-vg-follow-up')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: '[Internal] Manually trigger the VG follow-up scheduler',
+    description:
+      'Runs the same logic as the nightly cron job. Use in test/staging to verify follow-up emails and audit entries without waiting for the schedule.',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Run complete — returns counts of cases checked, emails sent, and failures',
+    schema: {
+      example: { checked: 2, sent: 2, failed: 0 },
+    },
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorised' })
+  @ApiResponse({ status: 403, description: 'Forbidden — admin role required' })
+  runVGFollowUp(): Promise<{ checked: number; sent: number; failed: number }> {
+    return this.vgResponseMonitorScheduler.runVGFollowUpCheck();
+  }
+
   @Delete(':id')
   @ApiOperation({ summary: 'Delete a dispute case' })
   @ApiParam({ name: 'id', description: 'Dispute case UUID' })
