@@ -2,7 +2,6 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, IsNull } from 'typeorm';
-import { ConfigService } from '@nestjs/config';
 import { DisputeCase, DisputeStatus } from './entities/dispute-case.entity';
 import { AzureEmailService } from 'src/common/azure-email/azure-email.service';
 import { NotificationsService } from '../notifications/notifications.service';
@@ -17,7 +16,6 @@ export class VgOutcomeNotificationTask {
     private readonly repo: Repository<DisputeCase>,
     private readonly azureEmailService: AzureEmailService,
     private readonly notificationsService: NotificationsService,
-    private readonly config: ConfigService,
   ) {}
 
   // Runs hourly — configurable via VG_OUTCOME_NOTIFICATION_CRON env var
@@ -25,13 +23,21 @@ export class VgOutcomeNotificationTask {
   async runVgOutcomeNotificationCheck(): Promise<void> {
     this.logger.log('[VG-OUTCOME-NOTIFY] Starting check');
 
-    const cases = await this.repo.find({
-      where: [
-        { status: DisputeStatus.VG_APPROVED, vg_outcome_notified_at: IsNull() },
-        { status: DisputeStatus.VG_DECLINED, vg_outcome_notified_at: IsNull() },
-      ],
-      relations: ['client', 'property', 'assigned_accountant', 'valuation_notice'],
-    });
+    let cases: DisputeCase[];
+    try {
+      cases = await this.repo.find({
+        where: [
+          { status: DisputeStatus.VG_APPROVED, vg_outcome_notified_at: IsNull() },
+          { status: DisputeStatus.VG_DECLINED, vg_outcome_notified_at: IsNull() },
+        ],
+        relations: ['client', 'property', 'assigned_accountant', 'valuation_notice'],
+      });
+    } catch (err) {
+      this.logger.error(
+        `[VG-OUTCOME-NOTIFY] Failed to query cases — err=${err instanceof Error ? err.message : String(err)}`,
+      );
+      return;
+    }
 
     this.logger.log(`[VG-OUTCOME-NOTIFY] ${cases.length} case(s) pending notification`);
 
