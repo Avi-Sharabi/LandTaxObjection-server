@@ -4,6 +4,7 @@ import { ComparablesModule } from './comparables/comparables.module';
 import { DisputeCasesModule } from './dispute-cases/dispute-cases.module';
 import { DisputeConstraintsModule } from './dispute-constraints/dispute-constraints.module';
 import { DisputeLegalGroundsModule } from './dispute-legal-grounds/dispute-legal-grounds.module';
+import { FyiUploadModule } from './fyi-upload/fyi-upload.module';
 import { PropertiesModule } from './properties/properties.module';
 import { UsersModule } from './users/users.module';
 import { ValuationNoticesModule } from './valuation-notices/valuation-notices.module';
@@ -17,6 +18,7 @@ import { NotificationsModule } from './notifications/notifications.module';
     AuthModule,
     ClientsModule,
     ComparablesModule,
+    FyiUploadModule,
     PropertiesModule,
     DisputeCasesModule,
     DisputeConstraintsModule,
