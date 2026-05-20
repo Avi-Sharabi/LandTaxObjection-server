@@ -1,14 +1,16 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { Cron } from '@nestjs/schedule';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { SchedulerRegistry } from '@nestjs/schedule';
+import { CronJob } from 'cron';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, IsNull } from 'typeorm';
+import { ConfigService } from '@nestjs/config';
 import { DisputeCase, DisputeStatus } from './entities/dispute-case.entity';
 import { AzureEmailService } from 'src/common/azure-email/azure-email.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/entities/notification.entity';
 
 @Injectable()
-export class VgOutcomeNotificationTask {
+export class VgOutcomeNotificationTask implements OnModuleInit {
   private readonly logger = new Logger(VgOutcomeNotificationTask.name);
 
   constructor(
@@ -16,10 +18,18 @@ export class VgOutcomeNotificationTask {
     private readonly repo: Repository<DisputeCase>,
     private readonly azureEmailService: AzureEmailService,
     private readonly notificationsService: NotificationsService,
+    private readonly schedulerRegistry: SchedulerRegistry,
+    private readonly config: ConfigService,
   ) {}
 
-  // Runs hourly — configurable via VG_OUTCOME_NOTIFICATION_CRON env var
-  @Cron(process.env.VG_OUTCOME_NOTIFICATION_CRON ?? '0 * * * *')
+  onModuleInit(): void {
+    const cronExpr = this.config.get<string>('VG_OUTCOME_NOTIFICATION_CRON') ?? '0 * * * *';
+    const job = new CronJob(cronExpr, () => void this.runVgOutcomeNotificationCheck());
+    this.schedulerRegistry.addCronJob('vg-outcome-notification', job);
+    job.start();
+    this.logger.log(`[VG-OUTCOME-NOTIFY] Cron registered — schedule="${cronExpr}"`);
+  }
+
   async runVgOutcomeNotificationCheck(): Promise<void> {
     this.logger.log('[VG-OUTCOME-NOTIFY] Starting check');
 
