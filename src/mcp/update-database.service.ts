@@ -113,6 +113,7 @@ export class UpdateDatabaseService {
     args: Record<string, unknown>,
     skillContent: string,
     correlationId: string,
+    performedBy?: string,
   ): Promise<ToolResult> {
     const timestamp = new Date().toISOString();
 
@@ -372,8 +373,10 @@ export class UpdateDatabaseService {
     const updateSql = `UPDATE "${table}" SET ${setClauses.join(', ')} WHERE id = $${params.length}`;
 
 
-    const systemUserId =
-      this.config.get<string>('MCP_SYSTEM_USER_ID') ?? '00000000-0000-0000-0000-000000000000';
+    const performedByValue =
+      performedBy ??
+      this.config.get<string>('MCP_SYSTEM_USER_NAME') ??
+      'AI System';
     const colList = columns.map((c) => `"${c}"`).join(', ');
 
     // 9. Execute UPDATE + audit log insert in a single transaction
@@ -391,11 +394,15 @@ export class UpdateDatabaseService {
       await queryRunner.query(updateSql, params);
 
       if (this.AUDIT_REQUIRED_TABLES.has(table)) {
-        const actionDetail = `Updated table '${table}', columns: [${columns.join(', ')}], record: ${record_id}`;
+        const actionDetail = JSON.stringify({
+          table,
+          previous_values: previousValues,
+          new_values: updates,
+        });
         await queryRunner.query(
           `INSERT INTO "ai_update_logs" ("id", "action", "record_id", "performed_by", "created_at")
            VALUES (uuid_generate_v4(), $1, $2, $3, NOW())`,
-          [actionDetail, record_id, systemUserId],
+          [actionDetail, record_id, performedByValue],
         );
       }
 
@@ -417,7 +424,7 @@ export class UpdateDatabaseService {
     this.logger.log(JSON.stringify({
       context: 'MCP.db.write',
       correlationId, tool: 'update_database',
-      table, record_id, columns, performed_by: systemUserId,
+      table, record_id, columns, performed_by: performedByValue,
       ts: timestamp,
     }));
 

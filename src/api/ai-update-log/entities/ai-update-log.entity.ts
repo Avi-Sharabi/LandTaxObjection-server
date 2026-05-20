@@ -11,7 +11,7 @@ export class AiUpdateLog {
   @Column({ name: 'record_id', type: 'uuid', nullable: true })
   recordId: string | null;
 
-  @Column({ name: 'performed_by', type: 'uuid', nullable: false })
+  @Column({ name: 'performed_by', type: 'text', nullable: false })
   performedBy: string;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })

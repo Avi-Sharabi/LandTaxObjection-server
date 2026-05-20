@@ -1,10 +1,15 @@
 import { randomUUID } from 'crypto';
-import { Body, Controller, HttpCode, HttpStatus, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, HttpCode, HttpStatus, Post, Req, UseGuards } from '@nestjs/common';
 import { ApiCookieAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
+import type { Request } from 'express';
 import { JwtAuthGuard } from 'src/api/auth/guards/jwt-auth.guard';
 import { SkillRegistryService } from './skill-registry.service';
 import { UpdateDatabaseService } from './update-database.service';
 import { UpdateDatabaseArgsDto } from './dto/tool-args.dto';
+
+interface AuthenticatedRequest extends Request {
+  user: { id: string; email: string; fullName: string; role: string };
+}
 
 @ApiCookieAuth()
 @ApiTags('AI Tools')
@@ -24,12 +29,13 @@ export class UpdateDatabaseController {
       'Pass plain-text instructions. Claude reasoning mode interprets them using the update-database skill and executes the update. ' +
       'Returns the write-back schema defined in update-database.md.',
   })
-  async handle(@Body() body: UpdateDatabaseArgsDto): Promise<object> {
+  async handle(@Req() req: AuthenticatedRequest, @Body() body: UpdateDatabaseArgsDto): Promise<object> {
     const skillContent = this.skillRegistry.getSkillContent('update-database');
     const result = await this.updateDatabaseService.execute(
       body as unknown as Record<string, unknown>,
       skillContent,
       randomUUID(),
+      req.user.fullName,
     );
     return JSON.parse(result.content[0].text) as object;
   }
