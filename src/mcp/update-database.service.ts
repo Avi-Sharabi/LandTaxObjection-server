@@ -7,7 +7,6 @@ import { validateOrReject } from 'class-validator';
 import { isAxiosError } from 'axios';
 import { UpdateDatabaseArgsDto } from './dto/tool-args.dto';
 import { AnthropicService } from 'src/ai/anthropic.service';
-import { AiUpdateAction } from 'src/api/ai-update-log/entities/ai-update-log.entity';
 
 type ToolResult = { content: { type: string; text: string }[]; isError?: boolean };
 
@@ -392,10 +391,11 @@ export class UpdateDatabaseService {
       await queryRunner.query(updateSql, params);
 
       if (this.AUDIT_REQUIRED_TABLES.has(table)) {
+        const actionDetail = `Updated table '${table}', columns: [${columns.join(', ')}], record: ${record_id}`;
         await queryRunner.query(
-          `INSERT INTO "ai_update_logs" ("id", "action", "performed_by", "created_at")
-           VALUES (uuid_generate_v4(), $1, $2, NOW())`,
-          [AiUpdateAction.AI_DB_WRITE, systemUserId],
+          `INSERT INTO "ai_update_logs" ("id", "action", "record_id", "performed_by", "created_at")
+           VALUES (uuid_generate_v4(), $1, $2, $3, NOW())`,
+          [actionDetail, record_id, systemUserId],
         );
       }
 
