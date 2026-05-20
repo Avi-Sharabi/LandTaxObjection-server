@@ -27,8 +27,8 @@ import { McpModule } from 'src/mcp/mcp.module';
 import { VgEmailMonitorTask } from './vg-email/vg-email-monitor.task';
 import { VgEmailAnalysisService } from './vg-email/vg-email-analysis.service';
 import { ValuationModule } from '../valuation/valuation.module';
-import { DisputeCaseSubscriber } from './dispute-case.subscriber';
 import { VGResponseMonitorScheduler } from './vg-response-monitor.scheduler';
+import { VgOutcomeNotificationTask } from './vg-outcome-notification.task';
 
 @Module({
   imports: [
@@ -64,7 +64,7 @@ import { VGResponseMonitorScheduler } from './vg-response-monitor.scheduler';
     VgEmailMonitorTask,
     VgEmailAnalysisService,
     VGResponseMonitorScheduler,
-    DisputeCaseSubscriber,
+    VgOutcomeNotificationTask,
   ],
 })
 export class DisputeCasesModule { }
