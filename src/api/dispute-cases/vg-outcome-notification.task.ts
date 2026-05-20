@@ -2,12 +2,14 @@ import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { SchedulerRegistry } from '@nestjs/schedule';
 import { CronJob } from 'cron';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, IsNull } from 'typeorm';
+import { Repository, IsNull, In } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import { DisputeCase, DisputeStatus } from './entities/dispute-case.entity';
 import { AzureEmailService } from 'src/common/azure-email/azure-email.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/entities/notification.entity';
+
+const VG_OUTCOME_STATUSES = [DisputeStatus.VG_APPROVED, DisputeStatus.VG_DECLINED] as const;
 
 @Injectable()
 export class VgOutcomeNotificationTask implements OnModuleInit {
@@ -36,10 +38,7 @@ export class VgOutcomeNotificationTask implements OnModuleInit {
     let cases: DisputeCase[];
     try {
       cases = await this.repo.find({
-        where: [
-          { status: DisputeStatus.VG_APPROVED, vg_outcome_notified_at: IsNull() },
-          { status: DisputeStatus.VG_DECLINED, vg_outcome_notified_at: IsNull() },
-        ],
+        where: { status: In(VG_OUTCOME_STATUSES), vg_outcome_notified_at: IsNull() },
         relations: ['client', 'property', 'assigned_accountant', 'valuation_notice'],
       });
     } catch (err) {
@@ -56,53 +55,8 @@ export class VgOutcomeNotificationTask implements OnModuleInit {
 
     for (const disputeCase of cases) {
       try {
-        if (!disputeCase.client?.email) {
-          this.logger.warn(`[VG-OUTCOME-NOTIFY] No client email — caseId=${disputeCase.id}, skipping`);
-          continue;
-        }
-
-        const resolvedAt = new Date().toLocaleString('en-AU', {
-          day: '2-digit', month: 'long', year: 'numeric',
-          hour: '2-digit', minute: '2-digit',
-          timeZone: 'Australia/Sydney',
-        });
-
-        const rawAssessedValue =
-          disputeCase.original_assessed_value ?? disputeCase.valuation_notice?.assessed_land_value;
-        const assessedLandValue =
-          rawAssessedValue != null
-            ? new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' }).format(
-                Number(rawAssessedValue),
-              )
-            : 'N/A';
-
-        await this.azureEmailService.sendVgResponseNotification({
-          clientEmail: disputeCase.client.email,
-          clientName: disputeCase.client.name,
-          caseReference: disputeCase.case_reference,
-          propertyAddress: this.buildPropertyAddress(disputeCase.property),
-          lodgmentReferenceNumber: disputeCase.lodgment_reference_number ?? 'N/A',
-          isApproved: disputeCase.status === DisputeStatus.VG_APPROVED,
-          assessorFullName: disputeCase.assigned_accountant?.fullName ?? 'Your YML Adviser',
-          resolvedAt,
-          assessedLandValue,
-        });
-
-        if (disputeCase.assigned_accountant_id) {
-          const label = disputeCase.status === DisputeStatus.VG_APPROVED ? 'approved' : 'declined';
-          await this.notificationsService.create(
-            disputeCase.assigned_accountant_id,
-            NotificationType.VG_RESPONSE_RECEIVED,
-            `VG response received for case ${disputeCase.case_reference} — outcome: ${label}.`,
-            disputeCase.id,
-          );
-        }
-
-        disputeCase.vg_outcome_notified_at = new Date();
-        await this.repo.save(disputeCase);
-
+        await this.notifyCase(disputeCase);
         sent++;
-        this.logger.log(`[VG-OUTCOME-NOTIFY] Notification sent — caseId=${disputeCase.id}`);
       } catch (err) {
         failed++;
         this.logger.error(
@@ -114,6 +68,56 @@ export class VgOutcomeNotificationTask implements OnModuleInit {
     this.logger.log(
       `[VG-OUTCOME-NOTIFY] Check complete — checked=${cases.length} sent=${sent} failed=${failed}`,
     );
+  }
+
+  private async notifyCase(disputeCase: DisputeCase): Promise<void> {
+    if (!disputeCase.client?.email) {
+      this.logger.warn(`[VG-OUTCOME-NOTIFY] No client email — caseId=${disputeCase.id}, skipping`);
+      return;
+    }
+
+    const isApproved = disputeCase.status === DisputeStatus.VG_APPROVED;
+
+    const resolvedAt = new Date().toLocaleString('en-AU', {
+      day: '2-digit', month: 'long', year: 'numeric',
+      hour: '2-digit', minute: '2-digit',
+      timeZone: 'Australia/Sydney',
+    });
+
+    const rawAssessedValue =
+      disputeCase.original_assessed_value ?? disputeCase.valuation_notice?.assessed_land_value;
+    const assessedLandValue =
+      rawAssessedValue != null
+        ? new Intl.NumberFormat('en-AU', { style: 'currency', currency: 'AUD' }).format(
+            Number(rawAssessedValue),
+          )
+        : 'N/A';
+
+    await this.azureEmailService.sendVgResponseNotification({
+      clientEmail: disputeCase.client.email,
+      clientName: disputeCase.client.name,
+      caseReference: disputeCase.case_reference,
+      propertyAddress: this.buildPropertyAddress(disputeCase.property),
+      lodgmentReferenceNumber: disputeCase.lodgment_reference_number ?? 'N/A',
+      isApproved,
+      assessorFullName: disputeCase.assigned_accountant?.fullName ?? 'Your YML Adviser',
+      resolvedAt,
+      assessedLandValue,
+    });
+
+    if (disputeCase.assigned_accountant_id) {
+      const label = isApproved ? 'approved' : 'declined';
+      await this.notificationsService.create(
+        disputeCase.assigned_accountant_id,
+        NotificationType.VG_RESPONSE_RECEIVED,
+        `VG response received for case ${disputeCase.case_reference} — outcome: ${label}.`,
+        disputeCase.id,
+      );
+    }
+
+    await this.repo.update(disputeCase.id, { vg_outcome_notified_at: new Date() });
+
+    this.logger.log(`[VG-OUTCOME-NOTIFY] Notification sent — caseId=${disputeCase.id}`);
   }
 
   private buildPropertyAddress(
