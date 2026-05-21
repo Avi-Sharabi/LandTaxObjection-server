@@ -28,7 +28,6 @@ import { VgEmailMonitorTask } from './vg-email/vg-email-monitor.task';
 import { VgEmailAnalysisService } from './vg-email/vg-email-analysis.service';
 import { ValuationModule } from '../valuation/valuation.module';
 import { VGResponseMonitorScheduler } from './vg-response-monitor.scheduler';
-import { VgOutcomeNotificationTask } from './vg-outcome-notification.task';
 
 @Module({
   imports: [
@@ -64,7 +63,6 @@ import { VgOutcomeNotificationTask } from './vg-outcome-notification.task';
     VgEmailMonitorTask,
     VgEmailAnalysisService,
     VGResponseMonitorScheduler,
-    VgOutcomeNotificationTask,
   ],
 })
 export class DisputeCasesModule { }
