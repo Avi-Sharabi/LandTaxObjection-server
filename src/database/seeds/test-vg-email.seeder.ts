@@ -133,7 +133,7 @@ export async function testVgEmail(dataSource: DataSource): Promise<void> {
        assigned_accountant_id, jurisdiction, status, statutory_deadline,
        no_legal_ground_flagged, lodgment_reference_number, submitted_at, client_approved_at)
     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-    ON CONFLICT (id) DO UPDATE SET status = 'submitted_to_vg', vg_outcome_notified_at = NULL
+    ON CONFLICT (id) DO UPDATE SET status = 'submitted_to_vg'
   `,
     [
       IDS.caseDeclined,
