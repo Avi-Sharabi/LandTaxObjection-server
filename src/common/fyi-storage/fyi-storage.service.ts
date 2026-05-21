@@ -18,10 +18,13 @@ export class fyiStorageService {
 
     public async uploadToFyi(
         base64: string,
-        documentId: string,
+        documentName?: string,
+        caseReference?: string,
     ): Promise<string | null> {
         try {
             const buffer = Buffer.from(base64, 'base64');
+            const resolvedName = documentName ?? caseReference ?? 'Valuation Notice';
+            const resolvedClientCode = this.config.get<string>('FYI_CLIENT_CODE') || 'ASHT0001';
 
             // Step 1: Create document record
             const { data: createData } = await firstValueFrom(
@@ -32,9 +35,9 @@ export class fyiStorageService {
                             action: { value: 'upsert' },
                             data: {
                                 model: {
-                                    name: `${documentId} Valuation Notice`,
+                                    name: resolvedName,
                                     document_type: 'Pdf',
-                                    client_code: this.config.get('FYI_CLIENT_CODE'),
+                                    client_code: resolvedClientCode,
                                 },
                             },
                         },
@@ -81,7 +84,7 @@ export class fyiStorageService {
             form.append(
                 'file',
                 new Blob([buffer], { type: 'application/pdf' }),
-                `${documentId}.pdf`,
+                `${resolvedName}.pdf`,
             );
 
             await firstValueFrom(
@@ -90,7 +93,8 @@ export class fyiStorageService {
 
             return versionId;
         } catch (error) {
-            console.error('FYI upload failed:', error.message);
+            const message = error instanceof Error ? error.message : String(error);
+            console.error('FYI upload failed:', message);
             return null;
         }
     }

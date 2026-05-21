@@ -20,6 +20,7 @@ import {
   QueryArgsDto,
   SearchComparableSalesArgsDto,
 } from './dto/tool-args.dto';
+import { UploadFyiTool } from './tools/upload-fyi.tool';
 
 type ToolResult = { content: { type: string; text: string }[]; isError?: boolean };
 type CacheEntry = { data: unknown; expiresAt: number };
@@ -30,7 +31,10 @@ export class McpService implements OnModuleInit {
   private readonly toolCache = new Map<string, CacheEntry>();
   private readonly skills = new Map<string, string>();
 
-  constructor(@InjectDataSource() private dataSource: DataSource) {}
+  constructor(
+    @InjectDataSource() private dataSource: DataSource,
+    private readonly uploadFyiTool: UploadFyiTool,
+  ) {}
 
   async onModuleInit(): Promise<void> {
     const skillsDir = path.join(__dirname, '..', 'skills');
@@ -159,6 +163,11 @@ export class McpService implements OnModuleInit {
               required: ['table_name'],
             },
           },
+          {
+            name: this.uploadFyiTool.name,
+            description: this.uploadFyiTool.description,
+            inputSchema: this.uploadFyiTool.inputSchema,
+          },
         ],
       };
     });
@@ -188,6 +197,12 @@ export class McpService implements OnModuleInit {
           result = await this.withTimeout(
             this.describeTable(args ?? {}, correlationId),
             10_000,
+            name,
+          );
+        } else if (name === this.uploadFyiTool.name) {
+          result = await this.withTimeout(
+            this.uploadFyiTool.execute(args ?? {}, correlationId),
+            this.uploadFyiTool.timeoutMs,
             name,
           );
         } else {
