@@ -40,6 +40,10 @@ import { RolesGuard } from 'src/common/guards/roles.guard';
 import { Roles } from 'src/common/decorators/roles.decorator';
 import { UserRole } from '../users/entities/user.entity';
 import { VGResponseMonitorScheduler } from './vg-response-monitor.scheduler';
+import { ComparablesQueueService } from '../comparables/comparables-queue.service';
+import { SupportingEvidenceQueueService } from '../supporting-evidence/supporting-evidence-queue.service';
+import { EvidenceIssueResponseDto } from '../supporting-evidence/dto/evidence-issue-response.dto';
+
 
 @ApiTags('dispute-cases')
 @Controller({
@@ -50,6 +54,9 @@ export class DisputeCasesController {
   constructor(
     private readonly disputeCasesService: DisputeCasesService,
     private readonly vgResponseMonitorScheduler: VGResponseMonitorScheduler,
+
+    private readonly comparablesQueueService: ComparablesQueueService,
+    private readonly supportingEvidenceQueueService: SupportingEvidenceQueueService,
   ) {}
 
   /**
@@ -445,6 +452,74 @@ export class DisputeCasesController {
     return this.vgResponseMonitorScheduler.runVGFollowUpCheck();
   }
 
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @Get(':id/evidence-issues')
+  @ApiOperation({ summary: 'Get evidence issues for a dispute case (latest run)' })
+  @ApiParam({ name: 'id', description: 'Dispute case UUID' })
+  @ApiResponse({ status: 200, type: [EvidenceIssueResponseDto] })
+  @ApiResponse({ status: 401, description: 'Unauthorised' })
+  getEvidenceIssues(@Param('id', ParseUUIDPipe) id: string): Promise<EvidenceIssueResponseDto[]> {
+    return this.supportingEvidenceQueueService.getIssuesByDisputeCase(id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @Post(':id/analyze-ai')
+  @ApiOperation({
+    summary: 'Trigger AI analysis — comparable sales + supporting evidence',
+    description:
+      'Enqueues both jobs in parallel and returns their job IDs immediately. ' +
+      'Poll GET /:id/analyze-ai/status to track progress.',
+  })
+  @ApiParam({ name: 'id', description: 'Dispute case UUID' })
+  @ApiResponse({
+    status: 201,
+    description: 'Both jobs queued — { comparablesJobId, evidenceJobId }',
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorised' })
+  @ApiResponse({ status: 404, description: 'Dispute case not found' })
+  @ApiResponse({ status: 409, description: 'A job for this case is already waiting or active' })
+  async analyzeAi(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: { user: { id: string } },
+  ): Promise<{ comparablesJobId: string; evidenceJobId: string }> {
+    const address = await this.disputeCasesService.getPropertyAddressForCase(id);
+    const [comparables, evidence] = await Promise.all([
+      this.comparablesQueueService.enqueue({ dispute_case_id: id }, req.user.id),
+      this.supportingEvidenceQueueService.enqueue(id, address),
+    ]);
+    return { comparablesJobId: comparables.jobId, evidenceJobId: evidence.jobId };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @Get(':id/analyze-ai/status')
+  @ApiOperation({ summary: 'Get combined AI analysis job status' })
+  @ApiParam({ name: 'id', description: 'Dispute case UUID' })
+  @ApiResponse({
+    status: 200,
+    description: '{ comparables, evidence, allCompleted }',
+  })
+  @ApiResponse({ status: 401, description: 'Unauthorised' })
+  async analyzeAiStatus(@Param('id', ParseUUIDPipe) id: string): Promise<{
+    comparables: Awaited<ReturnType<ComparablesQueueService['getJobStatus']>> | null;
+    evidence: Awaited<ReturnType<SupportingEvidenceQueueService['getJobStatus']>> | null;
+    allCompleted: boolean;
+  }> {
+    const [comparables, evidence] = await Promise.all([
+      this.comparablesQueueService.getJobStatus(id).catch(() => null),
+      this.supportingEvidenceQueueService.getJobStatus(id).catch(() => null),
+    ]);
+    return {
+      comparables,
+      evidence,
+      allCompleted: comparables?.status === 'completed' && evidence?.status === 'completed',
+    };
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @Delete(':id')
   @ApiOperation({ summary: 'Delete a dispute case' })
   @ApiParam({ name: 'id', description: 'Dispute case UUID' })

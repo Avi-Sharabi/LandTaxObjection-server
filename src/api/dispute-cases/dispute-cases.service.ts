@@ -83,6 +83,13 @@ export class DisputeCasesService {
     private readonly taxComputationService: LandTaxComputationService,
   ) { }
 
+  async getPropertyAddressForCase(id: string): Promise<string> {
+    const c = await this.disputeCasesRepository.findOne({ where: { id }, relations: ['property'] });
+    if (!c) throw new NotFoundException(`Dispute case ${id} not found`);
+    const p = c.property;
+    return `${p.address}, ${p.suburb} ${p.state} ${p.postcode}`;
+  }
+
   async submitIntakeApplication(
     intakeDto: CreateDisputeIntakeDto,
   ): Promise<unknown> {

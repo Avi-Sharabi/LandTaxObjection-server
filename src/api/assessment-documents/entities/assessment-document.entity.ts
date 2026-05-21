@@ -10,14 +10,11 @@ export class AssessmentDocument {
   @Column({ type: 'uuid', nullable: false, name: 'client_id' })
   client_id: string;
 
+  @Column({ type: 'text', nullable: false })
+  document_name: string;
+
   @Column({ type: 'text', nullable: true })
   file_path: string | null;
-
-  @Column({ type: 'date', nullable: false })
-  notice_date: Date;
-
-  @Column({ type: 'text', nullable: false })
-  valuation_year: string;
 
   @CreateDateColumn({ type: 'timestamptz' })
   created_at: Date;

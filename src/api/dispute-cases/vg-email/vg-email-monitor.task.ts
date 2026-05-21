@@ -39,7 +39,7 @@ export class VgEmailMonitorTask implements OnModuleInit {
 
   onModuleInit() {
     const expression =
-      this.config.get<string>('VG_EMAIL_POLL_CRON') ?? DEFAULT_POLL_CRON;
+      this.config.get<string>('VG_EMAIL_POLL_CRON') || DEFAULT_POLL_CRON;
     const job = new CronJob(expression, () => {
       void this.pollVgMailbox();
     });
