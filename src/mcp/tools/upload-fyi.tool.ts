@@ -11,30 +11,22 @@ export class UploadFyiTool implements IMcpTool {
   readonly timeoutMs = 30_000;
   readonly description =
     'Uploads a base64-encoded PDF to FYI document management. ' +
-    'Requires base64 content and a document_id. ' +
-    'Optionally accepts document_name (display label in FYI) and client_code (per-client FYI identifier). ' +
+    'Requires base64 content. ' +
+    'Optionally accepts document_name (display label in FYI). Defaults to "Valuation Notice". ' +
     'Returns { version_id } on success. Only works when IS_FYI_PROD_ENABLED=true.';
 
   readonly inputSchema: Record<string, unknown> = {
     type: 'object',
     additionalProperties: false,
-    required: ['base64', 'document_id'],
+    required: ['base64'],
     properties: {
       base64: {
         type: 'string',
         description: 'Base64-encoded PDF file content',
       },
-      document_id: {
-        type: 'string',
-        description: 'Unique document identifier — used as the PDF filename and FYI document name prefix',
-      },
       document_name: {
         type: 'string',
-        description: 'Display name in FYI. Defaults to "{document_id} Valuation Notice"',
-      },
-      client_code: {
-        type: 'string',
-        description: 'FYI client code override. Defaults to the FYI_CLIENT_CODE environment variable',
+        description: 'Display name shown in FYI. Defaults to "Valuation Notice"',
       },
     },
   };
@@ -47,17 +39,12 @@ export class UploadFyiTool implements IMcpTool {
       await validateOrReject(dto);
     } catch {
       return {
-        content: [{ type: 'text', text: 'Invalid arguments: base64 and document_id are required strings' }],
+        content: [{ type: 'text', text: 'Invalid arguments: base64 is required and must be a string' }],
         isError: true,
       };
     }
 
-    const versionId = await this.fyiStorage.uploadToFyi(
-      dto.base64,
-      dto.document_id,
-      dto.document_name,
-      dto.client_code,
-    );
+    const versionId = await this.fyiStorage.uploadToFyi(dto.base64, dto.document_name);
 
     if (!versionId) {
       return {
