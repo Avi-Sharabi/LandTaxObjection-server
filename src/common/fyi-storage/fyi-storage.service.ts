@@ -18,13 +18,14 @@ export class fyiStorageService {
 
     public async uploadToFyi(
         base64: string,
+        documentId: string,
         documentName?: string,
-        caseReference?: string,
+        clientCode?: string,
     ): Promise<string | null> {
         try {
             const buffer = Buffer.from(base64, 'base64');
-            const resolvedName = documentName ?? caseReference ?? 'Valuation Notice';
-            const resolvedClientCode = this.config.get<string>('FYI_CLIENT_CODE') || 'ASHT0001';
+            const resolvedName = documentName ?? `${documentId} Valuation Notice`;
+            const resolvedClientCode = clientCode ?? this.config.get('FYI_CLIENT_CODE');
 
             // Step 1: Create document record
             const { data: createData } = await firstValueFrom(
