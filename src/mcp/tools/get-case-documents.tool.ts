@@ -21,8 +21,8 @@ export class GetCaseDocumentsTool implements IMcpTool {
   readonly timeoutMs = 15_000;
   readonly description =
     'Retrieves all documents for a dispute case by case_reference or case_id. ' +
-    'Returns a list with document_type, filename, and a 30-minute download_url for each file. ' +
-    'Use the download_url with upload_fyi_document to upload a specific document to FYI. ' +
+    'Returns a list with document_type, filename, fyi_name, and a 30-minute download_url for each file. ' +
+    'When uploading to FYI, always pass fyi_name as document_name to upload_fyi_document. ' +
     'Example document types: advisory_letter, valuation_notice, generated_objection.';
 
   readonly inputSchema: Record<string, unknown> = {
@@ -86,6 +86,7 @@ export class GetCaseDocumentsTool implements IMcpTool {
       id: row.id,
       document_type: row.document_type,
       filename: row.filename,
+      fyi_name: `${row.case_reference} - ${row.filename.replace(/\.[^.]+$/, '')}`,
       download_url: this.azureBlob.getFileUrl(row.blob_storage_url, 30),
       uploaded_at: row.uploaded_at,
     }));

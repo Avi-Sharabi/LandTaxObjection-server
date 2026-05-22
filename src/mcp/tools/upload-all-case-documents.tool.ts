@@ -47,13 +47,6 @@ export class UploadAllCaseDocumentsTool implements IMcpTool {
     private readonly fyiStorage: fyiStorageService,
   ) {}
 
-  private formatDocumentType(type: string): string {
-    return type
-      .split('_')
-      .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-      .join(' ');
-  }
-
   async execute(args: Record<string, unknown>, _correlationId: string): Promise<ToolResult> {
     const dto = plainToInstance(UploadAllCaseDocumentsArgsDto, args);
 
@@ -101,7 +94,7 @@ export class UploadAllCaseDocumentsTool implements IMcpTool {
     const uploaded: { document_type: string; filename: string; fyi_name: string; version_id: string }[] = [];
 
     for (const row of rows) {
-      const fyi_name = `${row.case_reference} - ${this.formatDocumentType(row.document_type)}`;
+      const fyi_name = `${row.case_reference} - ${row.filename.replace(/\.[^.]+$/, '')}`;
       const sasUrl = this.azureBlob.getFileUrl(row.blob_storage_url, 30);
 
       const versionId = await this.fyiStorage.uploadToFyi({ url: sasUrl ?? undefined }, fyi_name);

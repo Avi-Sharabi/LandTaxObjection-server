@@ -12,7 +12,7 @@ export class UploadFyiTool implements IMcpTool {
   readonly description =
     'Uploads a file to FYI document management. ' +
     'Provide either base64 (raw file content) OR url (HTTP/HTTPS URL, e.g. an Azure Blob SAS URL). ' +
-    'Optionally accepts document_name (display label in FYI). Defaults to "Valuation Notice". ' +
+    'Always pass document_name using the fyi_name field returned by get_case_documents (e.g. "LTD-1111 - filename"). ' +
     'Returns { version_id } on success. Only works when IS_FYI_PROD_ENABLED=true.';
 
   readonly inputSchema: Record<string, unknown> = {
