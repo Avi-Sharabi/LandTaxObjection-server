@@ -57,7 +57,10 @@ jobs:
           cp -r dist deployment/
           cp package.json deployment/
           cp package-lock.json deployment/
-          cp .deployment deployment/
+          cat > deployment/.deployment << 'EOF'
+          [config]
+          SCM_DO_BUILD_DURING_DEPLOYMENT=false
+          EOF
 
       - name: Deploy to Azure App Service
         uses: azure/webapps-deploy@v3
