@@ -57,10 +57,8 @@ jobs:
           cp -r dist deployment/
           cp package.json deployment/
           cp package-lock.json deployment/
-          cat > deployment/.deployment << 'EOF'
-          [config]
-          SCM_DO_BUILD_DURING_DEPLOYMENT=false
-          EOF
+          cd deployment
+          npm ci --omit=dev --ignore-scripts
 
       - name: Deploy to Azure App Service
         uses: azure/webapps-deploy@v3
