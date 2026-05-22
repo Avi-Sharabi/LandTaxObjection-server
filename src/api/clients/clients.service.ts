@@ -151,7 +151,7 @@ export class ClientsService {
       const base64 = file.toString('base64');
       const documentId = valuationNotices!.source_document.id;
       isFyiProdEnabled
-        ? await this.fyiStorageService.uploadToFyi(base64, documentId)
+        ? await this.fyiStorageService.uploadToFyi({ base64 }, documentId)
         : this.azureBlobService.uploadToFyiDev(base64, documentId);
     }
 

@@ -8,21 +8,24 @@ import { IMcpTool, ToolResult } from './mcp-tool.interface';
 @Injectable()
 export class UploadFyiTool implements IMcpTool {
   readonly name = 'upload_fyi_document';
-  readonly timeoutMs = 30_000;
+  readonly timeoutMs = 45_000;
   readonly description =
-    'Uploads a base64-encoded PDF to FYI document management. ' +
-    'Requires base64 content. ' +
+    'Uploads a file to FYI document management. ' +
+    'Provide either base64 (raw file content) OR url (HTTP/HTTPS URL, e.g. an Azure Blob SAS URL). ' +
     'Optionally accepts document_name (display label in FYI). Defaults to "Valuation Notice". ' +
     'Returns { version_id } on success. Only works when IS_FYI_PROD_ENABLED=true.';
 
   readonly inputSchema: Record<string, unknown> = {
     type: 'object',
     additionalProperties: false,
-    required: ['base64'],
     properties: {
       base64: {
         type: 'string',
-        description: 'Base64-encoded PDF file content',
+        description: 'Base64-encoded file content',
+      },
+      url: {
+        type: 'string',
+        description: 'HTTP/HTTPS URL to fetch the file from (e.g. Azure Blob SAS URL returned by get_case_documents)',
       },
       document_name: {
         type: 'string',
@@ -39,12 +42,22 @@ export class UploadFyiTool implements IMcpTool {
       await validateOrReject(dto);
     } catch {
       return {
-        content: [{ type: 'text', text: 'Invalid arguments: base64 is required and must be a string' }],
+        content: [{ type: 'text', text: 'Invalid arguments: base64 and url must be strings if provided' }],
         isError: true,
       };
     }
 
-    const versionId = await this.fyiStorage.uploadToFyi(dto.base64, dto.document_name);
+    if (!dto.base64 && !dto.url) {
+      return {
+        content: [{ type: 'text', text: 'Invalid arguments: either base64 or url must be provided' }],
+        isError: true,
+      };
+    }
+
+    const versionId = await this.fyiStorage.uploadToFyi(
+      { base64: dto.base64, url: dto.url },
+      dto.document_name,
+    );
 
     if (!versionId) {
       return {

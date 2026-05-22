@@ -20,6 +20,8 @@ import {
   QueryArgsDto,
   SearchComparableSalesArgsDto,
 } from './dto/tool-args.dto';
+import { GetCaseDocumentsTool } from './tools/get-case-documents.tool';
+import { UploadAllCaseDocumentsTool } from './tools/upload-all-case-documents.tool';
 import { UploadFyiTool } from './tools/upload-fyi.tool';
 
 type ToolResult = { content: { type: string; text: string }[]; isError?: boolean };
@@ -34,6 +36,8 @@ export class McpService implements OnModuleInit {
   constructor(
     @InjectDataSource() private dataSource: DataSource,
     private readonly uploadFyiTool: UploadFyiTool,
+    private readonly getCaseDocumentsTool: GetCaseDocumentsTool,
+    private readonly uploadAllCaseDocumentsTool: UploadAllCaseDocumentsTool,
   ) {}
 
   async onModuleInit(): Promise<void> {
@@ -168,6 +172,16 @@ export class McpService implements OnModuleInit {
             description: this.uploadFyiTool.description,
             inputSchema: this.uploadFyiTool.inputSchema,
           },
+          {
+            name: this.getCaseDocumentsTool.name,
+            description: this.getCaseDocumentsTool.description,
+            inputSchema: this.getCaseDocumentsTool.inputSchema,
+          },
+          {
+            name: this.uploadAllCaseDocumentsTool.name,
+            description: this.uploadAllCaseDocumentsTool.description,
+            inputSchema: this.uploadAllCaseDocumentsTool.inputSchema,
+          },
         ],
       };
     });
@@ -203,6 +217,18 @@ export class McpService implements OnModuleInit {
           result = await this.withTimeout(
             this.uploadFyiTool.execute(args ?? {}, correlationId),
             this.uploadFyiTool.timeoutMs,
+            name,
+          );
+        } else if (name === this.getCaseDocumentsTool.name) {
+          result = await this.withTimeout(
+            this.getCaseDocumentsTool.execute(args ?? {}, correlationId),
+            this.getCaseDocumentsTool.timeoutMs,
+            name,
+          );
+        } else if (name === this.uploadAllCaseDocumentsTool.name) {
+          result = await this.withTimeout(
+            this.uploadAllCaseDocumentsTool.execute(args ?? {}, correlationId),
+            this.uploadAllCaseDocumentsTool.timeoutMs,
             name,
           );
         } else {

@@ -12,8 +12,16 @@ export class fyiStorageService {
         private readonly httpService: HttpService,
     ) { }
 
+    private async resolveBase64(input: { base64?: string; url?: string }): Promise<string> {
+        if (input.base64) return input.base64;
+        const response = await firstValueFrom(
+            this.httpService.get<ArrayBuffer>(input.url!, { responseType: 'arraybuffer' }),
+        );
+        return Buffer.from(response.data).toString('base64');
+    }
+
     public async uploadToFyi(
-        base64: string,
+        input: { base64?: string; url?: string },
         documentName?: string,
     ): Promise<string | null> {
         const resolvedName = documentName ?? 'Valuation Notice';
@@ -82,7 +90,8 @@ export class fyiStorageService {
 
         this.logger.log(`[Step 3] Uploading PDF to S3`);
         try {
-            const buffer = Buffer.from(base64, 'base64');
+            const resolvedBase64 = await this.resolveBase64(input);
+            const buffer = Buffer.from(resolvedBase64, 'base64');
             const form = new globalThis.FormData();
             for (const [key, value] of Object.entries(fields)) {
                 form.append(key, value);

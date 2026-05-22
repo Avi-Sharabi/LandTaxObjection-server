@@ -1,9 +1,13 @@
-import { IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsOptional, IsString } from 'class-validator';
 
 export class FyiUploadArgsDto {
+  @IsOptional()
   @IsString()
-  @IsNotEmpty()
-  base64: string;
+  base64?: string;
+
+  @IsOptional()
+  @IsString()
+  url?: string;
 
   @IsOptional()
   @IsString()

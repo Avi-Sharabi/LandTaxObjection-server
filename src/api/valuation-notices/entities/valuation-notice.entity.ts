@@ -1,7 +1,7 @@
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, ManyToOne, OneToMany, JoinColumn } from 'typeorm';
 import { Property } from '../../properties/entities/property.entity';
 import { DisputeCase } from '../../dispute-cases/entities/dispute-case.entity';
-import { AssessmentDocument } from '../../dispute-cases/entities/assessment-document.entity';
+import { AssessmentDocument } from '../../assessment-documents/entities/assessment-document.entity';
 import { ValuationNoticeFile } from './valuation-notice-file.entity';
 import { OwnershipType } from '../../../common/enums/ownership-type.enum';
 
