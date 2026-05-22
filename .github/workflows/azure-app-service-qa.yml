@@ -57,8 +57,7 @@ jobs:
           cp -r dist deployment/
           cp package.json deployment/
           cp package-lock.json deployment/
-          # Ensure no stale tar cache is included
-          rm -f deployment/node_modules.tar.gz
+          cp .deployment deployment/
 
       - name: Deploy to Azure App Service
         uses: azure/webapps-deploy@v3
