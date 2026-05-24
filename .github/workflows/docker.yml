@@ -7,6 +7,8 @@ on:
 permissions:
   contents: read
   packages: write
+environment:
+      name: ${{ github.ref == 'refs/heads/main' && 'production' || github.ref == 'refs/heads/qa' && 'qa' || 'development' }}
 
 jobs:
   build-and-push:
