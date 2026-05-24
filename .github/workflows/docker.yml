@@ -1,4 +1,4 @@
-name: Build & Push
+name: Build, Push & Deploy
 
 on:
   push:
@@ -7,15 +7,22 @@ on:
 permissions:
   contents: read
   packages: write
+  id-token: write   # Azure OIDC
 
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+    outputs:
+      image_owner: ${{ steps.owner.outputs.value }}
     steps:
       - uses: actions/checkout@v4
 
       - name: Lowercase image owner
-        run: echo "IMAGE_OWNER=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
+        id: owner
+        run: |
+          VALUE=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')
+          echo "value=$VALUE" >> $GITHUB_OUTPUT
+          echo "IMAGE_OWNER=$VALUE" >> $GITHUB_ENV
 
       - uses: docker/setup-buildx-action@v3
 
@@ -36,3 +43,113 @@ jobs:
             ghcr.io/${{ env.IMAGE_OWNER }}/landtaxdispute-server-qa:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    environment: qa
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "~1.7"
+
+      - name: Write secret tfvars
+        run: |
+          jq -n \
+            --arg db_password   "${{ secrets.DB_PASSWORD_QA }}" \
+            --arg fyi_id        "${{ secrets.FYI_ACCESS_ID }}" \
+            --arg fyi_secret    "${{ secrets.FYI_ACCESS_SECRET }}" \
+            --arg storage_key   "${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}" \
+            --arg storage_conn  "${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}" \
+            --arg comm_conn     "${{ secrets.AZURE_COMMUNICATION_CONNECTION_STRING }}" \
+            --arg jwt_secret    "${{ secrets.JWT_SECRET }}" \
+            --arg xero_id       "${{ secrets.XERO_CLIENT_ID }}" \
+            --arg xero_secret   "${{ secrets.XERO_CLIENT_SECRET }}" \
+            --arg xpm_sub_key   "${{ secrets.XPM_SUBSCRIPTION_KEY }}" \
+            --arg xpm_tenant    "${{ secrets.XPM_TENANT_ID }}" \
+            --arg xpm_code      "${{ secrets.XPM_CODE }}" \
+            --arg graph_tenant  "${{ secrets.GRAPH_TENANT_ID }}" \
+            --arg graph_client  "${{ secrets.GRAPH_CLIENT_ID }}" \
+            --arg graph_secret  "${{ secrets.GRAPH_CLIENT_SECRET }}" \
+            --arg anthropic_key "${{ secrets.ANTHROPIC_API_KEY }}" \
+            --arg mcp_token     "${{ secrets.MCP_SECRET_TOKEN }}" \
+            --arg redis_pw      "${{ secrets.REDIS_PASSWORD }}" \
+            '{
+              app_secret_vars: {
+                DB_PASSWORD:                           $db_password,
+                FYI_ACCESS_ID:                         $fyi_id,
+                FYI_ACCESS_SECRET:                     $fyi_secret,
+                AZURE_STORAGE_ACCOUNT_KEY:             $storage_key,
+                AZURE_STORAGE_CONNECTION_STRING:       $storage_conn,
+                AZURE_COMMUNICATION_CONNECTION_STRING: $comm_conn,
+                JWT_SECRET:                            $jwt_secret,
+                XERO_CLIENT_ID:                        $xero_id,
+                XERO_CLIENT_SECRET:                    $xero_secret,
+                XPM_SUBSCRIPTION_KEY:                  $xpm_sub_key,
+                XPM_TENANT_ID:                         $xpm_tenant,
+                XPM_CODE:                              $xpm_code,
+                GRAPH_TENANT_ID:                       $graph_tenant,
+                GRAPH_CLIENT_ID:                       $graph_client,
+                GRAPH_CLIENT_SECRET:                   $graph_secret,
+                ANTHROPIC_API_KEY:                     $anthropic_key,
+                MCP_SECRET_TOKEN:                      $mcp_token,
+                REDIS_PASSWORD:                        $redis_pw
+              }
+            }' > infra/environments/qa/secrets.auto.tfvars.json
+
+      - name: terraform init
+        run: terraform init
+        working-directory: infra/environments/qa
+        env:
+          ARM_CLIENT_ID:       ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_TENANT_ID:       ${{ secrets.AZURE_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          ARM_USE_OIDC:        "true"
+
+      - name: terraform apply
+        run: |
+          terraform apply -auto-approve \
+            -var="docker_image=ghcr.io/${{ needs.build-and-push.outputs.image_owner }}/landtaxdispute-server-qa:${{ github.sha }}" \
+            -var="registry_username=${{ needs.build-and-push.outputs.image_owner }}" \
+            -var="registry_token=${{ secrets.GITHUB_TOKEN }}"
+        working-directory: infra/environments/qa
+        env:
+          ARM_CLIENT_ID:       ${{ secrets.AZURE_CLIENT_ID }}
+          ARM_TENANT_ID:       ${{ secrets.AZURE_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          ARM_USE_OIDC:        "true"
+
+  migrate:
+    needs: deploy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run database migrations
+        env:
+          NODE_ENV: production
+          DB_HOST:     ${{ github.ref == 'refs/heads/main' && secrets.DB_HOST_PROD     || github.ref == 'refs/heads/qa' && secrets.DB_HOST_QA     || secrets.DB_HOST_DEV }}
+          DB_PORT:     ${{ github.ref == 'refs/heads/main' && secrets.DB_PORT_PROD     || github.ref == 'refs/heads/qa' && secrets.DB_PORT_QA     || secrets.DB_PORT_DEV }}
+          DB_USERNAME: ${{ github.ref == 'refs/heads/main' && secrets.DB_USERNAME_PROD || github.ref == 'refs/heads/qa' && secrets.DB_USERNAME_QA || secrets.DB_USERNAME_DEV }}
+          DB_PASSWORD: ${{ github.ref == 'refs/heads/main' && secrets.DB_PASSWORD_PROD || github.ref == 'refs/heads/qa' && secrets.DB_PASSWORD_QA || secrets.DB_PASSWORD_DEV }}
+          DB_NAME:     ${{ github.ref == 'refs/heads/main' && secrets.DB_NAME_PROD     || github.ref == 'refs/heads/qa' && secrets.DB_NAME_QA     || secrets.DB_NAME_DEV }}
+          DB_SSL:      ${{ github.ref == 'refs/heads/main' && secrets.DB_SSL_PROD      || github.ref == 'refs/heads/qa' && secrets.DB_SSL_QA      || secrets.DB_SSL_DEV }}
+        run: npm run migration:run
