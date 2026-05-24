@@ -66,11 +66,16 @@ jobs:
             docker stop app 2>/dev/null || true
             docker rm   app 2>/dev/null || true
 
+            sudo mkdir -p /var/log/app
+            sudo touch /var/log/app/ormlogs.log
+            sudo chmod 666 /var/log/app/ormlogs.log
+
             docker run -d \
               --name app \
               --restart always \
               -p 3000:3000 \
               --env-file /etc/app.env \
+              -v /var/log/app/ormlogs.log:/app/ormlogs.log \
               "$IMAGE"
 
   migrate:
