@@ -4,8 +4,6 @@ export class CreateBaseTables1773800000000 implements MigrationInterface {
   name = 'CreateBaseTables1773800000000';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(`CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`);
-
     // ── Enum types ────────────────────────────────────────────────────────────
     await queryRunner.query(`
       DO $$ BEGIN

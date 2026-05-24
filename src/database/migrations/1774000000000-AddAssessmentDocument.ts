@@ -6,7 +6,7 @@ export class AddAssessmentDocument1774000000000 implements MigrationInterface {
     public async up(queryRunner: QueryRunner): Promise<void> {
         await queryRunner.query(`
             CREATE TABLE "assessment_documents" (
-                "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
+                "id" uuid NOT NULL DEFAULT gen_random_uuid(),
                 "client_id" uuid NOT NULL,
                 "file_path" text,
                 "notice_date" date NOT NULL,
