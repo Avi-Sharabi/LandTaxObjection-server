@@ -21,10 +21,9 @@ import {
   SearchComparableSalesArgsDto,
 } from './dto/tool-args.dto';
 import { GetCaseDocumentsTool } from './tools/get-case-documents.tool';
+import { ToolResult } from './tools/mcp-tool.interface';
 import { UploadAllCaseDocumentsTool } from './tools/upload-all-case-documents.tool';
 import { UploadFyiTool } from './tools/upload-fyi.tool';
-
-type ToolResult = { content: { type: string; text: string }[]; isError?: boolean };
 type CacheEntry = { data: unknown; expiresAt: number };
 
 @Injectable()

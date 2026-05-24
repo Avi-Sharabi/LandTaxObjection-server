@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsNotEmpty, IsString } from 'class-validator';
+import { IsNotEmpty, IsString, MaxLength } from 'class-validator';
 
 export class FyiAiChatDto {
   @ApiProperty({
@@ -8,5 +8,6 @@ export class FyiAiChatDto {
   })
   @IsString()
   @IsNotEmpty()
+  @MaxLength(2000)
   message: string;
 }

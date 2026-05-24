@@ -112,22 +112,22 @@ export class FyiAiService {
         // Add Claude's turn (with tool_use blocks) to messages
         messages.push({ role: 'assistant', content });
 
-        // Execute each tool call and collect results
-        const toolResults: ContentBlock[] = [];
-        for (const block of content) {
-          if (block.type !== 'tool_use') continue;
-
-          this.logger.log(`[FyiAi] executing tool=${block.name} input=${JSON.stringify(block.input)}`);
-          const correlationId = randomUUID();
-          const toolResult = await this.executeTool(block.name!, block.input ?? {}, correlationId);
-
-          toolResults.push({
-            type: 'tool_result',
-            tool_use_id: block.id!,
-            content: toolResult.text,
-            is_error: toolResult.isError,
-          });
-        }
+        // Execute all tool calls in parallel and collect results
+        const toolResults: ContentBlock[] = await Promise.all(
+          content
+            .filter((b) => b.type === 'tool_use')
+            .map(async (block) => {
+              this.logger.log(`[FyiAi] executing tool=${block.name} input=${JSON.stringify(block.input)}`);
+              const correlationId = randomUUID();
+              const toolResult = await this.executeTool(block.name!, block.input ?? {}, correlationId);
+              return {
+                type: 'tool_result' as const,
+                tool_use_id: block.id!,
+                content: toolResult.text,
+                is_error: toolResult.isError,
+              };
+            }),
+        );
 
         messages.push({ role: 'user', content: toolResults });
         continue;

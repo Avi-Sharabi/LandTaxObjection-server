@@ -32,7 +32,7 @@ export class FyiUploadController {
 
     if (!versionId) {
       throw new BadRequestException(
-        'FYI upload failed. Verify credentials and that IS_FYI_PROD_ENABLED is set correctly.',
+        'FYI upload failed. Verify FYI_CLIENT_CODE, FYI_ACCESS_ID, and FYI_ACCESS_SECRET are set correctly.',
       );
     }
 

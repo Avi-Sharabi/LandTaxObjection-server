@@ -24,7 +24,7 @@ export class PdfStorageHandler {
 
     if (isFyiClient) {
       return isFyiProdEnabled
-        ? this.fyiStorageService.uploadToFyi({ base64 }, documentId)
+        ? this.fyiStorageService.uploadToFyi({ base64 }, `${caseReference} - Land Tax Assessment Notice`)
         : this.azureBlobService.uploadToFyiDev(base64, documentId);
     }
 

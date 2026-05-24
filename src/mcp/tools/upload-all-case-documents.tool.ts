@@ -20,9 +20,8 @@ export class UploadAllCaseDocumentsTool implements IMcpTool {
   readonly name = 'upload_all_case_documents';
   readonly timeoutMs = 120_000;
   readonly description =
-    'Uploads ALL documents for a dispute case to FYI in one call. ' +
+    'Uploads ALL assessment documents (valuation notices) for a dispute case to FYI in one call. ' +
     'Provide case_reference (e.g. LTD-1111) or case_id. ' +
-    'Uploads every document type (advisory letters, valuation notices, objections, photos, etc.). ' +
     'Stops on the first upload failure. ' +
     'Returns { uploaded, total } on full success or { uploaded, failed } on partial failure.';
 
@@ -97,7 +96,25 @@ export class UploadAllCaseDocumentsTool implements IMcpTool {
       const fyi_name = `${row.case_reference} - ${row.filename.replace(/\.[^.]+$/, '')}`;
       const sasUrl = this.azureBlob.getFileUrl(row.blob_storage_url, 30);
 
-      const versionId = await this.fyiStorage.uploadToFyi({ url: sasUrl ?? undefined }, fyi_name);
+      if (!sasUrl) {
+        return {
+          content: [{
+            type: 'text',
+            text: JSON.stringify({
+              uploaded,
+              failed: {
+                document_type: row.document_type,
+                filename: row.filename,
+                fyi_name,
+                error: 'Failed to generate download URL — check Azure Blob Storage configuration',
+              },
+            }),
+          }],
+          isError: true,
+        };
+      }
+
+      const versionId = await this.fyiStorage.uploadToFyi({ url: sasUrl }, fyi_name);
 
       if (!versionId) {
         return {
@@ -109,7 +126,7 @@ export class UploadAllCaseDocumentsTool implements IMcpTool {
                 document_type: row.document_type,
                 filename: row.filename,
                 fyi_name,
-                error: 'FYI upload failed — verify credentials and IS_FYI_PROD_ENABLED flag',
+                error: 'FYI upload failed — verify FYI_CLIENT_CODE and credentials',
               },
             }),
           }],
