@@ -83,14 +83,13 @@ export async function seedSubmitToVG(dataSource: DataSource): Promise<void> {
   if (!existingDoc) {
     await dataSource.query(`
       INSERT INTO assessment_documents
-        (id, client_id, file_path, notice_date, valuation_year)
-      VALUES ($1, $2, $3, $4, $5)
+        (id, client_id, file_path, document_name)
+      VALUES ($1, $2, $3, $4)
     `, [
       IDS.assessmentDocument,
       IDS.client,
       `dispute-cases/${IDS.assessmentDocument}/valuation-notice.pdf`,
-      '2025-01-20',
-      '2025',
+      'Land Tax Assessment Notice',
     ]);
     logger.log('Seeded assessment document');
   } else {
@@ -233,14 +232,13 @@ export async function seedSubmitToVG(dataSource: DataSource): Promise<void> {
   if (!existingAprilDoc) {
     await dataSource.query(`
       INSERT INTO assessment_documents
-        (id, client_id, file_path, notice_date, valuation_year)
-      VALUES ($1, $2, $3, $4, $5)
+        (id, client_id, file_path, document_name)
+      VALUES ($1, $2, $3, $4)
     `, [
       APRIL_IDS.assessmentDocument,
       APRIL_IDS.client,
       `dispute-cases/${APRIL_IDS.assessmentDocument}/valuation-notice.pdf`,
-      '2025-03-10',
-      '2025',
+      'Land Tax Assessment Notice',
     ]);
     logger.log('Seeded assessment document (april set)');
   } else {
