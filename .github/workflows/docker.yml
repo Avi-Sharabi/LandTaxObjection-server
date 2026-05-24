@@ -7,7 +7,6 @@ on:
 permissions:
   contents: read
   packages: write
-  id-token: write   # Azure OIDC
 
 jobs:
   build-and-push:
@@ -48,86 +47,31 @@ jobs:
     needs: build-and-push
     runs-on: ubuntu-latest
     environment: qa
-
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Azure login (OIDC)
-        uses: azure/login@v2
-        with:
-          client-id: ${{ secrets.AZURE_CLIENT_ID }}
-          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
-          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-
-      - uses: hashicorp/setup-terraform@v3
-        with:
-          terraform_version: "~1.7"
-
-      - name: Write secret tfvars
-        run: |
-          jq -n \
-            --arg db_password   "${{ secrets.DB_PASSWORD_QA }}" \
-            --arg fyi_id        "${{ secrets.FYI_ACCESS_ID }}" \
-            --arg fyi_secret    "${{ secrets.FYI_ACCESS_SECRET }}" \
-            --arg storage_key   "${{ secrets.AZURE_STORAGE_ACCOUNT_KEY }}" \
-            --arg storage_conn  "${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}" \
-            --arg comm_conn     "${{ secrets.AZURE_COMMUNICATION_CONNECTION_STRING }}" \
-            --arg jwt_secret    "${{ secrets.JWT_SECRET }}" \
-            --arg xero_id       "${{ secrets.XERO_CLIENT_ID }}" \
-            --arg xero_secret   "${{ secrets.XERO_CLIENT_SECRET }}" \
-            --arg xpm_sub_key   "${{ secrets.XPM_SUBSCRIPTION_KEY }}" \
-            --arg xpm_tenant    "${{ secrets.XPM_TENANT_ID }}" \
-            --arg xpm_code      "${{ secrets.XPM_CODE }}" \
-            --arg graph_tenant  "${{ secrets.GRAPH_TENANT_ID }}" \
-            --arg graph_client  "${{ secrets.GRAPH_CLIENT_ID }}" \
-            --arg graph_secret  "${{ secrets.GRAPH_CLIENT_SECRET }}" \
-            --arg anthropic_key "${{ secrets.ANTHROPIC_API_KEY }}" \
-            --arg mcp_token     "${{ secrets.MCP_SECRET_TOKEN }}" \
-            --arg redis_pw      "${{ secrets.REDIS_PASSWORD }}" \
-            '{
-              app_secret_vars: {
-                DB_PASSWORD:                           $db_password,
-                FYI_ACCESS_ID:                         $fyi_id,
-                FYI_ACCESS_SECRET:                     $fyi_secret,
-                AZURE_STORAGE_ACCOUNT_KEY:             $storage_key,
-                AZURE_STORAGE_CONNECTION_STRING:       $storage_conn,
-                AZURE_COMMUNICATION_CONNECTION_STRING: $comm_conn,
-                JWT_SECRET:                            $jwt_secret,
-                XERO_CLIENT_ID:                        $xero_id,
-                XERO_CLIENT_SECRET:                    $xero_secret,
-                XPM_SUBSCRIPTION_KEY:                  $xpm_sub_key,
-                XPM_TENANT_ID:                         $xpm_tenant,
-                XPM_CODE:                              $xpm_code,
-                GRAPH_TENANT_ID:                       $graph_tenant,
-                GRAPH_CLIENT_ID:                       $graph_client,
-                GRAPH_CLIENT_SECRET:                   $graph_secret,
-                ANTHROPIC_API_KEY:                     $anthropic_key,
-                MCP_SECRET_TOKEN:                      $mcp_token,
-                REDIS_PASSWORD:                        $redis_pw
-              }
-            }' > infra/environments/qa/secrets.auto.tfvars.json
-
-      - name: terraform init
-        run: terraform init
-        working-directory: infra/environments/qa
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
         env:
-          ARM_CLIENT_ID:       ${{ secrets.AZURE_CLIENT_ID }}
-          ARM_TENANT_ID:       ${{ secrets.AZURE_TENANT_ID }}
-          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-          ARM_USE_OIDC:        "true"
+          IMAGE: ghcr.io/${{ needs.build-and-push.outputs.image_owner }}/landtaxdispute-server-qa:${{ github.sha }}
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE_OWNER: ${{ needs.build-and-push.outputs.image_owner }}
+        with:
+          host: ${{ secrets.VM_HOST_QA }}
+          username: azureuser
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          envs: IMAGE,REGISTRY_TOKEN,IMAGE_OWNER
+          script: |
+            docker login ghcr.io -u "$IMAGE_OWNER" -p "$REGISTRY_TOKEN"
+            docker pull "$IMAGE"
 
-      - name: terraform apply
-        run: |
-          terraform apply -auto-approve \
-            -var="docker_image=ghcr.io/${{ needs.build-and-push.outputs.image_owner }}/landtaxdispute-server-qa:${{ github.sha }}" \
-            -var="registry_username=${{ needs.build-and-push.outputs.image_owner }}" \
-            -var="registry_token=${{ secrets.GITHUB_TOKEN }}"
-        working-directory: infra/environments/qa
-        env:
-          ARM_CLIENT_ID:       ${{ secrets.AZURE_CLIENT_ID }}
-          ARM_TENANT_ID:       ${{ secrets.AZURE_TENANT_ID }}
-          ARM_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-          ARM_USE_OIDC:        "true"
+            docker stop app 2>/dev/null || true
+            docker rm   app 2>/dev/null || true
+
+            docker run -d \
+              --name app \
+              --restart always \
+              -p 3000:3000 \
+              --env-file /etc/app.env \
+              "$IMAGE"
 
   migrate:
     needs: deploy
