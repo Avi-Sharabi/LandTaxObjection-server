@@ -41,6 +41,7 @@ RUN apt-get update && apt-get install -y \
     libxkbcommon0 \
     libxrandr2 \
     libxss1 \
+    unzip \
     wget \
     xdg-utils \
     --no-install-recommends \
