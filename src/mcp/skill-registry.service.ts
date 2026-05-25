@@ -1,24 +1,19 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 
 @Injectable()
-export class SkillRegistryService implements OnModuleInit {
+export class SkillRegistryService {
   private readonly logger = new Logger(SkillRegistryService.name);
   private readonly skills = new Map<string, string>();
 
-  async onModuleInit(): Promise<void> {
+  constructor() {
     const skillsDir = path.join(__dirname, '..', 'skills');
-    try {
-      await fs.promises.access(skillsDir);
-    } catch {
-      return;
-    }
-    const files = await fs.promises.readdir(skillsDir);
-    for (const file of files) {
+    if (!fs.existsSync(skillsDir)) return;
+    for (const file of fs.readdirSync(skillsDir)) {
       if (!file.endsWith('.md')) continue;
       const name = file.replace(/\.md$/, '');
-      const content = await fs.promises.readFile(path.join(skillsDir, file), 'utf-8');
+      const content = fs.readFileSync(path.join(skillsDir, file), 'utf-8');
       this.skills.set(name, content);
       this.logger.log(JSON.stringify({ context: 'SkillRegistry.loaded', skill: name, length: content.length, ts: new Date().toISOString() }));
     }
