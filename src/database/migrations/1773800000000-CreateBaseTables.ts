@@ -60,7 +60,7 @@ export class CreateBaseTables1773800000000 implements MigrationInterface {
     // ── users ─────────────────────────────────────────────────────────────────
     await queryRunner.query(`
       CREATE TABLE IF NOT EXISTS "users" (
-        "id"         uuid        NOT NULL DEFAULT uuid_generate_v4(),
+        "id"         uuid        NOT NULL DEFAULT gen_random_uuid(),
         "email"      text        NOT NULL,
         "full_name"  text        NOT NULL,
         "role"       "users_role_enum" NOT NULL DEFAULT 'accountant',
@@ -76,7 +76,7 @@ export class CreateBaseTables1773800000000 implements MigrationInterface {
     // ── clients ───────────────────────────────────────────────────────────────
     await queryRunner.query(`
       CREATE TABLE IF NOT EXISTS "clients" (
-        "id"                    uuid        NOT NULL DEFAULT uuid_generate_v4(),
+        "id"                    uuid        NOT NULL DEFAULT gen_random_uuid(),
         "status"                "clients_status_enum" NOT NULL DEFAULT 'prospect',
         "name"                  text        NOT NULL,
         "email"                 text,
@@ -113,7 +113,7 @@ export class CreateBaseTables1773800000000 implements MigrationInterface {
     // ── properties ────────────────────────────────────────────────────────────
     await queryRunner.query(`
       CREATE TABLE IF NOT EXISTS "properties" (
-        "id"            uuid        NOT NULL DEFAULT uuid_generate_v4(),
+        "id"            uuid        NOT NULL DEFAULT gen_random_uuid(),
         "client_id"     uuid        NOT NULL,
         "address"       text        NOT NULL,
         "suburb"        text        NOT NULL,
@@ -136,7 +136,7 @@ export class CreateBaseTables1773800000000 implements MigrationInterface {
     // ── valuation_notices (base columns only; migrations 2 & 3 add more) ─────
     await queryRunner.query(`
       CREATE TABLE IF NOT EXISTS "valuation_notices" (
-        "id"                   uuid        NOT NULL DEFAULT uuid_generate_v4(),
+        "id"                   uuid        NOT NULL DEFAULT gen_random_uuid(),
         "property_id"          uuid        NOT NULL,
         "valuation_date"       date        NOT NULL,
         "assessed_land_value"  NUMERIC(15,2) NOT NULL,
@@ -156,7 +156,7 @@ export class CreateBaseTables1773800000000 implements MigrationInterface {
     // ── dispute_cases ─────────────────────────────────────────────────────────
     await queryRunner.query(`
       CREATE TABLE IF NOT EXISTS "dispute_cases" (
-        "id"                         uuid        NOT NULL DEFAULT uuid_generate_v4(),
+        "id"                         uuid        NOT NULL DEFAULT gen_random_uuid(),
         "case_reference"             text        NOT NULL,
         "client_id"                  uuid        NOT NULL,
         "property_id"                uuid        NOT NULL,
@@ -218,7 +218,7 @@ export class CreateBaseTables1773800000000 implements MigrationInterface {
     // ── dispute_legal_grounds ─────────────────────────────────────────────────
     await queryRunner.query(`
       CREATE TABLE IF NOT EXISTS "dispute_legal_grounds" (
-        "id"         uuid        NOT NULL DEFAULT uuid_generate_v4(),
+        "id"         uuid        NOT NULL DEFAULT gen_random_uuid(),
         "dispute_id" uuid        NOT NULL,
         "ground"     "dispute_legal_grounds_ground_enum" NOT NULL,
         "notes"      text,

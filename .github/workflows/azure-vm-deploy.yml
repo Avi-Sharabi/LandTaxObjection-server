@@ -1,0 +1,107 @@
+name: Build, Push & Deploy
+
+on:
+  push:
+    branches: [qa]
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    outputs:
+      image_owner: ${{ steps.owner.outputs.value }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Lowercase image owner
+        id: owner
+        run: |
+          VALUE=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')
+          echo "value=$VALUE" >> $GITHUB_OUTPUT
+          echo "IMAGE_OWNER=$VALUE" >> $GITHUB_ENV
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ghcr.io/${{ env.IMAGE_OWNER }}/landtaxdispute-server:latest
+            ghcr.io/${{ env.IMAGE_OWNER }}/landtaxdispute-server:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  deploy:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    environment: qa
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        env:
+          IMAGE: ghcr.io/${{ needs.build-and-push.outputs.image_owner }}/landtaxdispute-server-qa:${{ github.sha }}
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE_OWNER: ${{ needs.build-and-push.outputs.image_owner }}
+        with:
+          host: ${{ secrets.VM_HOST_prod }}
+          username: azureuser
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          envs: IMAGE,REGISTRY_TOKEN,IMAGE_OWNER
+          script: |
+            docker login ghcr.io -u "$IMAGE_OWNER" -p "$REGISTRY_TOKEN"
+            docker pull "$IMAGE"
+
+            docker stop app 2>/dev/null || true
+            docker rm   app 2>/dev/null || true
+
+            sudo mkdir -p /var/log/app
+            sudo touch /var/log/app/ormlogs.log
+            sudo chmod 666 /var/log/app/ormlogs.log
+
+            docker run -d \
+              --name app \
+              --restart always \
+              -p 3000:3000 \
+              --env-file /etc/app.env \
+              -v /var/log/app/ormlogs.log:/app/ormlogs.log \
+              "$IMAGE"
+
+  migrate:
+    needs: deploy
+    runs-on: ubuntu-latest
+    environment:
+      name: ${{ github.ref == 'refs/heads/main' && 'production' || github.ref == 'refs/heads/qa' && 'qa' || 'development' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run database migrations
+        env:
+          NODE_ENV: production
+          DB_HOST:     ${{ github.ref == 'refs/heads/main' && secrets.DB_HOST_PROD     || github.ref == 'refs/heads/qa' && secrets.DB_HOST_QA     || secrets.DB_HOST_DEV }}
+          DB_PORT:     ${{ github.ref == 'refs/heads/main' && secrets.DB_PORT_PROD     || github.ref == 'refs/heads/qa' && secrets.DB_PORT_QA     || secrets.DB_PORT_DEV }}
+          DB_USERNAME: ${{ github.ref == 'refs/heads/main' && secrets.DB_USERNAME_PROD || github.ref == 'refs/heads/qa' && secrets.DB_USERNAME_QA || secrets.DB_USERNAME_DEV }}
+          DB_PASSWORD: ${{ github.ref == 'refs/heads/main' && secrets.DB_PASSWORD_PROD || github.ref == 'refs/heads/qa' && secrets.DB_PASSWORD_QA || secrets.DB_PASSWORD_DEV }}
+          DB_NAME:     ${{ github.ref == 'refs/heads/main' && secrets.DB_NAME_PROD     || github.ref == 'refs/heads/qa' && secrets.DB_NAME_QA     || secrets.DB_NAME_DEV }}
+          DB_SSL:      ${{ github.ref == 'refs/heads/main' && secrets.DB_SSL_PROD      || github.ref == 'refs/heads/qa' && secrets.DB_SSL_QA      || secrets.DB_SSL_DEV }}
+        run: npm run migration:run
