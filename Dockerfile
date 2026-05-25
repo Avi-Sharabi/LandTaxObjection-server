@@ -2,6 +2,7 @@
 
 FROM node:20-slim AS builder
 WORKDIR /app
+ENV PUPPETEER_SKIP_DOWNLOAD=1
 COPY package*.json ./
 RUN npm ci
 COPY . .
@@ -46,6 +47,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 COPY package*.json ./
+ENV PUPPETEER_SKIP_DOWNLOAD=1
 RUN npm ci --omit=dev
 
 # Download Chrome into the node user's cache dir and fix ownership
