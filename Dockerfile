@@ -9,6 +9,7 @@ COPY . .
 RUN npm run build
 
 FROM node:20-slim
+
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PUPPETEER_CACHE_DIR=/home/node/.cache/puppeteer
