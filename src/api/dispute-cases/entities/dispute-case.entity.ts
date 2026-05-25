@@ -156,9 +156,6 @@ export class DisputeCase {
   @Column({ type: 'timestamptz', nullable: true })
   last_vg_follow_up_sent_at: Date | null;
 
-  @Column({ type: 'text', nullable: true })
-  vg_response_notes: string | null;
-
   @Column({ type: 'timestamptz', nullable: true })
   closed_at: Date | null;
 

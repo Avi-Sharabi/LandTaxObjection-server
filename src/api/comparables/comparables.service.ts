@@ -118,6 +118,12 @@ export class ComparablesService implements OnModuleInit {
     return plainToInstance(ComparableResponseDto, comparables);
   }
 
+  async findRawByDisputeCaseId(disputeCaseId: string): Promise<ComparableSale[]> {
+    return this.comparablesRepository.find({
+      where: { dispute_case_id: disputeCaseId },
+    });
+  }
+
   /**
    * Gate check — throws InsufficientComparablesException if the dispute case
    * has fewer than MINIMUM_COMPARABLES comparables.

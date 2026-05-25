@@ -7,6 +7,7 @@ import { seedObjectionPackage } from './objection-package.seeder';
 import { seedCaseClosedNoObjection } from './case-closed-no-objection.seeder';
 import { seedNotifications } from './notification.seeder';
 import { seedVgMonitorTest } from './vg-monitor-test.seeder';
+import { seedVgFollowUpTest } from './vg-follow-up-test.seeder';
 import { seedSubmitToVG } from './submit-to-vg.seeder';
 import { seedCasesPagination } from './cases-pagination.seeder';
 import { seedComparablesTest } from './comparables-test.seeder';
@@ -31,6 +32,7 @@ async function runSeeders(dataSource: DataSource): Promise<void> {
     await seedComparablesTest(dataSource);
     await seedTaxSavingsTest(dataSource);
     await testVgEmail(dataSource);
+    await seedVgFollowUpTest(dataSource);
   }
 }
 

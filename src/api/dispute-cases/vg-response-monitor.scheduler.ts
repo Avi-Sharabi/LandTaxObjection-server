@@ -28,7 +28,7 @@ export class VGResponseMonitorScheduler implements OnApplicationBootstrap {
     this.logger.log(`[VG-FOLLOW-UP] Scheduled with cron: "${schedule}"`);
   }
 
-  async runVGFollowUpCheck(): Promise<void> {
+  async runVGFollowUpCheck(): Promise<{ checked: number; sent: number; failed: number }> {
     this.logger.log('[VG-FOLLOW-UP] Starting VG response monitor run');
 
     const cases = await this.disputeCasesService.findCasesDueForVGFollowUp();
@@ -56,5 +56,7 @@ export class VGResponseMonitorScheduler implements OnApplicationBootstrap {
     this.logger.log(
       `[VG-FOLLOW-UP] Run complete — checked=${cases.length} sent=${sent} failed=${failed}`,
     );
+
+    return { checked: cases.length, sent, failed };
   }
 }

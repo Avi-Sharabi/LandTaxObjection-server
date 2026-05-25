@@ -1,6 +1,6 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class AddLandTaxComputationSchema1777500000000 implements MigrationInterface {
+export class AddLandTaxComputationSchema1777500100000 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
     // 1. Ownership type enum for valuation_notices
     await queryRunner.query(`
