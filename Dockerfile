@@ -1,15 +1,13 @@
 # syntax=docker/dockerfile:1
 
-FROM node:20-slim AS builder
+FROM node:24-slim AS builder
 WORKDIR /app
-ENV PUPPETEER_SKIP_DOWNLOAD=1
 COPY package*.json ./
-RUN npm ci
+RUN PUPPETEER_SKIP_DOWNLOAD=1 npm ci
 COPY . .
 RUN npm run build
 
-FROM node:20-slim
-
+FROM node:24-slim
 WORKDIR /app
 ENV NODE_ENV=production
 ENV PUPPETEER_CACHE_DIR=/home/node/.cache/puppeteer
@@ -49,8 +47,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 COPY package*.json ./
-ENV PUPPETEER_SKIP_DOWNLOAD=1
-RUN npm ci --omit=dev
+RUN PUPPETEER_SKIP_DOWNLOAD=1 npm ci --omit=dev
 
 # Download Chrome into the node user's cache dir and fix ownership
 RUN npx puppeteer browsers install chrome \
