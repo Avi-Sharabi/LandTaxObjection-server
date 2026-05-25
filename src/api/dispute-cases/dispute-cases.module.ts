@@ -11,7 +11,7 @@ import { ValuationNotice } from '../valuation-notices/entities/valuation-notice.
 import { DisputeCasesController } from './dispute-cases.controller';
 import { DisputeCasesService } from './dispute-cases.service';
 import { DisputeCase } from './entities/dispute-case.entity';
-import { AssessmentDocument } from './entities/assessment-document.entity';
+import { AssessmentDocumentsModule } from '../assessment-documents/assessment-documents.module';
 import { PackageDocument } from '../objection-package/entities/package-document.entity';
 import { AzureBlobModule } from 'src/common/azure-blob/azure-blob.module';
 import { AzureEmailModule } from 'src/common/azure-email/azure-email.module';
@@ -30,6 +30,7 @@ import { VgEmailAnalysisService } from './vg-email/vg-email-analysis.service';
 import { ValuationModule } from '../valuation/valuation.module';
 import { DisputeCaseSubscriber } from './dispute-case.subscriber';
 import { VGResponseMonitorScheduler } from './vg-response-monitor.scheduler';
+import { SupportingEvidenceModule } from '../supporting-evidence/supporting-evidence.module';
 
 @Module({
   imports: [
@@ -38,14 +39,15 @@ import { VGResponseMonitorScheduler } from './vg-response-monitor.scheduler';
     AzureBlobModule,
     AzureEmailModule,
     ComparablesModule,
+    SupportingEvidenceModule,
     MsGraphModule,
     McpModule,
     AuditLogModule,
     NotificationsModule,
     ValuationModule,
+    AssessmentDocumentsModule,
     TypeOrmModule.forFeature([
       DisputeCase,
-      AssessmentDocument,
       DisputeLegalGround,
       Property,
       Client,

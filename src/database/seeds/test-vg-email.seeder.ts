@@ -58,16 +58,15 @@ export async function testVgEmail(dataSource: DataSource): Promise<void> {
   // ── Assessment document ───────────────────────────────────────────────────
   await dataSource.query(
     `
-    INSERT INTO assessment_documents (id, client_id, file_path, notice_date, valuation_year)
-    VALUES ($1, $2, $3, $4, $5)
+    INSERT INTO assessment_documents (id, client_id, document_name, file_path)
+    VALUES ($1, $2, $3, $4)
     ON CONFLICT (id) DO NOTHING
   `,
     [
       IDS.assessmentDoc,
       IDS.client,
+      'Land Tax Assessment Notice',
       'test/vg-email-test.pdf',
-      '2025-01-01',
-      '2025',
     ],
   );
 

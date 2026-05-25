@@ -19,6 +19,6 @@ import { McpModule } from '../../mcp/mcp.module';
   ],
   controllers: [ComparablesController],
   providers: [ComparablesService, ComparablesQueueService, ComparablesProcessor],
-  exports: [ComparablesService],
+  exports: [ComparablesService, ComparablesQueueService],
 })
 export class ComparablesModule {}

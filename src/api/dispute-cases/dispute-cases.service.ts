@@ -43,9 +43,9 @@ import {
   PackageDocument,
   PackageDocumentStatus,
 } from '../objection-package/entities/package-document.entity';
-import { ClientEmailMissingException } from './exceptions/client-email-missing.exception';
 import { CaseAlreadySubmittedException } from './exceptions/case-already-submitted.exception';
 import { CaseNotClientApprovedException } from './exceptions/case-not-client-approved.exception';
+import { ClientEmailMissingException } from './exceptions/client-email-missing.exception';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/entities/notification.entity';
 import { AuditAction, AuditLog } from '../audit-log/entities/audit-log.entity';
