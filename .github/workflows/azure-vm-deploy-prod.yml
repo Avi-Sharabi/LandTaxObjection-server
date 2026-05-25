@@ -46,7 +46,7 @@ jobs:
   deploy:
     needs: build-and-push
     runs-on: ubuntu-latest
-    environment: qa
+    environment: prod
     steps:
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1
@@ -55,7 +55,7 @@ jobs:
           REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           IMAGE_OWNER: ${{ needs.build-and-push.outputs.image_owner }}
         with:
-          host: ${{ secrets.VM_HOST_QA }}
+          host: ${{ secrets.VM_HOST_PRODs }}
           username: azureuser
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           envs: IMAGE,REGISTRY_TOKEN,IMAGE_OWNER
