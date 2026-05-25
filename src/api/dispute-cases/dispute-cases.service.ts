@@ -548,6 +548,15 @@ export class DisputeCasesService {
     return !expiresAt || expiresAt < new Date();
   }
 
+  async getPropertyAddressForCase(id: string): Promise<string> {
+    const disputeCase = await this.disputeCasesRepository.findOne({
+      where: { id },
+      relations: ['property'],
+    });
+    if (!disputeCase) throw new NotFoundException(`Dispute case #${id} not found`);
+    return this.buildPropertyAddress(disputeCase.property);
+  }
+
   private buildPropertyAddress(
     property: {
       address: string | null;
