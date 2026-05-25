@@ -2,7 +2,7 @@ name: Build, Push & Deploy
 
 on:
   push:
-    branches: [qa]
+    branches: [main]
 
 permissions:
   contents: read
