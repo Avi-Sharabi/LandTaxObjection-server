@@ -51,7 +51,7 @@ jobs:
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1
         env:
-          IMAGE: ghcr.io/${{ needs.build-and-push.outputs.image_owner }}/landtaxdispute-server-qa:${{ github.sha }}
+          IMAGE: ghcr.io/${{ needs.build-and-push.outputs.image_owner }}/landtaxdispute-server:${{ github.sha }}
           REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           IMAGE_OWNER: ${{ needs.build-and-push.outputs.image_owner }}
         with:
