@@ -8,7 +8,7 @@ export class McpAuthGuard implements CanActivate {
 
   canActivate(context: ExecutionContext): boolean {
     const expected = this.configService.get<string>('MCP_SECRET_TOKEN');
-    if (!expected) return true; // no token configured — open in dev
+    if (!expected) throw new UnauthorizedException('MCP_SECRET_TOKEN is not configured');
 
     const req = context.switchToHttp().getRequest();
     const authHeader = req.headers['authorization'] as string | undefined;

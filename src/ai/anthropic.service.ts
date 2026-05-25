@@ -7,7 +7,7 @@ export interface AnthropicCallOptions {
   systemBlocks: { text: string; cached?: boolean }[];
   userMessage: string;
   maxTokens?: number;
-  thinking?: { budgetTokens: number };
+  thinkingBudgetTokens?: number;
   mcpServers?: boolean;
 }
 
@@ -41,10 +41,9 @@ export class AnthropicService {
   ) {}
 
   async call(options: AnthropicCallOptions): Promise<AnthropicCallResult> {
-    const { systemBlocks, userMessage, maxTokens = 4000, thinking, mcpServers } = options;
+    const { systemBlocks, userMessage, maxTokens = 4000, thinkingBudgetTokens = 2000, mcpServers } = options;
 
-    let betaHeader = 'mcp-client-2025-04-04,prompt-caching-2024-07-31';
-    if (thinking) betaHeader += ',interleaved-thinking-2025-05-14';
+    const betaHeader = 'mcp-client-2025-04-04,prompt-caching-2024-07-31,interleaved-thinking-2025-05-14';
 
     const system = systemBlocks.map((block) => ({
       type: 'text',
@@ -63,9 +62,7 @@ export class AnthropicService {
       messages: [{ role: 'user', content: userMessage }],
     };
 
-    if (thinking) {
-      body['thinking'] = { type: 'enabled', budget_tokens: thinking.budgetTokens };
-    }
+    body['thinking'] = { type: 'enabled', budget_tokens: thinkingBudgetTokens };
 
     if (mcpUrl && mcpToken) {
       body['mcp_servers'] = [

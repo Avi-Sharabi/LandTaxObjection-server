@@ -5,8 +5,7 @@ import { McpController } from './mcp.controller';
 import { McpService } from './mcp.service';
 import { McpAuthGuard } from './mcp-auth.guard';
 import { SkillRegistryService } from './skill-registry.service';
-import { UpdateDatabaseService } from './update-database.service';
-import { UpdateDatabaseController } from './update-database.controller';
+import { UpdateDatabaseService } from '../api/ai-update-database/update-database.service';
 import { SearchComparablesTool } from './tools/search-comparables.tool';
 import { QueryTool } from './tools/query.tool';
 import { ListTablesTool } from './tools/list-tables.tool';
@@ -15,7 +14,7 @@ import { UpdateDatabaseTool } from './tools/update-database.tool';
 
 @Module({
   imports: [AiModule, AiUpdateLogModule],
-  controllers: [McpController, UpdateDatabaseController],
+  controllers: [McpController],
   providers: [
     McpService,
     McpAuthGuard,
@@ -27,6 +26,6 @@ import { UpdateDatabaseTool } from './tools/update-database.tool';
     DescribeTableTool,
     UpdateDatabaseTool,
   ],
-  exports: [McpService, SkillRegistryService],
+  exports: [McpService, SkillRegistryService, UpdateDatabaseService],
 })
 export class McpModule {}

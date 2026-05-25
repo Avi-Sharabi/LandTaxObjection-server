@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { AiUpdateDatabaseModule } from './ai-update-database/update-database.module';
 import { ClientsModule } from './clients/clients.module';
 import { ComparablesModule } from './comparables/comparables.module';
 import { DisputeCasesModule } from './dispute-cases/dispute-cases.module';
@@ -14,6 +15,7 @@ import { NotificationsModule } from './notifications/notifications.module';
 
 @Module({
   imports: [
+    AiUpdateDatabaseModule,
     AuthModule,
     ClientsModule,
     ComparablesModule,

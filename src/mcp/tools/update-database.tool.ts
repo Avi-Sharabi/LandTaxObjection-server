@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { IMcpTool, ToolResult } from './mcp-tool.interface';
-import { UpdateDatabaseService } from '../update-database.service';
+import { UpdateDatabaseService } from '../../api/ai-update-database/update-database.service';
 import { SkillRegistryService } from '../skill-registry.service';
 
 @Injectable()

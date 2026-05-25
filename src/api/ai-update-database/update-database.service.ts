@@ -5,7 +5,7 @@ import { ConfigService } from '@nestjs/config';
 import { plainToInstance } from 'class-transformer';
 import { validateOrReject } from 'class-validator';
 import { isAxiosError } from 'axios';
-import { UpdateDatabaseArgsDto } from './dto/tool-args.dto';
+import { UpdateDatabaseArgsDto } from '../../mcp/dto/tool-args.dto';
 import { AnthropicService } from 'src/ai/anthropic.service';
 
 type ToolResult = { content: { type: string; text: string }[]; isError?: boolean };
@@ -18,9 +18,6 @@ interface SchemaColumn {
 }
 
 type SchemaMap = Map<string, Set<string>>; // table_name → Set<column_name>
-
-const AI_ALLOWED_STATUSES = new Set(['vg_approved', 'vg_declined', 'for_review']);
-const REQUIRED_CURRENT_STATUS_FOR_AI = 'vg_response_received';
 
 @Injectable()
 export class UpdateDatabaseService {
@@ -48,12 +45,6 @@ export class UpdateDatabaseService {
       'premium_threshold', 'premium_base_amount', 'premium_rate_pct', 'foreign_surcharge_pct',
     ]),
   };
-
-  // These fields must be appended to, never overwritten
-  private readonly APPEND_ONLY_FIELDS = new Set<string>();
-
-  // Tables with an updated_at column that must be refreshed on raw SQL writes
-  private readonly TABLES_WITH_UPDATED_AT = new Set<string>();
 
   // All AI-writable tables require an ai_update_logs entry
   private readonly AUDIT_REQUIRED_TABLES = new Set(['users', 'land_tax_rates']);
@@ -145,7 +136,17 @@ export class UpdateDatabaseService {
       };
     }
 
-    // 3a. Ask Claude to generate a SELECT query to find the matching record
+    // 3a. Ask Claude to generate a SELECT query — restrict schema to writable tables only
+    //     to prevent Claude from querying sensitive/protected tables in the search step
+    const writableSchema = [...Object.keys(this.ALLOWED_WRITES)]
+      .map((t) => {
+        const cols = schemaMap.get(t);
+        if (!cols) return '';
+        return `TABLE: ${t}\n${[...cols].map((c) => `  ${c}`).join('\n')}`;
+      })
+      .filter(Boolean)
+      .join('\n\n');
+
     let matchedRows: unknown[] = [];
     try {
       const searchResult = await this.anthropic.call({
@@ -153,8 +154,8 @@ export class UpdateDatabaseService {
         userMessage: [
           'INSTRUCTION: ' + dto.instruction,
           '',
-          'DATABASE SCHEMA:',
-          liveSchema,
+          'AI-WRITABLE TABLES (search within these only):',
+          writableSchema,
           '',
           'Write a single SQL SELECT query that finds the record(s) matching the details in the instruction.',
           'Return ONLY the raw SQL — no prose, no markdown fences, no explanation.',
@@ -196,7 +197,6 @@ export class UpdateDatabaseService {
           'Fields: table, record_id (UUID from the matched record), updates (column→value pairs).',
         ].join('\n'),
         maxTokens: 4000,
-        thinking: { budgetTokens: 2000 },
       });
       parsed = this.anthropic.parseJsonObject<typeof parsed>(result.text);
     } catch (err) {
@@ -292,12 +292,11 @@ export class UpdateDatabaseService {
       }
     }
 
-    // 7. Pre-flight: confirm record exists and read current status for transition guard
+    // 7. Pre-flight: confirm record exists
     let currentRow: Record<string, unknown>[];
     try {
-      const extraCols = table === 'dispute_cases' ? ', "status"' : '';
       currentRow = await this.dataSource.query(
-        `SELECT "id"${extraCols} FROM "${table}" WHERE id = $1 LIMIT 1`,
+        `SELECT "id" FROM "${table}" WHERE id = $1 LIMIT 1`,
         [record_id],
       );
     } catch (err) {
@@ -320,58 +319,18 @@ export class UpdateDatabaseService {
       };
     }
 
-    // 7b. Status transition guard — AI may only move dispute_cases to specific statuses
-    //     and only when the current status is vg_response_received
-    if (table === 'dispute_cases' && 'status' in updates) {
-      const currentStatus = currentRow[0]['status'] as string;
-      const newStatus = updates['status'] as string;
-      if (currentStatus !== REQUIRED_CURRENT_STATUS_FOR_AI) {
-        return {
-          content: [{ type: 'text', text: JSON.stringify({
-            success: false, table, record_id,
-            reason: `Status transition not allowed: current status is '${currentStatus}', must be '${REQUIRED_CURRENT_STATUS_FOR_AI}' for AI to update.`,
-            action_required: 'manual_review', timestamp,
-          }) }],
-          isError: true,
-        };
-      }
-      if (!AI_ALLOWED_STATUSES.has(newStatus)) {
-        return {
-          content: [{ type: 'text', text: JSON.stringify({
-            success: false, table, record_id,
-            reason: `AI may not set status to '${newStatus}'. Allowed values: ${[...AI_ALLOWED_STATUSES].join(', ')}.`,
-            action_required: 'manual_review', timestamp,
-          }) }],
-          isError: true,
-        };
-      }
-    }
-
     // 8. Build parameterized UPDATE SQL
-    //    Append-only fields use CASE … COALESCE to concatenate rather than overwrite.
-    //    updated_at is injected via NOW() for tables that track it.
     const columns = Object.keys(updates);
     const params: unknown[] = [];
     const setClauses: string[] = [];
 
     for (const col of columns) {
       params.push(updates[col]);
-      if (this.APPEND_ONLY_FIELDS.has(col)) {
-        setClauses.push(
-          `"${col}" = CASE WHEN "${col}" IS NULL THEN $${params.length} ELSE "${col}" || E'\\n' || $${params.length} END`,
-        );
-      } else {
-        setClauses.push(`"${col}" = $${params.length}`);
-      }
-    }
-
-    if (this.TABLES_WITH_UPDATED_AT.has(table)) {
-      setClauses.push(`"updated_at" = NOW()`);
+      setClauses.push(`"${col}" = $${params.length}`);
     }
 
     params.push(record_id);
     const updateSql = `UPDATE "${table}" SET ${setClauses.join(', ')} WHERE id = $${params.length}`;
-
 
     const performedByValue =
       performedBy ??
@@ -428,7 +387,7 @@ export class UpdateDatabaseService {
       ts: timestamp,
     }));
 
-    // 10. Return write-back output schema (update-database.md §B.5)
+    // 10. Return write-back output schema
     return {
       content: [{ type: 'text', text: JSON.stringify({
         success: true, table, record_id,

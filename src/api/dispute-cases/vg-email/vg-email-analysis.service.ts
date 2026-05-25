@@ -162,7 +162,7 @@ export class VgEmailAnalysisService implements OnModuleInit {
         ],
         userMessage: userPrompt,
         maxTokens: 6000,
-        thinking: { budgetTokens: 4000 },
+        thinkingBudgetTokens: 4000,
         mcpServers: true,
       });
     } catch (err: unknown) {

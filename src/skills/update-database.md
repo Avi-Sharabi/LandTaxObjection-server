@@ -1,253 +1,40 @@
 ---
 name: update-database
 description: >
-  Step-by-step guide for all database schema changes and AI-driven write-back
-  operations in the LandTaxValuationDispute NestJS/TypeORM/PostgreSQL backend.
-  Trigger when adding entities, columns, enums, relationships, migrations, seed
-  data, or when an AI function needs to write structured data back to the database.
+  Governs AI-driven write-back operations in the LandTaxValuationDispute
+  NestJS/TypeORM/PostgreSQL backend. Trigger when an AI function needs to
+  update existing records. AI is NOT permitted to create migrations, seeders,
+  add columns, or create tables — those are developer-only tasks.
 ---
 
 # Database Update Guide — LandTaxValuationDispute Backend
 
-This skill governs all database schema changes and AI-driven write-back operations
-for the LandTaxValuationDispute NestJS/TypeORM/PostgreSQL backend.
+This skill governs **AI-driven data write-back only**. All schema changes
+(migrations, seeders, new columns, new tables) are **developer tasks** — AI
+must not generate or suggest code for them.
 
-**Stack:** NestJS · TypeORM · PostgreSQL · `numeric` transformer · timestamptz
-
----
-
-## Database Overview
-
-| Entity | Table | Purpose |
-|---|---|---|
-| User | `users` | System users (accountants, admins, assessors) |
-| Client | `clients` | Clients from XPM and intake forms |
-| Property | `properties` | Real properties under dispute |
-| DisputeCase | `dispute_cases` | Core dispute case records — includes `jurisdiction` (NSW/VIC/QLD/WA) |
-| ValuationNotice | `valuation_notices` | Valuation notices linked to properties |
-| ValuationNoticeFile | `valuation_notice_files` | Documents for valuation notices |
-| AssessmentDocument | `assessment_documents` | Assessment documents linked to clients |
-| DisputeLegalGround | `dispute_legal_grounds` | Legal grounds selected per case |
-| ComparableSale | `comparable_sales` | Comparable sales evidence |
-| DisputeConstraint | `dispute_constraints` | Property constraints (heritage, flood, etc.) |
-| ConstraintFile | `constraint_files` | Supporting documents for constraints |
-| DisputeDocument | `dispute_documents` | General documents attached to cases |
-| PackageDocument | `package_documents` | Generated objection package documents |
-| LandTaxRate | `land_tax_rates` | Tax computation rates by year |
-| Notification | `notifications` | In-app notifications for users |
-| AuditLog | `audit_logs` | Audit trail for case actions |
+**Stack:** NestJS · TypeORM · PostgreSQL
 
 ---
 
-## Part A — Schema Changes (Entity + Migration + Seeder)
+## AI Scope — What Is and Is Not Allowed
 
-Follow this order **every time**:
+| Operation | Allowed |
+|---|---|
+| UPDATE existing rows | **Yes** — subject to rules below |
+| INSERT audit log / notification rows | **Yes** — as part of a write-back transaction |
+| Create a migration file | **No — developer only** |
+| Add a column to an entity or table | **No — developer only** |
+| Create a new table | **No — developer only** |
+| Write or modify a seeder | **No — developer only** |
+| DROP or truncate any table | **No — never** |
 
-```
-1. Update Entity  →  2. Write Migration  →  3. Update Seeder (if needed)  →  4. Verify
-```
-
-Never use `synchronize: true` — all schema changes go through migrations.
-
----
-
-### Step 1 — Update the Entity
-
-Entity files live at `src/api/<module>/entities/<name>.entity.ts`.
-
-#### Adding a column
-
-```typescript
-@Column({ type: 'text', nullable: true })
-my_new_column: string | null;
-```
-
-#### Adding a numeric column (use transformer — PostgreSQL returns NUMERIC as strings)
-
-```typescript
-@Column({ type: 'numeric', precision: 15, scale: 2, nullable: true, transformer: numericTransformer })
-my_amount: number | null;
-```
-
-#### Adding an enum column
-
-Define the enum in a shared constants file first, then:
-
-```typescript
-@Column({ type: 'enum', enum: MyEnum, nullable: true })
-my_status: MyEnum | null;
-```
-
-#### Adding a relationship
-
-```typescript
-@ManyToOne(() => OtherEntity, { nullable: true, onDelete: 'SET NULL' })
-@JoinColumn({ name: 'other_entity_id' })
-other_entity: OtherEntity | null;
-
-@Column({ type: 'uuid', nullable: true })
-other_entity_id: string | null;
-```
-
-#### Column naming rules
-
-- Column names: `snake_case`
-- Nullable FK columns default `null` unless always required
-- Temporal columns always use `timestamptz`
-- Blob references stored as `text` paths — never binary
+If a task requires schema changes, stop and instruct the developer to follow
+the project's manual migration process. Do not proceed.
 
 ---
 
-### Step 2 — Write the Migration
-
-Migration files live at `src/database/migrations/`.
-
-**Filename format:** `<unix-timestamp-ms>-<PascalCaseName>.ts`
-
-Generate the timestamp: `Date.now()` in milliseconds.
-
-#### Migration template
-
-```typescript
-import { MigrationInterface, QueryRunner } from 'typeorm';
-
-export class MyMigrationName1234567890000 implements MigrationInterface {
-  public async up(queryRunner: QueryRunner): Promise<void> {
-    // your changes here
-  }
-
-  public async down(queryRunner: QueryRunner): Promise<void> {
-    // reverse changes here
-  }
-}
-```
-
-#### Adding a column
-
-```typescript
-// up
-await queryRunner.query(`ALTER TABLE "my_table" ADD COLUMN "my_column" TEXT`);
-
-// down
-await queryRunner.query(`ALTER TABLE "my_table" DROP COLUMN "my_column"`);
-```
-
-#### Adding a nullable column with default
-
-```typescript
-// up
-await queryRunner.query(`
-  ALTER TABLE "my_table"
-  ADD COLUMN "my_column" SMALLINT NOT NULL DEFAULT 0
-`);
-
-// down
-await queryRunner.query(`ALTER TABLE "my_table" DROP COLUMN "my_column"`);
-```
-
-#### Adding a new enum value (PostgreSQL enum — safe pattern)
-
-```typescript
-// up
-await queryRunner.query(`
-  DO $$ BEGIN
-    IF NOT EXISTS (
-      SELECT 1 FROM pg_enum
-      WHERE enumlabel = 'new_value'
-        AND enumtypid = (SELECT oid FROM pg_type WHERE typname = 'dispute_cases_status_enum')
-    ) THEN
-      ALTER TYPE "dispute_cases_status_enum" ADD VALUE 'new_value';
-    END IF;
-  END $$;
-`);
-
-// down — PostgreSQL cannot remove enum values; document this limitation
-// To reverse: recreate the enum type without the value (destructive, requires data migration)
-```
-
-#### Creating a new table
-
-```typescript
-// up
-await queryRunner.query(`
-  CREATE TABLE "my_new_table" (
-    "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
-    "dispute_case_id" uuid NOT NULL,
-    "value" NUMERIC(15,2),
-    "created_at" TIMESTAMPTZ NOT NULL DEFAULT now(),
-    CONSTRAINT "PK_my_new_table" PRIMARY KEY ("id"),
-    CONSTRAINT "FK_my_new_table_dispute_case"
-      FOREIGN KEY ("dispute_case_id")
-      REFERENCES "dispute_cases"("id") ON DELETE CASCADE
-  )
-`);
-
-// down
-await queryRunner.query(`DROP TABLE "my_new_table"`);
-```
-
-#### Adding an index
-
-```typescript
-// up
-await queryRunner.query(`
-  CREATE INDEX "IDX_my_table_status" ON "my_table" ("status")
-`);
-
-// down
-await queryRunner.query(`DROP INDEX "IDX_my_table_status"`);
-```
-
-#### Migration safety rules
-
-- Always write `down()` — never leave it empty
-- Wrap related changes in one migration, not multiple small ones
-- Use `IF NOT EXISTS` / `IF EXISTS` guards for idempotency
-- Never drop a column without confirming it has no active references
-- Enum removals are destructive — coordinate with the team before running
-
----
-
-### Step 3 — Update Seeders (if needed)
-
-Seeder files live at `src/database/seeds/`.
-
-| Seeder | Environment | Purpose |
-|---|---|---|
-| `user.seeder.ts` | All | Default users |
-| `land-tax-rates.seeder.ts` | All | Tax rate data by year |
-| `client.seeder.ts` | Dev/QA | Test clients |
-| `objection-package.seeder.ts` | Dev/QA | Objection package workflow |
-| `case-closed-no-objection.seeder.ts` | Dev/QA | Closed without objection |
-| `notification.seeder.ts` | Dev/QA | Test notifications |
-| `vg-monitor-test.seeder.ts` | Dev/QA | VG email monitoring |
-| `submit-to-vg.seeder.ts` | Dev/QA | Submitted to VG cases |
-| `cases-pagination.seeder.ts` | Dev/QA | Pagination test data |
-| `comparables-test.seeder.ts` | Dev/QA | Comparable sales |
-| `tax-savings-test.seeder.ts` | Dev/QA | Tax savings calculations |
-
-Update the relevant seeder to reflect any new required fields or default values.
-Production seeders (`user.seeder.ts`, `land-tax-rates.seeder.ts`) must be safe to
-run in production — never hardcode test data there.
-
----
-
-### Step 4 — Verify
-
-```bash
-# Run migrations
-npm run migration:run
-
-# Confirm the migration was applied
-npm run migration:show
-
-# Run the app to confirm entities resolve
-npm run start:dev
-```
-
----
-
-## Part B — AI-Driven Write-Back Rules
+## AI-Driven Write-Back Rules
 
 When an AI function updates the database, apply these rules before executing any write.
 
@@ -448,132 +235,9 @@ try {
 
 ---
 
-## Part C — Enum Reference
-
-### DisputeCase Status
-
-```
-pending_tnc | draft | grounds_selection | evidence_compilation | appraisal |
-advisory_letter_issued | objection_package_prepared | awaiting_client_approval |
-client_approved | submitted_to_vg | vg_response_received | vg_approved |
-vg_declined | for_review | outcome_received | closed | closed_no_objection
-```
-
-### DisputeCase Outcome
-
-```
-upheld | partially_upheld | rejected | withdrawn
-```
-
-### Legal Ground
-
-```
-incorrect_land_value | constraint_oversight | incorrect_area_or_dimensions |
-incorrect_apportionment | not_sure
-```
-
-### Constraint Type
-
-```
-heritage_listing | flood_zone_100yr | bushfire_bal_restriction |
-easement_or_right_of_way | environmental_conservation_overlay |
-zoning_planning_restriction | access_restriction_landlocked |
-contamination_remediation | comparable_sales | market_value | land_use | other
-```
-
-### Notification Type
-
-```
-approval_requested | approval_reminder | approval_reminder_max_reached |
-vg_follow_up_sent | vg_response_received
-```
-
-### Audit Action
-
-```
-SUBMITTED_TO_VG | VG_FOLLOW_UP_SENT
-```
-
-### Upload Status
-
-```
-pending | scanning | complete | failed | rejected
-```
-
-### User Role
-
-```
-accountant | admin | Internal Assessor
-```
-
-### Jurisdiction
-
-```
-NSW | VIC | QLD | WA
-```
-
-Used on both `properties.state` and `dispute_cases.jurisdiction`.
-
-### Decision Outcome
-
-```
-OBJECTION | ADVISORY
-```
-
-Used on `valuation_notices.decision_outcome`.
-
-### Ownership Type
-
-```
-INDIVIDUAL | COMPANY_TRUST
-```
-
-Used on `valuation_notices.ownership_type`.
-
-### Client Status
-
-```
-PROSPECT | TC_NEGOTIATION | ACTIVE | REJECTED
-```
-
-Used on `clients.status`.
-
-### Uploaded By Role
-
-```
-CLIENT | STAFF | STAFF_ON_BEHALF_OF_CLIENT
-```
-
-Used on document upload entities.
-
-### Package Document Category
-
-```
-NOTICE_OF_OBJECTION | COMPARABLE_SALES_REPORT | MASS_APPRAISAL_DEVIATION |
-SITE_CONSTRAINTS_SUMMARY | SUPPORTING_UPLOADS
-```
-
-### Package Document Status
-
-```
-READY | MISSING | PENDING
-```
-
-### Document Type
-
-```
-VALUATION_NOTICE | LAND_TAX_ASSESSMENT | LAND_TITLE_SEARCH | INDEPENDENT_VALUATION |
-PROPERTY_REPORT | PHOTOGRAPH | LEGAL_DOCUMENT | GENERATED_OBJECTION | ADVISORY_LETTER | OTHER
-```
-
----
-
 ## Key Reminders
 
-- **Never use `synchronize: true`** — all schema changes go through migrations
-- **Numeric transformer is required** on all `NUMERIC` columns — PostgreSQL returns them as strings
-- **Always write `down()`** in every migration
-- **Enum values cannot be removed** from PostgreSQL without recreating the type — plan additions carefully
+- **Schema changes are developer-only** — AI must never create migrations, add columns, create tables, or modify seeders
 - **AI status writes are restricted** to `vg_approved`, `vg_declined`, `for_review` only
 - **Append-only fields** (`vg_response_notes`, `analyst_notes`) must never be overwritten
 - **All AI writes require a transaction** that includes the audit log insert
