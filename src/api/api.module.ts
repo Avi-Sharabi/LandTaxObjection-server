@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { AssessmentDocumentsModule } from './assessment-documents/assessment-documents.module';
 import { ClientsModule } from './clients/clients.module';
 import { ComparablesModule } from './comparables/comparables.module';
 import { DisputeCasesModule } from './dispute-cases/dispute-cases.module';
@@ -15,6 +16,7 @@ import { NotificationsModule } from './notifications/notifications.module';
 @Module({
   imports: [
     AuthModule,
+    AssessmentDocumentsModule,
     ClientsModule,
     ComparablesModule,
     PropertiesModule,
