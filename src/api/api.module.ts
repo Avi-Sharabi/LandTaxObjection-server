@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { AssessmentDocumentsModule } from './assessment-documents/assessment-documents.module';
 import { ClientsModule } from './clients/clients.module';
 import { ComparablesModule } from './comparables/comparables.module';
+import { DashboardModule } from './dashboard/dashboard.module';
 import { DisputeCasesModule } from './dispute-cases/dispute-cases.module';
 import { DisputeConstraintsModule } from './dispute-constraints/dispute-constraints.module';
 import { DisputeLegalGroundsModule } from './dispute-legal-grounds/dispute-legal-grounds.module';
@@ -28,6 +29,7 @@ import { NotificationsModule } from './notifications/notifications.module';
     DisputeLegalGroundsModule,
     ObjectionPackageModule,
     NotificationsModule,
+    DashboardModule,
   ],
 })
 export class APIModule {}
