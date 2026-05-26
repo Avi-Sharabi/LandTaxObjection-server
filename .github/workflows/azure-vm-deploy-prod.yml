@@ -38,24 +38,24 @@ jobs:
           context: .
           push: true
           tags: |
-            ghcr.io/${{ env.IMAGE_OWNER }}/landtaxdispute-server-qa:latest
-            ghcr.io/${{ env.IMAGE_OWNER }}/landtaxdispute-server-qa:${{ github.sha }}
+            ghcr.io/${{ env.IMAGE_OWNER }}/landtaxdispute-server:latest
+            ghcr.io/${{ env.IMAGE_OWNER }}/landtaxdispute-server:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
   deploy:
     needs: build-and-push
     runs-on: ubuntu-latest
-    environment: qa
+    environment: production
     steps:
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1
         env:
-          IMAGE: ghcr.io/${{ needs.build-and-push.outputs.image_owner }}/landtaxdispute-server-qa:${{ github.sha }}
+          IMAGE: ghcr.io/${{ needs.build-and-push.outputs.image_owner }}/landtaxdispute-server:${{ github.sha }}
           REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           IMAGE_OWNER: ${{ needs.build-and-push.outputs.image_owner }}
         with:
-          host: ${{ secrets.VM_HOST_QA }}
+          host: ${{ secrets.VM_HOST_PROD }}
           username: azureuser
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           envs: IMAGE,REGISTRY_TOKEN,IMAGE_OWNER

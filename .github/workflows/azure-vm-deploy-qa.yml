@@ -55,7 +55,7 @@ jobs:
           REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           IMAGE_OWNER: ${{ needs.build-and-push.outputs.image_owner }}
         with:
-          host: ${{ secrets.VM_HOST_prod }}
+          host: ${{ secrets.VM_HOST_QA }}
           username: azureuser
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           envs: IMAGE,REGISTRY_TOKEN,IMAGE_OWNER
