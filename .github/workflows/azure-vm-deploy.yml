@@ -60,6 +60,7 @@ jobs:
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           envs: IMAGE,REGISTRY_TOKEN,IMAGE_OWNER
           script: |
+            set -e
             docker login ghcr.io -u "$IMAGE_OWNER" -p "$REGISTRY_TOKEN"
             docker pull "$IMAGE"
 

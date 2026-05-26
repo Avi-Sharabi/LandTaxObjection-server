@@ -49,11 +49,15 @@ RUN apt-get update && apt-get install -y \
 COPY package*.json ./
 RUN PUPPETEER_SKIP_DOWNLOAD=1 npm ci --omit=dev
 
-# Download Chrome into the node user's cache dir and fix ownership
-RUN npx puppeteer browsers install chrome \
+# Create cache dir owned by node, then install Chrome as that user
+RUN mkdir -p /home/node/.cache/puppeteer \
     && chown -R node:node /home/node/.cache
+USER node
+RUN npx puppeteer browsers install chrome
+USER root
 
 COPY --from=builder /app/dist ./dist
-EXPOSE 3000
+RUN chown -R node:node /app/dist
 USER node
+EXPOSE 3000
 CMD ["node", "dist/main.js"]
