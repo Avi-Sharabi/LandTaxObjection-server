@@ -1,4 +1,4 @@
-name: Build, Push & Deploy
+name: azure-vm-deploy-qa
 
 on:
   push:
