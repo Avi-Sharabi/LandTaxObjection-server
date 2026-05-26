@@ -1,4 +1,4 @@
-name: Build, Push & Deploy
+name: azure-vm-deploy-qa
 
 on:
   push:
@@ -51,15 +51,16 @@ jobs:
       - name: Deploy via SSH
         uses: appleboy/ssh-action@v1
         env:
-          IMAGE: ghcr.io/${{ needs.build-and-push.outputs.image_owner }}/landtaxdispute-server-qa:${{ github.sha }}
+          IMAGE: ghcr.io/${{ needs.build-and-push.outputs.image_owner }}/landtaxdispute-server:${{ github.sha }}
           REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           IMAGE_OWNER: ${{ needs.build-and-push.outputs.image_owner }}
         with:
-          host: ${{ secrets.VM_HOST_prod }}
+          host: ${{ secrets.VM_HOST_QA }}
           username: azureuser
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           envs: IMAGE,REGISTRY_TOKEN,IMAGE_OWNER
           script: |
+            set -e
             docker login ghcr.io -u "$IMAGE_OWNER" -p "$REGISTRY_TOKEN"
             docker pull "$IMAGE"
 
