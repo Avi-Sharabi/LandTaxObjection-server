@@ -85,8 +85,8 @@ export class DashboardService {
   async getDeadlineRisk(query: GetDeadlineRiskBodyDto): Promise<DeadlineRiskResponseDto> {
     const { riskLevel } = query;
 
-    const atRiskDays = parseInt(this.configService.get('DEADLINE_RISK_AT_RISK_DAYS') ?? '14', 10);
-    const dueSoonDays = parseInt(this.configService.get('DEADLINE_RISK_DUE_SOON_DAYS') ?? '30', 10);
+    const atRiskDays = parseInt(this.configService.get('DEADLINE_RISK_AT_RISK_DAYS') || '14', 10);
+    const dueSoonDays = parseInt(this.configService.get('DEADLINE_RISK_DUE_SOON_DAYS') || '30', 10);
 
     // Compute boundaries at midnight UTC to align with PostgreSQL `date` column storage
     const now = new Date();
