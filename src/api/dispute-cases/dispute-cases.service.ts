@@ -826,6 +826,65 @@ export class DisputeCasesService {
         caseId,
       );
     }
+
+    const isVgOutcome =
+      newStatus === DisputeStatus.VG_APPROVED ||
+      newStatus === DisputeStatus.VG_DECLINED;
+
+    if (isVgOutcome) {
+      const caseWithRelations = await this.disputeCasesRepository.findOne({
+        where: { id: caseId },
+        relations: ['client', 'property', 'valuation_notice', 'assigned_accountant'],
+      });
+
+      if (caseWithRelations?.client?.email) {
+        const isApproved = newStatus === DisputeStatus.VG_APPROVED;
+
+        const resolvedAt = new Date().toLocaleString('en-AU', {
+          day: '2-digit',
+          month: 'long',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+          timeZone: 'Australia/Sydney',
+        });
+
+        const rawAssessedValue =
+          caseWithRelations.original_assessed_value ??
+          caseWithRelations.valuation_notice?.assessed_land_value;
+        const assessedLandValue =
+          rawAssessedValue != null
+            ? new Intl.NumberFormat('en-AU', {
+                style: 'currency',
+                currency: 'AUD',
+              }).format(Number(rawAssessedValue))
+            : 'N/A';
+
+        const propertyAddress = caseWithRelations.property
+          ? [
+              caseWithRelations.property.address,
+              caseWithRelations.property.suburb,
+              caseWithRelations.property.state,
+              caseWithRelations.property.postcode,
+            ]
+              .filter(Boolean)
+              .join(', ')
+          : 'Address not available';
+
+        await this.azureEmailService.sendVgResponseNotification({
+          clientEmail: caseWithRelations.client.email,
+          clientName: caseWithRelations.client.name,
+          caseReference: caseWithRelations.case_reference,
+          propertyAddress,
+          lodgmentReferenceNumber: caseWithRelations.lodgment_reference_number ?? 'N/A',
+          isApproved,
+          assessorFullName:
+            caseWithRelations.assigned_accountant?.fullName ?? 'Your YML Adviser',
+          resolvedAt,
+          assessedLandValue,
+        });
+      }
+    }
   }
 
   async remove(id: string): Promise<{ message: string }> {

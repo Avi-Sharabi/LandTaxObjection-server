@@ -240,7 +240,7 @@ async function seedCase(
             c.assessmentDocument,
             c.client,
             `dispute-cases/${c.assessmentDocument}/valuation-notice.pdf`,
-            'Valuation Notice',
+            'Land Tax Assessment Notice',
         ]);
         logger.log(`  Seeded assessment doc:      ${c.assessmentDocument}`);
     } else {

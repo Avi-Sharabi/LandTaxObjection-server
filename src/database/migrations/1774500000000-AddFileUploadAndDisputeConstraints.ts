@@ -29,7 +29,7 @@ export class AddFileUploadAndDisputeConstraints1774500000000 implements Migratio
     // ── 3. Create valuation_notice_files ─────────────────────────────────────
     await queryRunner.query(`
       CREATE TABLE IF NOT EXISTS "valuation_notice_files" (
-        "id"                  uuid        NOT NULL DEFAULT uuid_generate_v4(),
+        "id"                  uuid        NOT NULL DEFAULT gen_random_uuid(),
         "valuation_notice_id" uuid        NOT NULL,
         "blob_path"           text        NOT NULL,
         "original_name"       text        NOT NULL,
@@ -86,7 +86,7 @@ export class AddFileUploadAndDisputeConstraints1774500000000 implements Migratio
     // ── 5. Create dispute_constraints ─────────────────────────────────────────
     await queryRunner.query(`
       CREATE TABLE IF NOT EXISTS "dispute_constraints" (
-        "id"              uuid        NOT NULL DEFAULT uuid_generate_v4(),
+        "id"              uuid        NOT NULL DEFAULT gen_random_uuid(),
         "dispute_id"      uuid        NOT NULL,
         "constraint_type" "public"."dispute_constraints_constraint_type_enum" NOT NULL,
         "description"     text,
@@ -126,7 +126,7 @@ export class AddFileUploadAndDisputeConstraints1774500000000 implements Migratio
     // ── 7. Create constraint_files ────────────────────────────────────────────
     await queryRunner.query(`
       CREATE TABLE IF NOT EXISTS "constraint_files" (
-        "id"                    uuid        NOT NULL DEFAULT uuid_generate_v4(),
+        "id"                    uuid        NOT NULL DEFAULT gen_random_uuid(),
         "dispute_constraint_id" uuid        NOT NULL,
         "document_category"     "public"."constraint_files_document_category_enum" NOT NULL,
         "blob_path"             text        NOT NULL,

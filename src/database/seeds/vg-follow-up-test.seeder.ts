@@ -133,7 +133,7 @@ export async function seedVgFollowUpTest(dataSource: DataSource): Promise<void> 
     await dataSource.query(`
       INSERT INTO assessment_documents (id, client_id, file_path, document_name)
       VALUES ($1,$2,$3,$4)
-    `, [IDS.assessmentDocument, IDS.client, `dispute-cases/${IDS.assessmentDocument}/valuation-notice.pdf`, 'Valuation Notice']);
+    `, [IDS.assessmentDocument, IDS.client, `dispute-cases/${IDS.assessmentDocument}/valuation-notice.pdf`, 'Land Tax Assessment Notice']);
     logger.log('  Seeded shared assessment document');
   }
 
