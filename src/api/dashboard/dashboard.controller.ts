@@ -14,6 +14,8 @@ import { DashboardService } from './dashboard.service';
 import { StatusCountersResponseDto } from './dto/status-counters-response.dto';
 import { GetDeadlineRiskBodyDto } from './dto/deadline-risk-query.dto';
 import { DeadlineRiskResponseDto } from './dto/deadline-risk-response.dto';
+import { GetRecentActivitiesQueryDto } from './dto/get-recent-activities-query.dto';
+import { RecentActivitiesResponseDto } from './dto/recent-activities-response.dto';
 
 @ApiTags('dashboard')
 @ApiBearerAuth()
@@ -78,5 +80,15 @@ export class DashboardController {
   @ApiResponse({ status: 403, description: 'Forbidden — insufficient role' })
   getDeadlineRisk(@Body() body: GetDeadlineRiskBodyDto): Promise<DeadlineRiskResponseDto> {
     return this.dashboardService.getDeadlineRisk(body);
+  }
+
+  @Post('recent-activities')
+  @ApiOperation({ summary: 'Get paginated recent audit log activities for the dashboard feed' })
+  @ApiBody({ type: GetRecentActivitiesQueryDto, description: 'All fields are optional. Send {} for first page with defaults.' })
+  @ApiResponse({ status: 200, type: RecentActivitiesResponseDto })
+  @ApiResponse({ status: 401, description: 'Unauthenticated — JWT missing or expired' })
+  @ApiResponse({ status: 403, description: 'Forbidden — insufficient role' })
+  getRecentActivities(@Body() body: GetRecentActivitiesQueryDto): Promise<RecentActivitiesResponseDto> {
+    return this.dashboardService.getRecentActivities(body);
   }
 }

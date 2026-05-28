@@ -3,9 +3,12 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import { DisputeCase, DisputeStatus } from '../dispute-cases/entities/dispute-case.entity';
+import { AuditLog } from '../audit-log/entities/audit-log.entity';
 import { StatusCountersResponseDto } from './dto/status-counters-response.dto';
 import { GetDeadlineRiskBodyDto, DeadlineRiskLevel } from './dto/deadline-risk-query.dto';
 import { DeadlineRiskItemDto, DeadlineRiskResponseDto } from './dto/deadline-risk-response.dto';
+import { GetRecentActivitiesQueryDto } from './dto/get-recent-activities-query.dto';
+import { ActivityItemDto, RecentActivitiesResponseDto } from './dto/recent-activities-response.dto';
 
 export const STATUS_LABEL_MAP: Record<DisputeStatus, string> = {
   [DisputeStatus.PENDING_TNC]: 'Pending T&C',
@@ -36,21 +39,34 @@ export class DashboardService {
   constructor(
     @InjectRepository(DisputeCase)
     private readonly disputeCasesRepository: Repository<DisputeCase>,
+    @InjectRepository(AuditLog)
+    private readonly auditLogRepository: Repository<AuditLog>,
     private readonly configService: ConfigService,
   ) {}
 
   async getStatusCounters(): Promise<StatusCountersResponseDto> {
-    const qb = this.disputeCasesRepository
-      .createQueryBuilder('dc')
-      .select('dc.status', 'status')
-      .addSelect('COUNT(dc.id)', 'count')
-      .groupBy('dc.status');
+    const [countersRaw, scoreRaw] = await Promise.all([
+      this.disputeCasesRepository
+        .createQueryBuilder('dc')
+        .select('dc.status', 'status')
+        .addSelect('COUNT(dc.id)', 'count')
+        .groupBy('dc.status')
+        .getRawMany<{ status: string; count: string }>(),
 
-    const rawRows = await qb.getRawMany<{ status: string; count: string }>();
+      // Average evidence score across non-closed cases that have a score set
+      this.disputeCasesRepository
+        .createQueryBuilder('dc')
+        .select('AVG(dc.evidence_strength_score)', 'avg')
+        .where('dc.status NOT IN (:...excluded)', {
+          excluded: [DisputeStatus.CLOSED, DisputeStatus.CLOSED_NO_OBJECTION],
+        })
+        .andWhere('dc.evidence_strength_score IS NOT NULL')
+        .getRawOne<{ avg: string | null }>(),
+    ]);
 
-    // pg driver returns COUNT as string — parse to number
+    // pg driver returns COUNT and AVG as strings — parse to numbers
     const countByStatus = new Map(
-      rawRows.map((r) => [r.status as DisputeStatus, parseInt(r.count, 10)]),
+      countersRaw.map((r) => [r.status as DisputeStatus, parseInt(r.count, 10)]),
     );
 
     const counters = Object.values(DisputeStatus).map((status) => ({
@@ -62,6 +78,7 @@ export class DashboardService {
     return {
       counters,
       total: counters.reduce((sum, c) => sum + c.count, 0),
+      avg_evidence_score: scoreRaw?.avg ? Math.round(parseFloat(scoreRaw.avg)) : 0,
     };
   }
 
@@ -163,6 +180,52 @@ export class DashboardService {
         at_risk_days: atRiskDays,
         due_soon_days: dueSoonDays,
       },
+    };
+  }
+
+  async getRecentActivities(query: GetRecentActivitiesQueryDto): Promise<RecentActivitiesResponseDto> {
+    const { page, limit, activityType, dateFrom, dateTo, performedBy, entityId, entityType } = query;
+    const skip = (page - 1) * limit;
+
+    const qb = this.auditLogRepository
+      .createQueryBuilder('al')
+      .leftJoin(DisputeCase, 'dc', 'dc.id = al.caseId')
+      .addSelect('dc.case_reference', 'case_reference')
+      .orderBy('al.createdAt', 'DESC')
+      .skip(skip)
+      .take(limit);
+
+    if (activityType) qb.andWhere('al.action = :activityType', { activityType });
+    if (dateFrom) qb.andWhere('al.createdAt >= :dateFrom', { dateFrom: new Date(dateFrom) });
+    if (dateTo) qb.andWhere('al.createdAt <= :dateTo', { dateTo: new Date(dateTo) });
+    if (performedBy) qb.andWhere('al.performedBy = :performedBy', { performedBy });
+    if (entityId) qb.andWhere('al.entityId = :entityId', { entityId });
+    if (entityType) qb.andWhere('al.entityType = :entityType', { entityType });
+
+    const { entities: rows, raw } = await qb.getRawAndEntities();
+    const total = await qb.getCount();
+
+    const data: ActivityItemDto[] = rows.map((row, i) => ({
+      id: row.id,
+      action: row.action,
+      entityType: row.entityType,
+      entityId: row.entityId,
+      description: row.description,
+      metadata: row.metadata,
+      performedBy: row.performedBy,
+      performedByName: row.performedByName,
+      caseId: row.caseId,
+      caseReference: raw[i]?.case_reference ?? null,
+      lodgmentReferenceNumber: row.lodgmentReferenceNumber,
+      createdAt: row.createdAt.toISOString(),
+    }));
+
+    return {
+      data,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
     };
   }
 }
