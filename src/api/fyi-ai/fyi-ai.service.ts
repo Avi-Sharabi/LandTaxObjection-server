@@ -1,10 +1,11 @@
 import { randomUUID } from 'crypto';
 import axios from 'axios';
-import { Injectable, Logger, ServiceUnavailableException } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, ServiceUnavailableException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { GetCaseDocumentsTool } from '../../mcp/tools/get-case-documents.tool';
 import { UploadAllCaseDocumentsTool } from '../../mcp/tools/upload-all-case-documents.tool';
 import { UploadFyiTool } from '../../mcp/tools/upload-fyi.tool';
+import { McpService } from '../../mcp/mcp.service';
 
 interface ContentBlock {
   type: 'text' | 'tool_use' | 'tool_result';
@@ -30,25 +31,25 @@ interface AnthropicApiResponse {
 
 type Message = { role: 'user' | 'assistant'; content: string | ContentBlock[] };
 
-const SYSTEM_PROMPT =
-  'You are an AI assistant for the LandTax Valuation Dispute system. ' +
-  'You help accountants manage FYI document uploads for dispute cases.\n\n' +
-  'When given a case reference (e.g. LTD-1111), use the tools to act on it directly. ' +
-  'Always call the appropriate tool — do not describe what you would do, just do it. ' +
-  'Summarise the result clearly at the end.';
-
 const MAX_ITERATIONS = 10;
 
 @Injectable()
-export class FyiAiService {
+export class FyiAiService implements OnModuleInit {
   private readonly logger = new Logger(FyiAiService.name);
+  private skillContent = '';
 
   constructor(
     private readonly config: ConfigService,
+    private readonly mcpService: McpService,
     private readonly uploadAllTool: UploadAllCaseDocumentsTool,
     private readonly getCaseDocumentsTool: GetCaseDocumentsTool,
     private readonly uploadFyiTool: UploadFyiTool,
   ) {}
+
+  async onModuleInit(): Promise<void> {
+    this.skillContent = this.mcpService.getSkillContent('fyi-upload');
+    this.logger.log(`[FyiAi] skill loaded (${this.skillContent.length} chars)`);
+  }
 
   async chat(message: string): Promise<{ response: string; usage: AnthropicApiResponse['usage'] }> {
     const apiUrl = this.config.getOrThrow<string>('ANTHROPIC_API_URL');
@@ -73,7 +74,7 @@ export class FyiAiService {
           {
             model: 'claude-sonnet-4-6',
             max_tokens: 8000,
-            system: [{ type: 'text', text: SYSTEM_PROMPT, cache_control: { type: 'ephemeral' } }],
+            system: [{ type: 'text', text: this.skillContent, cache_control: { type: 'ephemeral' } }],
             tools: toolDefinitions,
             messages,
           },
