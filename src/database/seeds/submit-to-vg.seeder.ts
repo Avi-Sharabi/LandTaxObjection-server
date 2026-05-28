@@ -89,7 +89,7 @@ export async function seedSubmitToVG(dataSource: DataSource): Promise<void> {
       IDS.assessmentDocument,
       IDS.client,
       `dispute-cases/${IDS.assessmentDocument}/valuation-notice.pdf`,
-      'Valuation Notice',
+      'Land Tax Assessment Notice',
     ]);
     logger.log('Seeded assessment document');
   } else {
@@ -238,7 +238,7 @@ export async function seedSubmitToVG(dataSource: DataSource): Promise<void> {
       APRIL_IDS.assessmentDocument,
       APRIL_IDS.client,
       `dispute-cases/${APRIL_IDS.assessmentDocument}/valuation-notice.pdf`,
-      'Valuation Notice',
+      'Land Tax Assessment Notice',
     ]);
     logger.log('Seeded assessment document (april set)');
   } else {
