@@ -146,7 +146,7 @@ async function seedCase(dataSource: DataSource, c: TestCase, accountantId: strin
   if (!existingDoc) {
     await dataSource.query(
       `INSERT INTO assessment_documents (id, client_id, file_path, document_name) VALUES ($1, $2, $3, $4)`,
-      [c.assessmentDoc, c.client, `dispute-cases/${c.assessmentDoc}/valuation-notice.pdf`, 'Valuation Notice 2025'],
+      [c.assessmentDoc, c.client, `dispute-cases/${c.assessmentDoc}/valuation-notice.pdf`, 'Land Tax Assessment Notice'],
     );
   }
 

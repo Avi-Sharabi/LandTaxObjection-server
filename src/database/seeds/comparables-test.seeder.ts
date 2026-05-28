@@ -174,7 +174,7 @@ async function seedCase(dataSource: DataSource, c: CaseSeed, accountantId: strin
       `INSERT INTO assessment_documents (id, client_id, file_path, document_name)
        VALUES ($1,$2,$3,$4)`,
       [c.ids.assessmentDocument, c.ids.client,
-        `dispute-cases/${c.ids.assessmentDocument}/valuation-notice.pdf`, 'Valuation Notice 2025'],
+        `dispute-cases/${c.ids.assessmentDocument}/valuation-notice.pdf`, 'Land Tax Assessment Notice'],
     );
   }
 

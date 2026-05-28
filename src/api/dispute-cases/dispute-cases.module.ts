@@ -27,7 +27,6 @@ import { McpModule } from 'src/mcp/mcp.module';
 import { VgEmailMonitorTask } from './vg-email/vg-email-monitor.task';
 import { VgEmailAnalysisService } from './vg-email/vg-email-analysis.service';
 import { ValuationModule } from '../valuation/valuation.module';
-import { DisputeCaseSubscriber } from './dispute-case.subscriber';
 import { VGResponseMonitorScheduler } from './vg-response-monitor.scheduler';
 import { SupportingEvidenceModule } from '../supporting-evidence/supporting-evidence.module';
 
@@ -66,7 +65,6 @@ import { SupportingEvidenceModule } from '../supporting-evidence/supporting-evid
     VgEmailMonitorTask,
     VgEmailAnalysisService,
     VGResponseMonitorScheduler,
-    DisputeCaseSubscriber,
   ],
 })
 export class DisputeCasesModule { }
