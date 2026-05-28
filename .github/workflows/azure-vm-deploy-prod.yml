@@ -56,7 +56,7 @@ jobs:
         with:
           host: ${{ secrets.VM_HOST_PROD }}
           username: azureuser
-          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          key: ${{ secrets.SSH_PRIVATE_KEY_PROD }}
           envs: IMAGE,REGISTRY_TOKEN,IMAGE_OWNER
           script: |
             docker login ghcr.io -u "$IMAGE_OWNER" -p "$REGISTRY_TOKEN"
