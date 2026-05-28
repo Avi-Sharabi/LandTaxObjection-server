@@ -6,7 +6,7 @@ export class CreateAuditLogTable1775910000000 implements MigrationInterface {
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`
       CREATE TABLE IF NOT EXISTS "audit_logs" (
-        "id"                        UUID        NOT NULL DEFAULT uuid_generate_v4(),
+        "id"                        UUID        NOT NULL DEFAULT gen_random_uuid(),
         "action"                    TEXT        NOT NULL,
         "performed_by"              UUID        NOT NULL,
         "case_id"                   UUID        NOT NULL,

@@ -201,7 +201,7 @@ async function seedCase(dataSource: DataSource, c: TaxCaseSeed, accountantId: st
       [
         c.ids.assessmentDocument, c.ids.client,
         `dispute-cases/${c.ids.disputeCase}/valuation-notice.pdf`,
-        'Valuation Notice 2025',
+        'Land Tax Assessment Notice',
       ],
     );
   }

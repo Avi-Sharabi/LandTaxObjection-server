@@ -26,7 +26,7 @@ export class ClaudeVisionService implements OnModuleInit {
   }
 
   async onModuleInit(): Promise<void> {
-    const skillDir = join(process.cwd(), 'src', 'skills');
+    const skillDir = join(__dirname, '..', '..', '..', 'skills');
     const skillFiles = [
       'se-access-constraints.md',
       'se-apportionment.md',

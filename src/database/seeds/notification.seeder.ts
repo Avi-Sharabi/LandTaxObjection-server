@@ -373,7 +373,7 @@ async function seedDisputeCasesForNotifications(
         c.assessmentDocumentId,
         c.clientId,
         `dispute-cases/${c.assessmentDocumentId}/valuation-notice.pdf`,
-        'Valuation Notice 2025',
+        'Land Tax Assessment Notice',
       ]);
       logger.log(`  Seeded assessment doc:   ${c.assessmentDocumentId}`);
     } else {
