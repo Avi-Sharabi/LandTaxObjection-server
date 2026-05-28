@@ -1,5 +1,5 @@
 import * as fs from 'fs';
-import * as path from 'path';
+import { join } from 'path';
 import { Injectable, Logger } from '@nestjs/common';
 
 @Injectable()
@@ -8,12 +8,12 @@ export class SkillRegistryService {
   private readonly skills = new Map<string, string>();
 
   constructor() {
-    const skillsDir = path.join(__dirname, '..', 'skills');
+    const skillsDir = join(__dirname, '..', 'skills');
     if (!fs.existsSync(skillsDir)) return;
     for (const file of fs.readdirSync(skillsDir)) {
       if (!file.endsWith('.md')) continue;
       const name = file.replace(/\.md$/, '');
-      const content = fs.readFileSync(path.join(skillsDir, file), 'utf-8');
+      const content = fs.readFileSync(join(skillsDir, file), 'utf-8');
       this.skills.set(name, content);
       this.logger.log(JSON.stringify({ context: 'SkillRegistry.loaded', skill: name, length: content.length, ts: new Date().toISOString() }));
     }

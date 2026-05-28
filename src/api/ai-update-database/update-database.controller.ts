@@ -1,20 +1,15 @@
-import { randomUUID } from 'crypto';
 import { Body, Controller, HttpCode, HttpStatus, Post, UseGuards } from '@nestjs/common';
 import { ApiBody, ApiCookieAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { UpdateDatabaseChatDto } from './dto/update-database-chat.dto';
 import { UpdateDatabaseService } from './update-database.service';
-import { SkillRegistryService } from '../../mcp/skill-registry.service';
 
 @ApiTags('AI Tools')
 @ApiCookieAuth()
 @UseGuards(JwtAuthGuard)
 @Controller({ path: 'ai/update-database', version: '1' })
 export class UpdateDatabaseController {
-  constructor(
-    private readonly updateDatabaseService: UpdateDatabaseService,
-    private readonly skillRegistry: SkillRegistryService,
-  ) {}
+  constructor(private readonly updateDatabaseService: UpdateDatabaseService) {}
 
   @Post('chat')
   @HttpCode(HttpStatus.OK)
@@ -38,16 +33,6 @@ export class UpdateDatabaseController {
   })
   @ApiResponse({ status: 503, description: 'AI service temporarily unavailable' })
   async chat(@Body() body: UpdateDatabaseChatDto): Promise<object> {
-    const skillContent = this.skillRegistry.getSkillContent('update-database');
-    const result = await this.updateDatabaseService.execute(
-      { instruction: body.instruction },
-      skillContent,
-      randomUUID(),
-    );
-    try {
-      return JSON.parse(result.content[0]?.text ?? '{}') as object;
-    } catch {
-      return { success: false, reason: 'AI returned an unparseable response' };
-    }
+    return this.updateDatabaseService.chat(body.instruction);
   }
 }

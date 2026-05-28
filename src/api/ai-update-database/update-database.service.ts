@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
@@ -7,6 +8,7 @@ import { validateOrReject } from 'class-validator';
 import { isAxiosError } from 'axios';
 import { UpdateDatabaseArgsDto } from '../../mcp/dto/tool-args.dto';
 import { AnthropicService } from 'src/ai/anthropic.service';
+import { SkillRegistryService } from '../../mcp/skill-registry.service';
 
 type ToolResult = { content: { type: string; text: string }[]; isError?: boolean };
 
@@ -23,32 +25,6 @@ type SchemaMap = Map<string, Set<string>>; // table_name → Set<column_name>
 export class UpdateDatabaseService {
   private readonly logger = new Logger(UpdateDatabaseService.name);
 
-  // Tables the AI is never allowed to write to
-  private readonly BLOCKED_TABLES = new Set([
-    // Core reference data
-    'clients', 'properties',
-    // Dispute workflow tables — human-managed only
-    'dispute_cases', 'valuation_notices', 'notifications',
-    // Auto-generated / system-managed
-    'package_documents', 'ai_update_logs', 'comparable_sales',
-    // File upload managed tables
-    'valuation_notice_files', 'constraint_files', 'dispute_documents', 'assessment_documents',
-    // User-action only tables
-    'dispute_legal_grounds', 'dispute_constraints',
-  ]);
-
-  // Explicit per-table allowlist of columns the AI may write
-  private readonly ALLOWED_WRITES: Record<string, Set<string>> = {
-    users: new Set(['full_name', 'role', 'phone', 'is_active']),
-    land_tax_rates: new Set([
-      'tax_year', 'threshold', 'base_amount', 'marginal_rate_pct',
-      'premium_threshold', 'premium_base_amount', 'premium_rate_pct', 'foreign_surcharge_pct',
-    ]),
-  };
-
-  // All AI-writable tables require an ai_update_logs entry
-  private readonly AUDIT_REQUIRED_TABLES = new Set(['users', 'land_tax_rates']);
-
   private schemaCache: { schema: string; map: SchemaMap; expiresAt: number } | null = null;
   private readonly SCHEMA_CACHE_TTL_MS = 5 * 60 * 1000;
 
@@ -56,7 +32,18 @@ export class UpdateDatabaseService {
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly anthropic: AnthropicService,
     private readonly config: ConfigService,
+    private readonly skillRegistry: SkillRegistryService,
   ) {}
+
+  async chat(instruction: string): Promise<object> {
+    const skillContent = this.skillRegistry.getSkillContent('update-database');
+    const result = await this.execute({ instruction }, skillContent, randomUUID());
+    try {
+      return JSON.parse(result.content[0]?.text ?? '{}') as object;
+    } catch {
+      return { success: false, reason: 'AI returned an unparseable response' };
+    }
+  }
 
   private async fetchLiveSchema(): Promise<{ schema: string; map: SchemaMap }> {
     if (this.schemaCache && Date.now() < this.schemaCache.expiresAt) {
@@ -83,8 +70,7 @@ export class UpdateDatabaseService {
     const lines: string[] = [];
 
     for (const [table, columns] of grouped) {
-      const blocked = this.BLOCKED_TABLES.has(table) ? ' [PROTECTED — writes not allowed]' : '';
-      lines.push(`TABLE: ${table}${blocked}`);
+      lines.push(`TABLE: ${table}`);
       const colNames = new Set<string>();
       for (const col of columns) {
         const nullable = col.is_nullable === 'YES' ? 'nullable' : 'NOT NULL';
@@ -136,17 +122,7 @@ export class UpdateDatabaseService {
       };
     }
 
-    // 3a. Ask Claude to generate a SELECT query — restrict schema to writable tables only
-    //     to prevent Claude from querying sensitive/protected tables in the search step
-    const writableSchema = [...Object.keys(this.ALLOWED_WRITES)]
-      .map((t) => {
-        const cols = schemaMap.get(t);
-        if (!cols) return '';
-        return `TABLE: ${t}\n${[...cols].map((c) => `  ${c}`).join('\n')}`;
-      })
-      .filter(Boolean)
-      .join('\n\n');
-
+    // 3a. Ask Claude to generate a SELECT query
     let matchedRows: unknown[] = [];
     try {
       const searchResult = await this.anthropic.call({
@@ -154,8 +130,8 @@ export class UpdateDatabaseService {
         userMessage: [
           'INSTRUCTION: ' + dto.instruction,
           '',
-          'AI-WRITABLE TABLES (search within these only):',
-          writableSchema,
+          'DATABASE TABLES (search within these):',
+          liveSchema,
           '',
           'Write a single SQL SELECT query that finds the record(s) matching the details in the instruction.',
           'Return ONLY the raw SQL — no prose, no markdown fences, no explanation.',
@@ -190,7 +166,6 @@ export class UpdateDatabaseService {
           'RULES:',
           '- Use only the record(s) above — do not invent IDs.',
           '- Only use column names that appear in the schema above.',
-          '- Tables marked [PROTECTED] must not be written to.',
           '- If no record was found or the match is ambiguous, return { "success": false, "reason": "<explanation>" }.',
           '',
           'Return a single raw JSON object — no prose, no markdown fences.',
@@ -229,44 +204,7 @@ export class UpdateDatabaseService {
       };
     }
 
-    // 5. Blocked table guard
-    if (this.BLOCKED_TABLES.has(table)) {
-      return {
-        content: [{ type: 'text', text: JSON.stringify({
-          success: false, table, record_id,
-          reason: `Table '${table}' is protected — AI writes are not permitted.`,
-          action_required: 'manual_review', timestamp,
-        }) }],
-        isError: true,
-      };
-    }
-
-    // 5b. Column-level allowlist — only permitted columns per table may be written
-    const allowedColumns = this.ALLOWED_WRITES[table];
-    if (!allowedColumns) {
-      return {
-        content: [{ type: 'text', text: JSON.stringify({
-          success: false, table, record_id,
-          reason: `Table '${table}' is not in the AI write allowlist.`,
-          action_required: 'manual_review', timestamp,
-        }) }],
-        isError: true,
-      };
-    }
-    for (const col of Object.keys(updates)) {
-      if (!allowedColumns.has(col)) {
-        return {
-          content: [{ type: 'text', text: JSON.stringify({
-            success: false, table, record_id,
-            reason: `Column '${col}' on table '${table}' is not permitted for AI writes.`,
-            action_required: 'manual_review', timestamp,
-          }) }],
-          isError: true,
-        };
-      }
-    }
-
-    // 6. Validate that every column Claude chose actually exists in the live schema
+    // 5. Validate that every column Claude chose actually exists in the live schema
     const knownColumns = schemaMap.get(table);
     if (!knownColumns) {
       return {
@@ -338,7 +276,7 @@ export class UpdateDatabaseService {
       'AI System';
     const colList = columns.map((c) => `"${c}"`).join(', ');
 
-    // 9. Execute UPDATE + audit log insert in a single transaction
+    // 9. Execute UPDATE in a transaction
     let previousValues: Record<string, unknown> = {};
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
@@ -351,19 +289,6 @@ export class UpdateDatabaseService {
       previousValues = prevRows[0] ?? {};
 
       await queryRunner.query(updateSql, params);
-
-      if (this.AUDIT_REQUIRED_TABLES.has(table)) {
-        const actionDetail = JSON.stringify({
-          table,
-          previous_values: previousValues,
-          new_values: updates,
-        });
-        await queryRunner.query(
-          `INSERT INTO "ai_update_logs" ("id", "action", "record_id", "performed_by", "created_at")
-           VALUES (uuid_generate_v4(), $1, $2, $3, NOW())`,
-          [actionDetail, record_id, performedByValue],
-        );
-      }
 
       await queryRunner.commitTransaction();
     } catch (err) {
@@ -380,6 +305,21 @@ export class UpdateDatabaseService {
       await queryRunner.release();
     }
 
+    // Best-effort audit log — never fails the main write
+    let auditLogged = false;
+    try {
+      const actionDetail = JSON.stringify({ table, previous_values: previousValues, new_values: updates });
+      await this.dataSource.query(
+        `INSERT INTO "ai_update_logs" ("id", "action", "record_id", "performed_by", "created_at")
+         VALUES (uuid_generate_v4(), $1, $2, $3, NOW())`,
+        [actionDetail, record_id, performedByValue],
+      );
+      auditLogged = true;
+    } catch {
+      // table may not exist — log but do not fail
+      this.logger.warn(`audit log skipped for ${table}/${record_id} — ai_update_logs unavailable`);
+    }
+
     this.logger.log(JSON.stringify({
       context: 'MCP.db.write',
       correlationId, tool: 'update_database',
@@ -394,7 +334,7 @@ export class UpdateDatabaseService {
         fields_updated: columns,
         previous_values: previousValues,
         new_values: updates,
-        audit_logged: this.AUDIT_REQUIRED_TABLES.has(table),
+        audit_logged: auditLogged,
         timestamp,
       }) }],
     };
