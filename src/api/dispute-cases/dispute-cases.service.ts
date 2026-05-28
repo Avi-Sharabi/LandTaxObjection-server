@@ -618,22 +618,16 @@ export class DisputeCasesService {
     await queryRunner.startTransaction();
 
     try {
-      // Lock the row first without relations — PostgreSQL rejects FOR UPDATE on
-      // the nullable side of a LEFT JOIN, so relations must be loaded separately.
-      const lockedCase = await queryRunner.manager.findOne(DisputeCase, {
+      const disputeCase = await queryRunner.manager.findOne(DisputeCase, {
         where: { id },
+        relations: ['client', 'property', 'valuation_notice'],
         lock: { mode: 'pessimistic_write' },
       });
 
-      if (!lockedCase) {
+      if (!disputeCase) {
         throw new NotFoundException(`Dispute case #${id} not found`);
       }
 
-      // Row existence already confirmed by lockedCase above — non-null is safe.
-      const disputeCase = (await queryRunner.manager.findOne(DisputeCase, {
-        where: { id },
-        relations: ['client', 'property', 'valuation_notice'],
-      }))!;
 
       const postSubmissionStatuses: DisputeStatus[] = [
         DisputeStatus.SUBMITTED_TO_VG,
