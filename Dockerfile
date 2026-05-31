@@ -16,6 +16,7 @@ ENV PUPPETEER_CACHE_DIR=/home/node/.cache/puppeteer
 RUN apt-get update && apt-get install -y \
     ca-certificates \
     fonts-liberation \
+    libasound2 \
     libatk-bridge2.0-0 \
     libatk1.0-0 \
     libcairo2 \
@@ -25,12 +26,14 @@ RUN apt-get update && apt-get install -y \
     libexpat1 \
     libfontconfig1 \
     libgbm1 \
+    libgles2 \
     libglib2.0-0 \
     libgtk-3-0 \
     libnspr4 \
     libnss3 \
     libpango-1.0-0 \
     libpangocairo-1.0-0 \
+    libvulkan1 \
     libx11-6 \
     libxcb1 \
     libxcomposite1 \
