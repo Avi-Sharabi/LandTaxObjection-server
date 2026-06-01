@@ -1,4 +1,7 @@
-export type ToolResult = { content: { type: string; text: string }[]; isError?: boolean };
+export type ToolResult = {
+  content: { type: string; text: string }[];
+  isError?: boolean;
+};
 
 export interface IMcpTool {
   readonly name: string;

@@ -16,6 +16,9 @@ import { QueryTool } from './tools/query.tool';
 import { ListTablesTool } from './tools/list-tables.tool';
 import { DescribeTableTool } from './tools/describe-table.tool';
 import { UpdateDatabaseTool } from './tools/update-database.tool';
+import { GetCaseDocumentsTool } from './tools/get-case-documents.tool';
+import { UploadAllCaseDocumentsTool } from './tools/upload-all-case-documents.tool';
+import { UploadFyiTool } from './tools/upload-fyi.tool';
 
 @Injectable()
 export class McpService {
@@ -29,6 +32,9 @@ export class McpService {
     listTablesTool: ListTablesTool,
     describeTableTool: DescribeTableTool,
     updateDatabaseTool: UpdateDatabaseTool,
+    uploadFyiTool: UploadFyiTool,
+    getCaseDocumentsTool: GetCaseDocumentsTool,
+    uploadAllCaseDocumentsTool: UploadAllCaseDocumentsTool,
   ) {
     this.tools = [
       searchComparablesTool,
@@ -36,6 +42,9 @@ export class McpService {
       listTablesTool,
       describeTableTool,
       updateDatabaseTool,
+      uploadFyiTool,
+      getCaseDocumentsTool,
+      uploadAllCaseDocumentsTool,
     ];
   }
 
