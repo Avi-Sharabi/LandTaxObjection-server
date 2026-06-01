@@ -2,7 +2,7 @@
 
 import { Injectable, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { EmailClient } from '@azure/communication-email';
+import { EmailClient, EmailMessage } from '@azure/communication-email';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -19,6 +19,7 @@ const TEMPLATE_NAMES = [
     'objection-package-reminder',
     'vg-submission-confirmation',
     'vg-follow-up-enquiry',
+    'vg-response-notification',
 ] as const;
 
 type TemplateName = (typeof TEMPLATE_NAMES)[number];
@@ -58,7 +59,7 @@ export class AzureEmailService implements OnModuleInit {
             } else {
                 // Render {{#if key}}...{{/if}} blocks: include content when value is truthy, omit when falsy.
                 const ifRegex = new RegExp(
-                    `\\{\\{#if ${key}\\}\\}([\\s\\S]*?)\\{\\{/if\\}\\}`,
+                    `\\{\\{#if ${key}\\}\\}([\\s\\S]*?)\\{\\{/if(?:\\s+${key})?\\}\\}`,
                     'g',
                 );
                 html = html.replace(ifRegex, value ? '$1' : '');
@@ -67,6 +68,14 @@ export class AzureEmailService implements OnModuleInit {
         });
 
         return html;
+    }
+
+    private async send(message: EmailMessage): Promise<void> {
+        const poller = await this.emailClient.beginSend(message);
+        const result = await poller.pollUntilDone();
+        if (result.status !== 'Succeeded') {
+            throw new Error(`Azure ACS email delivery failed — status=${result.status} id=${result.id}`);
+        }
     }
 
     async sendDisputeApplication(
@@ -96,8 +105,7 @@ export class AzureEmailService implements OnModuleInit {
             },
         };
 
-        const poller = await this.emailClient.beginSend(message);
-        await poller.pollUntilDone();
+        await this.send(message);
     }
 
     async sendAdvisoryLetterNotification(data: {
@@ -138,8 +146,7 @@ export class AzureEmailService implements OnModuleInit {
             ...(data.attachments?.length && { attachments: data.attachments }),
         };
 
-        const poller = await this.emailClient.beginSend(message);
-        await poller.pollUntilDone();
+        await this.send(message);
     }
 
     async sendObjectionPackageApproval(params: {
@@ -177,8 +184,7 @@ export class AzureEmailService implements OnModuleInit {
             ...(params.attachments?.length && { attachments: params.attachments }),
         };
 
-        const poller = await this.emailClient.beginSend(message);
-        await poller.pollUntilDone();
+        await this.send(message);
     }
 
     async sendObjectionPackageReminder(params: {
@@ -212,8 +218,7 @@ export class AzureEmailService implements OnModuleInit {
             ...(params.attachments?.length && { attachments: params.attachments }),
         };
 
-        const poller = await this.emailClient.beginSend(message);
-        await poller.pollUntilDone();
+        await this.send(message);
     }
 
     async sendVgSubmissionConfirmation(params: {
@@ -247,12 +252,12 @@ export class AzureEmailService implements OnModuleInit {
             },
         };
 
-        const poller = await this.emailClient.beginSend(message);
-        await poller.pollUntilDone();
+        await this.send(message);
     }
 
     async sendVgFollowUpEnquiry(params: {
         sendTo: string;
+        recipientName?: string;
         caseReference: string;
         propertyAddress: string;
         lodgmentReferenceNumber: string;
@@ -273,7 +278,7 @@ export class AzureEmailService implements OnModuleInit {
         const message = {
             senderAddress: this.sender,
             recipients: {
-                to: [{ address: params.sendTo, displayName: 'Valuer-General Office' }],
+                to: [{ address: params.sendTo, displayName: params.recipientName ?? 'Valuer-General Office' }],
             },
             content: {
                 subject: `[${params.caseReference}] Follow-Up Enquiry #${params.followUpCount} — Awaiting VG Response`,
@@ -281,7 +286,49 @@ export class AzureEmailService implements OnModuleInit {
             },
         };
 
-        const poller = await this.emailClient.beginSend(message);
-        await poller.pollUntilDone();
+        await this.send(message);
+    }
+
+    async sendVgResponseNotification(params: {
+        clientEmail: string;
+        clientName: string;
+        caseReference: string;
+        propertyAddress: string;
+        lodgmentReferenceNumber: string;
+        isApproved: boolean;
+        assessorFullName: string;
+        resolvedAt: string;
+        assessedLandValue: string;
+    }): Promise<void> {
+        const contactEmail = this.config.getOrThrow<string>('CONTACT_EMAIL');
+
+        const html = this.loadTemplate('vg-response-notification', {
+            clientName: params.clientName,
+            caseReference: params.caseReference,
+            propertyAddress: params.propertyAddress,
+            lodgmentReferenceNumber: params.lodgmentReferenceNumber,
+            isApproved: params.isApproved ? '1' : '',
+            isDeclined: params.isApproved ? '' : '1',
+            outcomeLabel: params.isApproved ? 'Approved' : 'Declined',
+            assessorFullName: params.assessorFullName,
+            resolvedAt: params.resolvedAt,
+            assessedLandValue: params.assessedLandValue,
+            contactEmail,
+        });
+
+        const outcomeText = params.isApproved ? 'Approved' : 'Declined';
+
+        const message = {
+            senderAddress: this.sender,
+            recipients: {
+                to: [{ address: params.clientEmail, displayName: params.clientName }],
+            },
+            content: {
+                subject: `[${params.caseReference}] VG Response Received – Objection ${outcomeText}`,
+                html,
+            },
+        };
+
+        await this.send(message);
     }
 }

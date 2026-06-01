@@ -28,7 +28,7 @@ export class ValuationNoticesService {
   }
 
   async findAll() {
-    return this.valuationNoticesRepository.find()
+    return this.valuationNoticesRepository.find();
   }
 
   async findOne(id: string) {

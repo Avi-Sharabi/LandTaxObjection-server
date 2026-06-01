@@ -8,7 +8,8 @@ import { AzureBlobModule } from 'src/common/azure-blob/azure-blob.module';
 @Module({
   imports: [
     TypeOrmModule.forFeature([ValuationNotice]),
-    AzureBlobModule],
+    AzureBlobModule,
+  ],
   controllers: [ValuationNoticesController],
   providers: [ValuationNoticesService],
   exports: [ValuationNoticesService],

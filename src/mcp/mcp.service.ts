@@ -20,8 +20,10 @@ import {
   QueryArgsDto,
   SearchComparableSalesArgsDto,
 } from './dto/tool-args.dto';
-
-type ToolResult = { content: { type: string; text: string }[]; isError?: boolean };
+import { GetCaseDocumentsTool } from './tools/get-case-documents.tool';
+import { ToolResult } from './tools/mcp-tool.interface';
+import { UploadAllCaseDocumentsTool } from './tools/upload-all-case-documents.tool';
+import { UploadFyiTool } from './tools/upload-fyi.tool';
 type CacheEntry = { data: unknown; expiresAt: number };
 
 @Injectable()
@@ -30,7 +32,12 @@ export class McpService implements OnModuleInit {
   private readonly toolCache = new Map<string, CacheEntry>();
   private readonly skills = new Map<string, string>();
 
-  constructor(@InjectDataSource() private dataSource: DataSource) {}
+  constructor(
+    @InjectDataSource() private dataSource: DataSource,
+    private readonly uploadFyiTool: UploadFyiTool,
+    private readonly getCaseDocumentsTool: GetCaseDocumentsTool,
+    private readonly uploadAllCaseDocumentsTool: UploadAllCaseDocumentsTool,
+  ) {}
 
   async onModuleInit(): Promise<void> {
     const skillsDir = path.join(__dirname, '..', 'skills');
@@ -159,6 +166,21 @@ export class McpService implements OnModuleInit {
               required: ['table_name'],
             },
           },
+          {
+            name: this.uploadFyiTool.name,
+            description: this.uploadFyiTool.description,
+            inputSchema: this.uploadFyiTool.inputSchema,
+          },
+          {
+            name: this.getCaseDocumentsTool.name,
+            description: this.getCaseDocumentsTool.description,
+            inputSchema: this.getCaseDocumentsTool.inputSchema,
+          },
+          {
+            name: this.uploadAllCaseDocumentsTool.name,
+            description: this.uploadAllCaseDocumentsTool.description,
+            inputSchema: this.uploadAllCaseDocumentsTool.inputSchema,
+          },
         ],
       };
     });
@@ -188,6 +210,24 @@ export class McpService implements OnModuleInit {
           result = await this.withTimeout(
             this.describeTable(args ?? {}, correlationId),
             10_000,
+            name,
+          );
+        } else if (name === this.uploadFyiTool.name) {
+          result = await this.withTimeout(
+            this.uploadFyiTool.execute(args ?? {}, correlationId),
+            this.uploadFyiTool.timeoutMs,
+            name,
+          );
+        } else if (name === this.getCaseDocumentsTool.name) {
+          result = await this.withTimeout(
+            this.getCaseDocumentsTool.execute(args ?? {}, correlationId),
+            this.getCaseDocumentsTool.timeoutMs,
+            name,
+          );
+        } else if (name === this.uploadAllCaseDocumentsTool.name) {
+          result = await this.withTimeout(
+            this.uploadAllCaseDocumentsTool.execute(args ?? {}, correlationId),
+            this.uploadAllCaseDocumentsTool.timeoutMs,
             name,
           );
         } else {

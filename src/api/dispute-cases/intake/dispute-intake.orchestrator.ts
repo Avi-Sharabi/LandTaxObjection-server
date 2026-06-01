@@ -8,7 +8,8 @@ import {
   IntakeValuationNoticeDto,
 } from '../dto/create-dispute-intake.dto';
 import { DisputeCase, DisputeStatus } from '../entities/dispute-case.entity';
-import { AssessmentDocument } from '../entities/assessment-document.entity';
+import { AssessmentDocument } from '../../assessment-documents/entities/assessment-document.entity';
+import { AssessmentDocumentsService } from '../../assessment-documents/assessment-documents.service';
 import { DisputeLegalGround, LegalGround } from '../../dispute-legal-grounds/entities/dispute-legal-ground.entity';
 import { Property, Jurisdiction } from '../../properties/entities/property.entity';
 import { ValuationNotice } from '../../valuation-notices/entities/valuation-notice.entity';
@@ -38,8 +39,7 @@ export class DisputeIntakeOrchestrator {
     private readonly azureEmailService: AzureEmailService,
     @InjectRepository(DisputeCase)
     private disputeCasesRepository: Repository<DisputeCase>,
-    @InjectRepository(AssessmentDocument)
-    private assessmentDocumentsRepository: Repository<AssessmentDocument>,
+    private readonly assessmentDocumentsService: AssessmentDocumentsService,
     @InjectRepository(DisputeLegalGround)
     private legalGroundsRepository: Repository<DisputeLegalGround>,
     @InjectRepository(Property)
@@ -60,7 +60,7 @@ export class DisputeIntakeOrchestrator {
       : await this.xpmClientHandler.handleNewProspect(intakeDto);
 
     // Create the source document first so its UUID can be used as the storage folder
-    const assessmentDocument = await this.createAssessmentDocument(client.id, null, intakeDto.noticeDate, intakeDto.valuationYear);
+    const assessmentDocument = await this.createAssessmentDocument(client.id, null);
 
     // Upload PDF into assessment-documents/{doc.id}/valuation-notice.pdf
     const filePath = await this.pdfStorageHandler.handlePdfStorage(
@@ -70,7 +70,7 @@ export class DisputeIntakeOrchestrator {
       assessmentDocument.id,  // folder identifier — caseReference not yet available at this stage
     );
     if (filePath) {
-      await this.assessmentDocumentsRepository.update(assessmentDocument.id, { file_path: filePath });
+      await this.assessmentDocumentsService.updateFilePath(assessmentDocument.id, filePath);
       assessmentDocument.file_path = filePath;
     }
 
@@ -116,17 +116,10 @@ export class DisputeIntakeOrchestrator {
 
   private async createAssessmentDocument(
     clientId: string,
-    filePath: string | null,
-    noticeDate: string,
-    valuationYear: string,
+    _filePath: string | null,
+    documentName = 'Land Tax Assessment Notice',
   ): Promise<AssessmentDocument> {
-    const doc = this.assessmentDocumentsRepository.create({
-      client_id: clientId,
-      file_path: filePath,
-      notice_date: new Date(noticeDate),
-      valuation_year: valuationYear,
-    });
-    return this.assessmentDocumentsRepository.save(doc);
+    return this.assessmentDocumentsService.createInitialRecord(clientId, documentName);
   }
 
   private async createProperty(clientId: string, prop: IntakePropertyDto): Promise<Property> {
