@@ -14,6 +14,7 @@ import { ValuationModule } from './valuation/valuation.module';
 import { AuthModule } from './auth/auth.module';
 import { ObjectionPackageModule } from './objection-package/objection-package.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { DeadlinesModule } from './deadlines/deadlines.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { NotificationsModule } from './notifications/notifications.module';
     DisputeLegalGroundsModule,
     ObjectionPackageModule,
     NotificationsModule,
+    DeadlinesModule,
   ],
 })
 export class APIModule {}

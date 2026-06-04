@@ -29,10 +29,12 @@ import { VgEmailAnalysisService } from './vg-email/vg-email-analysis.service';
 import { ValuationModule } from '../valuation/valuation.module';
 import { VGResponseMonitorScheduler } from './vg-response-monitor.scheduler';
 import { SupportingEvidenceModule } from '../supporting-evidence/supporting-evidence.module';
+import { DeadlinesModule } from '../deadlines/deadlines.module';
 
 @Module({
   imports: [
     HttpModule,
+    DeadlinesModule,
     AzureBlobModule,
     AzureEmailModule,
     ComparablesModule,

@@ -19,6 +19,12 @@ import { PdfStorageHandler } from './pdf-storage.handler';
 import { AzureEmailService } from 'src/common/azure-email/azure-email.service';
 import { AccountantNotFoundException } from '../exceptions/accountant-not-found.exception';
 import { Client, ClientStatus } from '../../clients/entities/client.entity';
+import { DeadlinesService } from '../../deadlines/deadlines.service';
+import {
+  DeadlineEntityType,
+  DeadlineType,
+  DeadlinePriority,
+} from '../../deadlines/entities/deadline.entity';
 
 interface PropertyFlags {
   flag_heritage: boolean;
@@ -37,6 +43,7 @@ export class DisputeIntakeOrchestrator {
     private readonly xpmClientHandler: XpmClientHandler,
     private readonly pdfStorageHandler: PdfStorageHandler,
     private readonly azureEmailService: AzureEmailService,
+    private readonly deadlinesService: DeadlinesService,
     @InjectRepository(DisputeCase)
     private disputeCasesRepository: Repository<DisputeCase>,
     private readonly assessmentDocumentsService: AssessmentDocumentsService,
@@ -91,6 +98,7 @@ export class DisputeIntakeOrchestrator {
       const disputeCase = await this.createDisputeCase(client as Client, property.id, notice.id, caseReference, prop.state, prop.valuation_notice.assessed_land_value, intakeDto, flags);
 
       await this.createLegalGrounds(disputeCase.id, prop.grounds ?? []);
+      await this.createStatutoryDeadline(disputeCase);
       caseReferences.push(caseReference);
     }
 
@@ -182,6 +190,29 @@ export class DisputeIntakeOrchestrator {
       this.legalGroundsRepository.create({ dispute_id: disputeId, ground, validated: false }),
     );
     await this.legalGroundsRepository.save(legalGrounds);
+  }
+
+  private async createStatutoryDeadline(disputeCase: DisputeCase): Promise<void> {
+    if (!disputeCase.assigned_accountant_id) {
+      this.logger.warn(`No assigned accountant — skipping statutory deadline for case ${disputeCase.id}`);
+      return;
+    }
+    try {
+      await this.deadlinesService.create(
+        {
+          entityId: disputeCase.id,
+          entityType: DeadlineEntityType.DISPUTE_CASE,
+          deadlineType: DeadlineType.STATUTORY_OBJECTION,
+          title: 'Statutory Objection Deadline',
+          dueDate: disputeCase.statutory_deadline.toISOString(),
+          assignedOwnerId: disputeCase.assigned_accountant_id,
+          priority: DeadlinePriority.CRITICAL,
+        },
+        disputeCase.assigned_accountant_id,
+      );
+    } catch (err) {
+      this.logger.error(`Failed to auto-create statutory deadline for case ${disputeCase.id}: ${err?.message}`);
+    }
   }
 
   private async validateAccountant(accountantId?: string): Promise<void> {

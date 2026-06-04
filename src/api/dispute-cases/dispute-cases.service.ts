@@ -49,6 +49,7 @@ import { CaseNotClientApprovedException } from './exceptions/case-not-client-app
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/entities/notification.entity';
 import { AuditAction, AuditLog } from '../audit-log/entities/audit-log.entity';
+import { DeadlinesService } from '../deadlines/deadlines.service';
 
 const VG_FOLLOW_UP_WINDOW_DAYS = 90;
 const SYSTEM_ACTOR_ID = '00000000-0000-0000-0000-000000000000';
@@ -74,6 +75,7 @@ export class DisputeCasesService {
     private readonly azureBlobService: AzureBlobService,
     private readonly config: ConfigService,
     private readonly notificationsService: NotificationsService,
+    private readonly deadlinesService: DeadlinesService,
     @InjectRepository(DisputeCase)
     private disputeCasesRepository: Repository<DisputeCase>,
     @InjectRepository(PackageDocument)
@@ -270,6 +272,10 @@ export class DisputeCasesService {
     }
 
     const saved = await this.disputeCasesRepository.save(disputeCase);
+
+    this.deadlinesService.cancelActiveDeadlinesForCase(caseId).catch((err: unknown) => {
+      this.logger.error(`Failed to auto-cancel deadlines for closed case ${caseId}: ${String(err)}`);
+    });
 
     this.azureEmailService
       .sendAdvisoryLetterNotification(

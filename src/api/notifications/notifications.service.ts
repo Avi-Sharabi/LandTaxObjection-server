@@ -1,6 +1,6 @@
 import { Injectable, MessageEvent, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { FindOptionsWhere, LessThan, Repository } from 'typeorm';
+import { EntityManager, FindOptionsWhere, LessThan, Repository } from 'typeorm';
 import { plainToInstance } from 'class-transformer';
 import { Subject, Observable, merge, interval } from 'rxjs';
 import { map } from 'rxjs/operators';
@@ -107,14 +107,39 @@ export class NotificationsService {
       excludeExtraneousValues: true,
     });
 
+    this.broadcast(userId, dto);
+
+    return dto;
+  }
+
+  /**
+   * Saves a notification within an existing EntityManager transaction.
+   * Does NOT push to SSE streams — call broadcast() after the transaction commits.
+   */
+  async createInTransaction(
+    manager: EntityManager,
+    userId: string,
+    type: NotificationType,
+    message: string,
+    caseId?: string,
+  ): Promise<NotificationResponseDto> {
+    const repo = manager.getRepository(Notification);
+    const entity = repo.create({ userId, type, message, caseId: caseId ?? null });
+    const saved = await repo.save(entity);
+    return plainToInstance(NotificationResponseDto, saved, { excludeExtraneousValues: true });
+  }
+
+  /**
+   * Pushes a notification DTO to all open SSE connections for a user.
+   * Call this after a transaction commits when using createInTransaction().
+   */
+  broadcast(userId: string, dto: NotificationResponseDto): void {
     const userStreams = this.streams.get(userId);
     if (userStreams) {
       for (const subject of userStreams) {
         subject.next(dto);
       }
     }
-
-    return dto;
   }
 
   /**
