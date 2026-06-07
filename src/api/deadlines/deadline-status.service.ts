@@ -10,7 +10,7 @@ import {
   DeadlineActivityLog,
   DeadlineActivityAction,
 } from './entities/deadline-activity-log.entity';
-import { TERMINAL_STATUSES, SYSTEM_ACTOR_ID } from './deadlines.constants';
+import { TERMINAL_STATUSES, SYSTEM_ACTOR_ID, MS_PER_DAY } from './deadlines.constants';
 
 const BATCH_SIZE = 500;
 
@@ -29,8 +29,7 @@ export class DeadlineStatusService {
   }
 
   computeStatus(dueDate: Date, now: Date): DeadlineStatus {
-    const msPerDay = 24 * 60 * 60 * 1000;
-    const daysUntilDue = (dueDate.getTime() - now.getTime()) / msPerDay;
+    const daysUntilDue = (dueDate.getTime() - now.getTime()) / MS_PER_DAY;
 
     if (daysUntilDue < 0) return DeadlineStatus.OVERDUE;
     if (daysUntilDue <= this.atRiskDays) return DeadlineStatus.AT_RISK;

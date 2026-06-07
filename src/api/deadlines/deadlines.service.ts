@@ -14,7 +14,6 @@ import { plainToInstance } from 'class-transformer';
 import {
   Deadline,
   DeadlineEntityType,
-  DeadlineType,
   DeadlinePriority,
   DeadlineStatus,
 } from './entities/deadline.entity';
@@ -23,12 +22,11 @@ import {
   DeadlineActivityAction,
 } from './entities/deadline-activity-log.entity';
 import { DeadlineStatusService } from './deadline-status.service';
-import { NotificationsService } from '../notifications/notifications.service';
-import { NotificationType } from '../notifications/entities/notification.entity';
 import { CreateDeadlineDto } from './dto/create-deadline.dto';
 import { UpdateDeadlineDto } from './dto/update-deadline.dto';
 import { GetDeadlinesQueryDto } from './dto/get-deadlines-query.dto';
 import { DeadlineResponseDto } from './dto/deadline-response.dto';
+import { PaginatedResponseDto } from 'src/common/dto/paginated-response.dto';
 import { CancelDeadlineDto } from './dto/cancel-deadline.dto';
 import {
   DeadlineDashboardCardDto,
@@ -38,24 +36,8 @@ import { DeadlineAlreadyExistsException } from './exceptions/deadline-already-ex
 import { DeadlineNotCancellableException } from './exceptions/deadline-not-cancellable.exception';
 import { DeadlineNotCompletableException } from './exceptions/deadline-not-completable.exception';
 import { DEADLINE_COMPLETED_CASE_STATUSES, MS_PER_DAY, SYSTEM_ACTOR_ID, TERMINAL_STATUSES } from './deadlines.constants';
+import { DeadlinesRepository, DashboardRow } from './deadlines.repository';
 import { DisputeStatus } from '../dispute-cases/entities/dispute-case.entity';
-
-type DashboardRow = {
-  deadlineId: string;
-  caseId: string;
-  deadlineStatus: DeadlineStatus | null;
-  dueDate: string;
-  priority: string;
-  assignedOwnerId: string | null;
-  caseReference: string;
-  caseStatus: string;
-  clientName: string;
-  address: string;
-  suburb: string;
-  state: string;
-  postcode: string;
-  assignedOwnerName: string | null;
-};
 
 @Injectable()
 export class DeadlinesService {
@@ -64,7 +46,7 @@ export class DeadlinesService {
   constructor(
     private readonly dataSource: DataSource,
     private readonly deadlineStatusService: DeadlineStatusService,
-    private readonly notificationsService: NotificationsService,
+    private readonly deadlinesRepository: DeadlinesRepository,
     @InjectRepository(Deadline)
     private readonly deadlineRepo: Repository<Deadline>,
     @InjectRepository(DeadlineActivityLog)
@@ -134,13 +116,7 @@ export class DeadlinesService {
     return plainToInstance(DeadlineResponseDto, deadlines, { excludeExtraneousValues: true });
   }
 
-  async findPaginated(query: GetDeadlinesQueryDto): Promise<{
-    data: DeadlineResponseDto[];
-    total: number;
-    page: number;
-    limit: number;
-    totalPages: number;
-  }> {
+  async findPaginated(query: GetDeadlinesQueryDto): Promise<PaginatedResponseDto<DeadlineResponseDto>> {
     const {
       page = 1,
       limit = 10,
@@ -320,49 +296,9 @@ export class DeadlinesService {
   }
 
   async getDashboardData(): Promise<DeadlineDashboardResponseDto> {
-    const qb = this.dataSource
-      .createQueryBuilder()
-      .select([
-        'COALESCE(d.id::text, dc.id::text)                                         AS "deadlineId"',
-        'dc.id                                                                      AS "caseId"',
-        'd.status                                                                   AS "deadlineStatus"',
-        'COALESCE(d.due_date, dc.statutory_deadline::TIMESTAMPTZ)                  AS "dueDate"',
-        `COALESCE(d.priority, 'critical')                                          AS "priority"`,
-        'COALESCE(d.assigned_owner_id, dc.assigned_accountant_id)                 AS "assignedOwnerId"',
-        'dc.case_reference                                                          AS "caseReference"',
-        'dc.status                                                                  AS "caseStatus"',
-        `COALESCE(NULLIF(TRIM(CONCAT(COALESCE(c.first_name, ''), ' ', COALESCE(c.last_name, ''))), ''), c.name) AS "clientName"`,
-        'p.address                                                                  AS "address"',
-        'p.suburb                                                                   AS "suburb"',
-        'p.state                                                                    AS "state"',
-        'p.postcode                                                                 AS "postcode"',
-        'u.full_name                                                                AS "assignedOwnerName"',
-      ])
-      .from('dispute_cases', 'dc')
-      .innerJoin('clients', 'c', 'c.id = dc.client_id')
-      .innerJoin('properties', 'p', 'p.id = dc.property_id')
-      .leftJoin(
-        'deadlines',
-        'd',
-        'd.entity_id = dc.id AND d.entity_type = :entityType AND d.deadline_type = :deadlineType AND d.status NOT IN (:...terminalStatuses)',
-        {
-          entityType: DeadlineEntityType.DISPUTE_CASE,
-          deadlineType: DeadlineType.STATUTORY_OBJECTION,
-          terminalStatuses: TERMINAL_STATUSES,
-        },
-      )
-      .leftJoin('users', 'u', 'u.id = COALESCE(d.assigned_owner_id, dc.assigned_accountant_id)')
-      .where('dc.statutory_deadline IS NOT NULL')
-      .andWhere(
-        'NOT (dc.status IN (:...completedStatuses) AND dc.updated_at < NOW() - INTERVAL \'30 days\')',
-        { completedStatuses: DEADLINE_COMPLETED_CASE_STATUSES },
-      )
-      .orderBy('COALESCE(d.due_date, dc.statutory_deadline::TIMESTAMPTZ)', 'ASC');
-
-    const rows = await qb.getRawMany<DashboardRow>();
+    const rows = await this.deadlinesRepository.getDashboardRows();
     const now = new Date();
     const cards = rows.map((row) => this.toDashboardCard(row, now));
-
     return this.bucketDashboardCards(cards);
   }
 
@@ -443,20 +379,5 @@ export class DeadlinesService {
       description,
       metadata: metadata ?? null,
     } as QueryDeepPartialEntity<DeadlineActivityLog>);
-  }
-
-  private async sendNotificationSafely(
-    userId: string,
-    type: NotificationType,
-    message: string,
-  ): Promise<void> {
-    try {
-      await this.notificationsService.create(userId, type, message);
-    } catch (err) {
-      this.logger.error(
-        `Notification delivery failed (type=${type}, userId=${userId}): ${(err as Error).message}`,
-        (err as Error).stack,
-      );
-    }
   }
 }
