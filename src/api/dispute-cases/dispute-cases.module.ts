@@ -1,5 +1,6 @@
 import { HttpModule } from '@nestjs/axios';
 import { Module } from '@nestjs/common';
+import { AiModule } from 'src/ai/ai.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ComparablesModule } from '../comparables/comparables.module';
 import { Property } from '../properties/entities/property.entity';
@@ -33,6 +34,7 @@ import { SupportingEvidenceModule } from '../supporting-evidence/supporting-evid
 @Module({
   imports: [
     HttpModule,
+    AiModule,
     AzureBlobModule,
     AzureEmailModule,
     ComparablesModule,
