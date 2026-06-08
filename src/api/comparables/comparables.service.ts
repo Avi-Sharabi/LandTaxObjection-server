@@ -19,6 +19,7 @@ import { LlmTruncationException } from './exceptions/llm-truncation.exception';
 import { LlmToolUseException } from './exceptions/llm-tool-use.exception';
 import { LlmParseException } from './exceptions/llm-parse.exception';
 import { LlmApiException } from './exceptions/llm-api.exception';
+import { MissingValuationDateException } from './exceptions/missing-valuation-date.exception';
 import { DisputeCase } from '../dispute-cases/entities/dispute-case.entity';
 import { SkillRegistryService } from '../../mcp/skill-registry.service';
 import { buildUserPrompt, SubjectContext } from './comparables.prompts';
@@ -221,15 +222,8 @@ export class ComparablesService implements OnModuleInit {
       return { ...candidate, ...this.computeAdjustedFields(candidate, subject) };
     });
 
-    const vgRate = subject.landAreaSqm && subject.landAreaSqm > 0
-      ? Math.round(subject.vgValueCurrent / subject.landAreaSqm)
-      : null;
-    const supporting = vgRate !== null
-      ? enriched.filter(item => item.adjusted_rate_per_sqm !== null && Number(item.adjusted_rate_per_sqm) <= vgRate)
-      : enriched;
-
-    this.logEvent('GENERATE.persist', { correlationId, count: supporting.length, filteredOut: enriched.length - supporting.length });
-    const saved = await this.persistComparables(supporting, dto.dispute_case_id, createdById);
+    this.logEvent('GENERATE.persist', { correlationId, count: enriched.length });
+    const saved = await this.persistComparables(enriched, dto.dispute_case_id, createdById);
     this.logEvent('GENERATE.complete', {
       correlationId,
       disputeCaseId: dto.dispute_case_id,
@@ -246,8 +240,8 @@ export class ComparablesService implements OnModuleInit {
     const vn = disputeCase.valuation_notice;
     return {
       pid: dto.pid ?? disputeCase.property?.pid ?? 'unknown',
-      suburb: (disputeCase.property?.suburb ?? '').trim().toUpperCase(),
-      postcode: disputeCase.property?.postcode ?? null,
+      suburb: (dto.suburb ?? disputeCase.property?.suburb ?? '').trim().toUpperCase(),
+      postcode: dto.postcode ?? disputeCase.property?.postcode ?? null,
       landAreaSqm: dto.land_area_sqm ?? (Number(disputeCase.property?.land_area_sqm) || null),
       zoning: dto.zoning ?? disputeCase.property?.zoning ?? 'unknown',
       lotDp: dto.lot_dp ?? disputeCase.property?.lot_dp ?? null,
@@ -257,7 +251,7 @@ export class ComparablesService implements OnModuleInit {
       vgValuePrior: dto.vg_land_value_prior ?? (Number(vn?.prior_land_value) || 0),
       landAreaVgSqm: dto.land_area_vg_sqm ?? (Number(vn?.land_area_vg_sqm) || null),
       valuationDate: dto.valuation_date
-        ?? (vn?.valuation_date ? new Date(vn.valuation_date).toISOString().split('T')[0] : null) ?? (() => { throw new Error(`Valuation notice for dispute case ${disputeCase.id} has no valuation_date`); })(),
+        ?? (vn?.valuation_date ? new Date(vn.valuation_date).toISOString().split('T')[0] : null) ?? (() => { throw new MissingValuationDateException(disputeCase.id); })(),
     };
   }
 
