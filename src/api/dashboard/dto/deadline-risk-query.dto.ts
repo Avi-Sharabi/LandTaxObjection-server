@@ -8,7 +8,7 @@ export enum DeadlineRiskLevel {
   OVERDUE = 'overdue',
 }
 
-export class GetDeadlineRiskBodyDto {
+export class GetDeadlineRiskQueryDto {
   @ApiPropertyOptional({
     enum: DeadlineRiskLevel,
     description: 'Narrow to a specific risk level only',

@@ -19,6 +19,6 @@ export class StatusCountersResponseDto {
   @ApiProperty({ example: 42 })
   total: number;
 
-  @ApiProperty({ example: 74, description: 'Average evidence_strength_score across all active (non-closed) cases that have a score set. Returns 0 when no scored cases exist.' })
-  avg_evidence_score: number;
+  @ApiProperty({ example: 18, description: 'Total count of cases in active (non-closed, non-pending) statuses' })
+  active_cases_count: number;
 }

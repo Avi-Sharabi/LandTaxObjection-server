@@ -64,6 +64,12 @@ export class DeadlineRiskResponseDto {
   @ApiProperty()
   total: number;
 
+  @ApiProperty({ description: 'Cases with a deadline within the next 7 days (not yet overdue)' })
+  due_this_week_count: number;
+
+  @ApiProperty({ description: 'Cases whose statutory deadline has already passed' })
+  overdue_count: number;
+
   @ApiProperty({ type: DeadlineRiskThresholdsDto })
   thresholds: DeadlineRiskThresholdsDto;
 }

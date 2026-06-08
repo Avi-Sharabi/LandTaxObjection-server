@@ -111,10 +111,7 @@ export class DisputeCase {
   @Column({ type: 'boolean', nullable: false, default: false })
   flag_zoning: boolean;
 
-  @Column({ type: 'smallint', nullable: true })
-  evidence_strength_score: number | null;
-
-  @Column({ type: 'enum', enum: OutcomeResult, nullable: true })
+@Column({ type: 'enum', enum: OutcomeResult, nullable: true })
   outcome: OutcomeResult | null;
 
   @Column({ type: 'numeric', precision: 15, scale: 2, nullable: true })

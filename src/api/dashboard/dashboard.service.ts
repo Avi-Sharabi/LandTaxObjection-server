@@ -2,13 +2,11 @@ import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
+import { RedisCacheService } from '../../common/redis-cache/redis-cache.service';
 import { DisputeCase, DisputeStatus } from '../dispute-cases/entities/dispute-case.entity';
-import { AuditLog } from '../audit-log/entities/audit-log.entity';
 import { StatusCountersResponseDto } from './dto/status-counters-response.dto';
-import { GetDeadlineRiskBodyDto, DeadlineRiskLevel } from './dto/deadline-risk-query.dto';
+import { GetDeadlineRiskQueryDto, DeadlineRiskLevel } from './dto/deadline-risk-query.dto';
 import { DeadlineRiskItemDto, DeadlineRiskResponseDto } from './dto/deadline-risk-response.dto';
-import { GetRecentActivitiesQueryDto } from './dto/get-recent-activities-query.dto';
-import { ActivityItemDto, RecentActivitiesResponseDto } from './dto/recent-activities-response.dto';
 
 export const STATUS_LABEL_MAP: Record<DisputeStatus, string> = {
   [DisputeStatus.PENDING_TNC]: 'Pending T&C',
@@ -32,6 +30,23 @@ export const STATUS_LABEL_MAP: Record<DisputeStatus, string> = {
 
 const DEADLINE_RISK_EXCLUDED_STATUSES = [DisputeStatus.CLOSED, DisputeStatus.CLOSED_NO_OBJECTION];
 
+const ACTIVE_STATUSES = new Set<DisputeStatus>([
+  DisputeStatus.DRAFT,
+  DisputeStatus.GROUNDS_SELECTION,
+  DisputeStatus.EVIDENCE_COMPILATION,
+  DisputeStatus.APPRAISAL,
+  DisputeStatus.ADVISORY_LETTER_ISSUED,
+  DisputeStatus.OBJECTION_PACKAGE_PREPARED,
+  DisputeStatus.CLIENT_APPROVED,
+  DisputeStatus.SUBMITTED_TO_VG,
+  DisputeStatus.VG_RESPONSE_RECEIVED,
+  DisputeStatus.VG_APPROVED,
+  DisputeStatus.VG_DECLINED,
+  DisputeStatus.FOR_REVIEW,
+]);
+
+const DUE_THIS_WEEK_DAYS = 7;
+
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 @Injectable()
@@ -39,32 +54,23 @@ export class DashboardService {
   constructor(
     @InjectRepository(DisputeCase)
     private readonly disputeCasesRepository: Repository<DisputeCase>,
-    @InjectRepository(AuditLog)
-    private readonly auditLogRepository: Repository<AuditLog>,
     private readonly configService: ConfigService,
+    private readonly cache: RedisCacheService,
   ) {}
 
   async getStatusCounters(): Promise<StatusCountersResponseDto> {
-    const [countersRaw, scoreRaw] = await Promise.all([
-      this.disputeCasesRepository
-        .createQueryBuilder('dc')
-        .select('dc.status', 'status')
-        .addSelect('COUNT(dc.id)', 'count')
-        .groupBy('dc.status')
-        .getRawMany<{ status: string; count: string }>(),
+    const cacheKey = 'dashboard:status-counters';
+    const cached = await this.cache.get<StatusCountersResponseDto>(cacheKey);
+    if (cached) return cached;
 
-      // Average evidence score across non-closed cases that have a score set
-      this.disputeCasesRepository
-        .createQueryBuilder('dc')
-        .select('AVG(dc.evidence_strength_score)', 'avg')
-        .where('dc.status NOT IN (:...excluded)', {
-          excluded: [DisputeStatus.CLOSED, DisputeStatus.CLOSED_NO_OBJECTION],
-        })
-        .andWhere('dc.evidence_strength_score IS NOT NULL')
-        .getRawOne<{ avg: string | null }>(),
-    ]);
+    const countersRaw = await this.disputeCasesRepository
+      .createQueryBuilder('dc')
+      .select('dc.status', 'status')
+      .addSelect('COUNT(dc.id)', 'count')
+      .groupBy('dc.status')
+      .getRawMany<{ status: string; count: string }>();
 
-    // pg driver returns COUNT and AVG as strings — parse to numbers
+    // pg driver returns COUNT as string — parse to number
     const countByStatus = new Map(
       countersRaw.map((r) => [r.status as DisputeStatus, parseInt(r.count, 10)]),
     );
@@ -75,15 +81,21 @@ export class DashboardService {
       label: STATUS_LABEL_MAP[status],
     }));
 
-    return {
-      counters,
-      total: counters.reduce((sum, c) => sum + c.count, 0),
-      avg_evidence_score: scoreRaw?.avg ? Math.round(parseFloat(scoreRaw.avg)) : 0,
-    };
+    const total = counters.reduce((sum, c) => sum + c.count, 0);
+    const active_cases_count = counters
+      .filter((c) => ACTIVE_STATUSES.has(c.status))
+      .reduce((sum, c) => sum + c.count, 0);
+
+    const result: StatusCountersResponseDto = { counters, total, active_cases_count };
+    await this.cache.set(cacheKey, result, 60_000);
+    return result;
   }
 
-  async getDeadlineRisk(query: GetDeadlineRiskBodyDto): Promise<DeadlineRiskResponseDto> {
+  async getDeadlineRisk(query: GetDeadlineRiskQueryDto): Promise<DeadlineRiskResponseDto> {
     const { riskLevel } = query;
+    const cacheKey = riskLevel ? `dashboard:deadline-risk:${riskLevel}` : 'dashboard:deadline-risk';
+    const cached = await this.cache.get<DeadlineRiskResponseDto>(cacheKey);
+    if (cached) return cached;
 
     const atRiskDays = parseInt(this.configService.get('DEADLINE_RISK_AT_RISK_DAYS') || '14', 10);
     const dueSoonDays = parseInt(this.configService.get('DEADLINE_RISK_DUE_SOON_DAYS') || '30', 10);
@@ -173,59 +185,24 @@ export class DashboardService {
       };
     });
 
-    return {
+    const due_this_week_count = items.filter(
+      (i) => i.days_until_deadline >= 0 && i.days_until_deadline <= DUE_THIS_WEEK_DAYS,
+    ).length;
+
+    const overdue_count = items.filter((i) => i.days_until_deadline < 0).length;
+
+    const result: DeadlineRiskResponseDto = {
       items,
       total: items.length,
+      due_this_week_count,
+      overdue_count,
       thresholds: {
         at_risk_days: atRiskDays,
         due_soon_days: dueSoonDays,
       },
     };
+    await this.cache.set(cacheKey, result, 60_000);
+    return result;
   }
 
-  async getRecentActivities(query: GetRecentActivitiesQueryDto): Promise<RecentActivitiesResponseDto> {
-    const { page, limit, activityType, dateFrom, dateTo, performedBy, entityId, entityType } = query;
-    const skip = (page - 1) * limit;
-
-    const qb = this.auditLogRepository
-      .createQueryBuilder('al')
-      .leftJoin(DisputeCase, 'dc', 'dc.id = al.caseId')
-      .addSelect('dc.case_reference', 'case_reference')
-      .orderBy('al.createdAt', 'DESC')
-      .skip(skip)
-      .take(limit);
-
-    if (activityType) qb.andWhere('al.action = :activityType', { activityType });
-    if (dateFrom) qb.andWhere('al.createdAt >= :dateFrom', { dateFrom: new Date(dateFrom) });
-    if (dateTo) qb.andWhere('al.createdAt <= :dateTo', { dateTo: new Date(dateTo) });
-    if (performedBy) qb.andWhere('al.performedBy = :performedBy', { performedBy });
-    if (entityId) qb.andWhere('al.entityId = :entityId', { entityId });
-    if (entityType) qb.andWhere('al.entityType = :entityType', { entityType });
-
-    const { entities: rows, raw } = await qb.getRawAndEntities();
-    const total = await qb.getCount();
-
-    const data: ActivityItemDto[] = rows.map((row, i) => ({
-      id: row.id,
-      action: row.action,
-      entityType: row.entityType,
-      entityId: row.entityId,
-      description: row.description,
-      metadata: row.metadata,
-      performedBy: row.performedBy,
-      performedByName: row.performedByName,
-      caseId: row.caseId,
-      caseReference: raw[i]?.case_reference ?? null,
-      lodgmentReferenceNumber: row.lodgmentReferenceNumber,
-      createdAt: row.createdAt.toISOString(),
-    }));
-
-    return {
-      data,
-      total,
-      page,
-      limit,
-      totalPages: Math.ceil(total / limit),
-    };
-  }
 }
