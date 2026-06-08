@@ -42,6 +42,8 @@ Return this exact JSON shape (null for missing fields, [] for empty arrays):
   "assessed_land_value": <integer dollar amount with no $ or commas, or null>,
   "revenue_nsw_notice_date": "<date string e.g. '1 July 2024', or null>",
   "fsr_from_pdf": <floor space ratio as decimal e.g. 1.5 from '1.5:1', or null>,
+  "land_area_sqm": <land area in square metres as integer e.g. 450 from '450m²' or '450 sqm', or null>,
+  "height_limit_m": <maximum building height in metres as integer or decimal e.g. 30 from 'Height Of Building: 30 m' or 'Maximum Height: 8.5m', or null>,
   "concession_mentions": ["<verbatim text snippets containing: concession, allowance, discount, deduction>"],
   "heritage_mentions": ["<verbatim text snippets containing: heritage, conservation area>"],
   "multiple_lots_in_report": ["<every lot/DP or lot/SP reference found e.g. 'Lot 9 DP1053060'>"]
@@ -59,7 +61,7 @@ ${text}`;
       });
       const textBlock = response.content.find((b) => b.type === 'text') as Anthropic.Messages.TextBlock | undefined;
       if (!textBlock?.text) throw new PdfParseException('no text block in report meta response');
-      const raw = textBlock.text.trim().replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '').trim();
+      const raw = this.stripMarkdownFences(textBlock.text);
       return JSON.parse(raw) as Record<string, unknown>;
     } catch (e: unknown) {
       this.logger.warn(`parseReportMetaAI failed (${(e as Error).message}), falling back to regex`);
@@ -82,10 +84,20 @@ ${text}`;
       assessed_land_value: lvMatch ? parseInt(lvMatch[1].replace(/,/g, '')) : null,
       revenue_nsw_notice_date: dateMatch ? dateMatch[1].trim() : null,
       fsr_from_pdf: fsrMatch ? parseFloat(fsrMatch[1]) : null,
+      land_area_sqm: null,
+      height_limit_m: null,
       concession_mentions: [],
       heritage_mentions: [],
       multiple_lots_in_report: [],
     };
+  }
+
+  private stripMarkdownFences(text: string): string {
+    return text.trim()
+      .replace(/^```json\s*/i, '')
+      .replace(/^```\s*/i, '')
+      .replace(/\s*```$/i, '')
+      .trim();
   }
 
   async classifyAndExtractDocument(buf: Buffer, filename: string): Promise<{ document_type: string; [key: string]: unknown } | null> {
@@ -115,7 +127,7 @@ ${text}`;
       });
       const textBlock = response.content.find((b) => b.type === 'text') as Anthropic.Messages.TextBlock | undefined;
       if (!textBlock?.text) return null;
-      const raw = textBlock.text.trim().replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '').trim();
+      const raw = this.stripMarkdownFences(textBlock.text);
       return JSON.parse(raw) as { document_type: string; [key: string]: unknown };
     } catch (e: unknown) {
       this.logger.warn(`Failed to parse input document ${filename}: ${(e as Error).message}`);

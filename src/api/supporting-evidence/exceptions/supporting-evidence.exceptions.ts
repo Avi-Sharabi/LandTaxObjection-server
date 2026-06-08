@@ -1,4 +1,29 @@
 import { InternalServerErrorException, NotFoundException } from '@nestjs/common';
+import { DomainException } from '../../../common/exceptions/domain.exception';
+
+export class EplanningAddressNotFoundException extends DomainException {
+  constructor(address: string) {
+    super('EPLANNING_ADDRESS_NOT_FOUND', `Address not found in ePlanning API: ${address}`, 404);
+  }
+}
+
+export class EplanningReportUrlException extends DomainException {
+  constructor(propId: string) {
+    super('EPLANNING_REPORT_URL_MISSING', `ePlanning API returned no reportUrl for propId: ${propId}`, 500);
+  }
+}
+
+export class EplanningLotNotFoundException extends DomainException {
+  constructor(query: string) {
+    super('EPLANNING_LOT_NOT_FOUND', `Lot not found in ePlanning API: ${query}`, 404);
+  }
+}
+
+export class EplanningCadastreException extends DomainException {
+  constructor(reason: string) {
+    super('EPLANNING_CADASTRE_ERROR', `ePlanning cadastre query failed: ${reason}`, 500);
+  }
+}
 
 export class GeocodingFailedException extends InternalServerErrorException {
   constructor(address: string) {

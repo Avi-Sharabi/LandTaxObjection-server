@@ -1,5 +1,6 @@
 import { HttpModule } from '@nestjs/axios';
 import { Module } from '@nestjs/common';
+import { AiModule } from 'src/ai/ai.module';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ComparablesModule } from '../comparables/comparables.module';
 import { Property } from '../properties/entities/property.entity';
@@ -28,15 +29,24 @@ import { VgEmailMonitorTask } from './vg-email/vg-email-monitor.task';
 import { VgEmailAnalysisService } from './vg-email/vg-email-analysis.service';
 import { ValuationModule } from '../valuation/valuation.module';
 import { VGResponseMonitorScheduler } from './vg-response-monitor.scheduler';
+import { BullModule } from '@nestjs/bullmq';
 import { SupportingEvidenceModule } from '../supporting-evidence/supporting-evidence.module';
+import { AnalyzeAiQueueService } from './analyze-ai-queue.service';
+import { AnalyzeAiProcessor, ANALYZE_AI_QUEUE } from './analyze-ai.processor';
+import { DisputeObjectionReason } from './entities/dispute-objection-reason.entity';
+import { ObjectionReasonMarkdownService } from './objection-reason-markdown.service';
+import { ObjectionReasonBrowserService } from './objection-reason-browser.service';
+import { ObjectionReasonGeneratorService } from './objection-reason-generator.service';
 
 @Module({
   imports: [
     HttpModule,
+    AiModule,
     AzureBlobModule,
     AzureEmailModule,
     ComparablesModule,
     SupportingEvidenceModule,
+    BullModule.registerQueue({ name: ANALYZE_AI_QUEUE }),
     MsGraphModule,
     McpModule,
     AuditLogModule,
@@ -52,11 +62,17 @@ import { SupportingEvidenceModule } from '../supporting-evidence/supporting-evid
       User,
       PackageDocument,
       AuditLog,
+      DisputeObjectionReason,
     ]),
   ],
   controllers: [DisputeCasesController],
   providers: [
     DisputeCasesService,
+    AnalyzeAiQueueService,
+    AnalyzeAiProcessor,
+    ObjectionReasonMarkdownService,
+    ObjectionReasonBrowserService,
+    ObjectionReasonGeneratorService,
     DisputeIntakeOrchestrator,
     XpmClientHandler,
     PdfStorageHandler,

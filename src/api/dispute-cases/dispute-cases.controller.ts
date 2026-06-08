@@ -40,10 +40,12 @@ import { RolesGuard } from 'src/common/guards/roles.guard';
 import { Roles } from 'src/common/decorators/roles.decorator';
 import { UserRole } from '../users/entities/user.entity';
 import { VGResponseMonitorScheduler } from './vg-response-monitor.scheduler';
-import { ComparablesQueueService } from '../comparables/comparables-queue.service';
 import { SupportingEvidenceQueueService } from '../supporting-evidence/supporting-evidence-queue.service';
 import { EvidenceIssueResponseDto } from '../supporting-evidence/dto/evidence-issue-response.dto';
-
+import { AnalyzeAiQueueService } from './analyze-ai-queue.service';
+import { ObjectionReasonGeneratorService } from './objection-reason-generator.service';
+import { ObjectionReasonResponseDto } from './dto/objection-reason-response.dto';
+import { AnalyzeAiEnqueueResponseDto, AnalyzeAiStatusResponseDto } from './dto/analyze-ai-response.dto';
 
 @ApiTags('dispute-cases')
 @Controller({
@@ -54,9 +56,9 @@ export class DisputeCasesController {
   constructor(
     private readonly disputeCasesService: DisputeCasesService,
     private readonly vgResponseMonitorScheduler: VGResponseMonitorScheduler,
-
-    private readonly comparablesQueueService: ComparablesQueueService,
+    private readonly analyzeAiQueueService: AnalyzeAiQueueService,
     private readonly supportingEvidenceQueueService: SupportingEvidenceQueueService,
+    private readonly objectionReasonGeneratorService: ObjectionReasonGeneratorService,
   ) {}
 
   /**
@@ -79,6 +81,7 @@ export class DisputeCasesController {
       'Validation error — missing required fields or invalid base64 attachment',
   })
   @ApiResponse({ status: 500, description: 'Internal server error' })
+  // Public endpoint — no auth guard. New client intake submitted before an account exists.
   @Post('intake/submit')
   async submitIntake(
     @Body() intakeDto: CreateDisputeIntakeDto,
@@ -90,6 +93,7 @@ export class DisputeCasesController {
    * v2 — simplified intake: accountantId is optional, legal grounds not required at submission
    * Used by the new single-step SubmitDisputePage frontend
    */
+  // Public endpoint — no auth guard. Simplified intake; client has no account at this stage.
   @Version('2')
   @Post('intake/submit')
   @ApiOperation({
@@ -112,6 +116,7 @@ export class DisputeCasesController {
     );
   }
 
+  // Public endpoint — no auth guard. Accessed via signed approval token in client email.
   @Post('approve')
   @HttpCode(200)
   @ApiOperation({
@@ -134,6 +139,7 @@ export class DisputeCasesController {
     return this.disputeCasesService.approveObjectionPackage(dto.token);
   }
 
+  // Public endpoint — no auth guard. Accessed via signed approval token in client email.
   @Get('approval-documents')
   @HttpCode(200)
   @ApiOperation({
@@ -465,57 +471,45 @@ export class DisputeCasesController {
 
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
+  @Get(':id/objection-reasons')
+  @ApiOperation({ summary: 'Get objection reasons for a dispute case (latest run)' })
+  @ApiParam({ name: 'id', description: 'Dispute case UUID' })
+  @ApiResponse({ status: 200, type: [ObjectionReasonResponseDto] })
+  @ApiResponse({ status: 401, description: 'Unauthorised' })
+  async getObjectionReasons(@Param('id', ParseUUIDPipe) id: string): Promise<ObjectionReasonResponseDto[]> {
+    return this.objectionReasonGeneratorService.getObjectionReasons(id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
   @Post(':id/analyze-ai')
   @ApiOperation({
     summary: 'Trigger AI analysis — comparable sales + supporting evidence',
-    description:
-      'Enqueues both jobs in parallel and returns their job IDs immediately. ' +
-      'Poll GET /:id/analyze-ai/status to track progress.',
+    description: 'Enqueues the combined analysis job and returns its job ID. Poll GET /:id/analyze-ai/status to track progress.',
   })
   @ApiParam({ name: 'id', description: 'Dispute case UUID' })
-  @ApiResponse({
-    status: 201,
-    description: 'Both jobs queued — { comparablesJobId, evidenceJobId }',
-  })
+  @ApiResponse({ status: 201, type: AnalyzeAiEnqueueResponseDto })
   @ApiResponse({ status: 401, description: 'Unauthorised' })
   @ApiResponse({ status: 404, description: 'Dispute case not found' })
   @ApiResponse({ status: 409, description: 'A job for this case is already waiting or active' })
   async analyzeAi(
     @Param('id', ParseUUIDPipe) id: string,
     @Req() req: { user: { id: string } },
-  ): Promise<{ comparablesJobId: string; evidenceJobId: string }> {
+  ): Promise<AnalyzeAiEnqueueResponseDto> {
     const address = await this.disputeCasesService.getPropertyAddressForCase(id);
-    const [comparables, evidence] = await Promise.all([
-      this.comparablesQueueService.enqueue({ dispute_case_id: id }, req.user.id),
-      this.supportingEvidenceQueueService.enqueue(id, address),
-    ]);
-    return { comparablesJobId: comparables.jobId, evidenceJobId: evidence.jobId };
+    return this.analyzeAiQueueService.enqueue(id, address, req.user.id);
   }
 
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @Get(':id/analyze-ai/status')
-  @ApiOperation({ summary: 'Get combined AI analysis job status' })
+  @ApiOperation({ summary: 'Get AI analysis job status' })
   @ApiParam({ name: 'id', description: 'Dispute case UUID' })
-  @ApiResponse({
-    status: 200,
-    description: '{ comparables, evidence, allCompleted }',
-  })
+  @ApiResponse({ status: 200, type: AnalyzeAiStatusResponseDto })
   @ApiResponse({ status: 401, description: 'Unauthorised' })
-  async analyzeAiStatus(@Param('id', ParseUUIDPipe) id: string): Promise<{
-    comparables: Awaited<ReturnType<ComparablesQueueService['getJobStatus']>> | null;
-    evidence: Awaited<ReturnType<SupportingEvidenceQueueService['getJobStatus']>> | null;
-    allCompleted: boolean;
-  }> {
-    const [comparables, evidence] = await Promise.all([
-      this.comparablesQueueService.getJobStatus(id).catch(() => null),
-      this.supportingEvidenceQueueService.getJobStatus(id).catch(() => null),
-    ]);
-    return {
-      comparables,
-      evidence,
-      allCompleted: comparables?.status === 'completed' && evidence?.status === 'completed',
-    };
+  @ApiResponse({ status: 404, description: 'Job not found for this dispute case' })
+  async analyzeAiStatus(@Param('id', ParseUUIDPipe) id: string): Promise<AnalyzeAiStatusResponseDto> {
+    return this.analyzeAiQueueService.getJobStatus(id);
   }
 
   @UseGuards(JwtAuthGuard)
