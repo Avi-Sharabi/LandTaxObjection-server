@@ -3,9 +3,9 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import { plainToInstance } from 'class-transformer';
-import { ConfigService } from '@nestjs/config';
-import axios, { type AxiosResponse } from 'axios';
+import { isAxiosError } from 'axios';
 import { ComparableSale } from './entities/comparable-sale.entity';
+import { AnthropicService } from 'src/ai/anthropic.service';
 import { CreateComparableDto } from './dto/create-comparable.dto';
 import { ComparableResponseDto } from './dto/comparable-response.dto';
 import { GenerateComparableSalesDto } from './dto/generate-comparable-sales.dto';
@@ -21,27 +21,12 @@ import { LlmParseException } from './exceptions/llm-parse.exception';
 import { LlmApiException } from './exceptions/llm-api.exception';
 import { MissingValuationDateException } from './exceptions/missing-valuation-date.exception';
 import { DisputeCase } from '../dispute-cases/entities/dispute-case.entity';
-import { McpService } from '../../mcp/mcp.service';
+import { SkillRegistryService } from '../../mcp/skill-registry.service';
 import { buildUserPrompt, SubjectContext } from './comparables.prompts';
 
 
 const MAX_CANDIDATE_SALES = 80;
 
-interface AnthropicErrorBody {
-  type: string;
-  error: { type: string; message: string };
-}
-
-interface AnthropicApiResponse {
-  stop_reason: string;
-  content: { type: string; text?: string }[];
-  usage?: {
-    input_tokens: number;
-    output_tokens: number;
-    cache_read_input_tokens?: number;
-    cache_creation_input_tokens?: number;
-  };
-}
 
 @Injectable()
 export class ComparablesService implements OnModuleInit {
@@ -54,9 +39,9 @@ export class ComparablesService implements OnModuleInit {
     private readonly comparablesRepository: Repository<ComparableSale>,
     @InjectRepository(DisputeCase)
     private readonly disputeCasesRepository: Repository<DisputeCase>,
-    private readonly configService: ConfigService,
     @InjectDataSource() private readonly dataSource: DataSource,
-    private readonly mcpService: McpService,
+    private readonly skillRegistry: SkillRegistryService,
+    private readonly anthropic: AnthropicService,
   ) { }
 
   private logEvent(context: string, data: Record<string, unknown>): void {
@@ -64,7 +49,7 @@ export class ComparablesService implements OnModuleInit {
   }
 
   async onModuleInit(): Promise<void> {
-    this.skillContent = this.mcpService.getSkillContent('nsw-land-tax-comparables');
+    this.skillContent = this.skillRegistry.getSkillContent('nsw-land-tax-comparables');
 
     const schemaRows: { column_name: string; data_type: string; is_nullable: string }[] =
       await this.dataSource.query(
@@ -161,12 +146,8 @@ export class ComparablesService implements OnModuleInit {
     correlationId?: string,
   ): Promise<ComparableResponseDto[]> {
     const start = Date.now();
-    const mcpPublicUrl = this.configService.get<string>('MCP_PUBLIC_URL');
-    const mcpUrl = mcpPublicUrl ? `${mcpPublicUrl}/api/mcp` : null;
-    // MCP_SECRET_TOKEN is only needed when MCP_PUBLIC_URL is configured
-    const mcpToken = mcpUrl ? this.configService.getOrThrow<string>('MCP_SECRET_TOKEN') : null;
 
-    this.logEvent('GENERATE.start', { correlationId, disputeCaseId: dto.dispute_case_id, mcpUrl: mcpUrl ?? 'disabled (no MCP_PUBLIC_URL)' });
+    this.logEvent('GENERATE.start', { correlationId, disputeCaseId: dto.dispute_case_id });
 
     const disputeCase = await this.disputeCasesRepository.findOne({
       where: { id: dto.dispute_case_id },
@@ -181,8 +162,59 @@ export class ComparablesService implements OnModuleInit {
     const systemPrompt = `${this.skillContent}\n\n## property_sales_raw schema (do NOT call list_tables or describe_table — query directly)\n\`\`\`\n${this.schemaBlock}\n\`\`\``;
 
     this.logEvent('GENERATE.anthropic.start', { correlationId, systemPromptLength: systemPrompt.length });
-    const { text: rawText, usage } = await this.callAnthropicApi(systemPrompt, userPrompt, mcpUrl, mcpToken, correlationId, dto.dispute_case_id);
-    const parsed = this.extractJsonArray(rawText);
+    const anthropicT = Date.now();
+    let rawText: string;
+    try {
+      const result = await this.anthropic.call({
+        systemBlocks: [{ text: systemPrompt }],
+        userMessage: userPrompt,
+        maxTokens: 32000,
+        mcpServers: true,
+      });
+
+      this.logEvent('GENERATE.token_usage', {
+        correlationId,
+        disputeCaseId: dto.dispute_case_id,
+        model: 'claude-sonnet-4-6',
+        input_tokens: result.usage.inputTokens,
+        output_tokens: result.usage.outputTokens,
+        cache_read_input_tokens: result.usage.cacheReadInputTokens,
+        cache_creation_input_tokens: result.usage.cacheCreationInputTokens,
+        durationMs: Date.now() - anthropicT,
+        stop_reason: result.stopReason,
+      });
+
+      if (result.stopReason === 'max_tokens') {
+        this.logger.error('[GENERATE] Response was truncated at max_tokens — increase max_tokens or reduce result set');
+        throw new LlmTruncationException();
+      }
+      if (result.stopReason === 'tool_use') {
+        this.logEvent('GENERATE.unexpected_tool_use', { correlationId, disputeCaseId: dto.dispute_case_id });
+        throw new LlmToolUseException();
+      }
+
+      rawText = result.text;
+    } catch (err: unknown) {
+      if (isAxiosError(err)) {
+        const status = err.response?.status;
+        this.logEvent('GENERATE.anthropic_error', {
+          correlationId,
+          status,
+          errorMessage: err.message,
+        });
+        if (status === 529 || status === 503) throw new LlmApiException('Anthropic API is temporarily overloaded. Please retry in a few seconds.', 503);
+        if (status === 401) throw new LlmApiException('Anthropic API key is invalid or expired.', 502);
+      }
+      throw err;
+    }
+
+    let parsed: Record<string, unknown>[];
+    try {
+      parsed = this.anthropic.parseJsonArray<Record<string, unknown>>(rawText);
+    } catch (parseErr) {
+      this.logger.error('[GENERATE] Could not parse JSON array from response', rawText.slice(0, 200));
+      throw new LlmParseException(parseErr instanceof Error ? parseErr.message : 'JSON parse failed');
+    }
 
     const candidateMap = new Map(candidates.map(c => [String(c.id), c]));
     const enriched = parsed.map(item => {
@@ -197,10 +229,6 @@ export class ComparablesService implements OnModuleInit {
       disputeCaseId: dto.dispute_case_id,
       savedCount: saved.length,
       totalDurationMs: Date.now() - start,
-      input_tokens: usage?.input_tokens ?? 0,
-      output_tokens: usage?.output_tokens ?? 0,
-      cache_read_input_tokens: usage?.cache_read_input_tokens ?? 0,
-      cache_creation_input_tokens: usage?.cache_creation_input_tokens ?? 0,
     });
     return saved;
   }
@@ -372,125 +400,6 @@ export class ComparablesService implements OnModuleInit {
     ].filter(Boolean).join('\n');
 
     return { adjusted_rate_per_sqm, adjusted_land_value, suggested_land_value, explanation };
-  }
-
-  private async callAnthropicApi(
-    systemPrompt: string,
-    userPrompt: string,
-    mcpUrl: string | null,
-    mcpToken: string | null,
-    correlationId?: string,
-    disputeCaseId?: string,
-  ): Promise<{ text: string; usage: AnthropicApiResponse['usage'] }> {
-    const anthropicT = Date.now();
-    const body = {
-      model: 'claude-sonnet-4-6',
-      max_tokens: 32000,
-      system: [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }],
-      ...(mcpUrl && mcpToken ? { mcp_servers: [{ type: 'url', url: mcpUrl, name: 'postgres', authorization_token: mcpToken }] } : {}),
-      messages: [{ role: 'user', content: userPrompt }],
-    };
-    const headers = {
-      'x-api-key': this.configService.get<string>('ANTHROPIC_API_KEY'),
-      'anthropic-version': '2023-06-01',
-      'anthropic-beta': 'mcp-client-2025-04-04,prompt-caching-2024-07-31',
-      'Content-Type': 'application/json',
-    };
-    const apiUrl = this.configService.getOrThrow<string>('ANTHROPIC_API_URL');
-
-    let response: AxiosResponse<AnthropicApiResponse> | undefined;
-    const maxRetries = 3;
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        response = await axios.post<AnthropicApiResponse>(apiUrl, body, { headers, timeout: 300000 });
-        break;
-      } catch (err: unknown) {
-        if (axios.isAxiosError(err)) {
-          const status = err.response?.status;
-          const errBody = err.response?.data as AnthropicErrorBody | undefined;
-          const errMsg = errBody?.error?.message ?? err.message;
-          this.logEvent('GENERATE.anthropic_error', { correlationId, attempt, status, errorType: errBody?.error?.type, errorMessage: errMsg });
-          if (status === 429 && attempt < maxRetries) {
-            const waitMatch = errMsg.match(/wait (\d+) second/i);
-            const waitSec = waitMatch ? parseInt(waitMatch[1], 10) + 2 : 65;
-            this.logger.warn(`[GENERATE] 429 rate limit — waiting ${waitSec}s then retrying (attempt ${attempt}/${maxRetries})`);
-            await new Promise(resolve => setTimeout(resolve, waitSec * 1000));
-            continue;
-          }
-          // Timeout or network error — no response received; retry without waiting
-          if (!status && attempt < maxRetries) {
-            this.logger.warn(`[GENERATE] Network timeout on attempt ${attempt}/${maxRetries} — retrying`);
-            continue;
-          }
-          if (status === 529 || status === 503) throw new LlmApiException('Anthropic API is temporarily overloaded. Please retry in a few seconds.', 503);
-          if (status === 401) throw new LlmApiException('Anthropic API key is invalid or expired.', 502);
-        }
-        throw err;
-      }
-    }
-
-    if (!response) throw new LlmApiException('No response received after retries', 503);
-    const { stop_reason, content, usage } = response.data;
-    this.logEvent('GENERATE.token_usage', {
-      correlationId,
-      disputeCaseId,
-      model: body.model,
-      input_tokens: usage?.input_tokens ?? 0,
-      output_tokens: usage?.output_tokens ?? 0,
-      cache_read_input_tokens: usage?.cache_read_input_tokens ?? 0,
-      cache_creation_input_tokens: usage?.cache_creation_input_tokens ?? 0,
-      durationMs: Date.now() - anthropicT,
-      stop_reason,
-    });
-
-    if (stop_reason === 'max_tokens') {
-      this.logger.error('[GENERATE] Response was truncated at max_tokens — increase max_tokens or reduce result set');
-      throw new LlmTruncationException();
-    }
-    if (stop_reason === 'tool_use') {
-      this.logEvent('GENERATE.unexpected_tool_use', { correlationId, disputeCaseId });
-      throw new LlmToolUseException();
-    }
-
-    const textBlock = content?.findLast((b) => b.type === 'text');
-    if (!textBlock) this.logger.warn('[GENERATE] No text block found in response content');
-    return { text: textBlock?.text ?? '', usage };
-  }
-
-  private extractJsonArray(raw: string): Record<string, unknown>[] {
-    // Find the first '[' that begins a JSON array ('{' or ']' follows after whitespace).
-    // Skips prose like "[Tool call: ...]" that the MCP beta sometimes emits in text blocks.
-    let arrayStart = -1;
-    for (let i = raw.indexOf('['); i !== -1; i = raw.indexOf('[', i + 1)) {
-      const next = raw.slice(i + 1).trimStart();
-      if (next.startsWith('{') || next.startsWith(']')) { arrayStart = i; break; }
-    }
-    if (arrayStart === -1) {
-      this.logger.error('[GENERATE] Could not locate JSON array in response', raw.slice(0, 200));
-      throw new LlmParseException('response did not contain a JSON array');
-    }
-
-    // Walk the string with bracket depth to find the matching closing ']'.
-    // Using lastIndexOf(']') would pick up brackets in trailing prose (e.g. "[flagged]").
-    let arrayEnd = -1;
-    let depth = 0;
-    let inString = false;
-    let escaped = false;
-    for (let i = arrayStart; i < raw.length; i++) {
-      const ch = raw[i];
-      if (escaped) { escaped = false; continue; }
-      if (ch === '\\' && inString) { escaped = true; continue; }
-      if (ch === '"') { inString = !inString; continue; }
-      if (inString) { continue; }
-      if (ch === '[' || ch === '{') depth++;
-      else if (ch === ']' || ch === '}') { if (--depth === 0) { arrayEnd = i; break; } }
-    }
-    if (arrayEnd === -1) {
-      this.logger.error('[GENERATE] Could not find closing bracket for JSON array', raw.slice(0, 200));
-      throw new LlmParseException('JSON array was not properly closed');
-    }
-
-    return JSON.parse(raw.slice(arrayStart, arrayEnd + 1)) as Record<string, unknown>[];
   }
 
   private async persistComparables(

@@ -1,4 +1,5 @@
-import { IsDateString, IsNumber, IsOptional, IsString, Max, Min } from 'class-validator';
+import { ApiProperty } from '@nestjs/swagger';
+import { IsDateString, IsNumber, IsOptional, IsString, Max, Min, MinLength } from 'class-validator';
 
 export class SearchComparableSalesArgsDto {
   @IsOptional()
@@ -42,4 +43,11 @@ export class QueryArgsDto {
 export class DescribeTableArgsDto {
   @IsString()
   table_name: string;
+}
+
+export class UpdateDatabaseArgsDto {
+  @ApiProperty({ description: 'Plain-text description of the database update to perform.', example: 'Set status to vg_approved for the dispute case with reference LT-2024-001.' })
+  @IsString()
+  @MinLength(10)
+  instruction: string;
 }
