@@ -67,6 +67,16 @@ export class GenerateComparableSalesDto {
   @IsString()
   zoning?: string;
 
+  @ApiProperty({ example: 'PRESTONS', required: false, nullable: true, description: 'Suburb — overrides property.suburb if provided' })
+  @IsOptional()
+  @IsString()
+  suburb?: string;
+
+  @ApiProperty({ example: '2170', required: false, nullable: true, description: 'Postcode — overrides property.postcode if provided' })
+  @IsOptional()
+  @IsString()
+  postcode?: string;
+
   // ── Valuation date — loaded from valuation_notice if not provided ─────────
 
   @ApiProperty({ example: '2025-07-01', required: false, nullable: true, description: 'Valuation date (YYYY-MM-DD) — overrides valuation_notice.valuation_date if provided' })

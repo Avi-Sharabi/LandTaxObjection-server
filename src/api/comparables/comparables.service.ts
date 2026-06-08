@@ -19,6 +19,7 @@ import { LlmTruncationException } from './exceptions/llm-truncation.exception';
 import { LlmToolUseException } from './exceptions/llm-tool-use.exception';
 import { LlmParseException } from './exceptions/llm-parse.exception';
 import { LlmApiException } from './exceptions/llm-api.exception';
+import { MissingValuationDateException } from './exceptions/missing-valuation-date.exception';
 import { DisputeCase } from '../dispute-cases/entities/dispute-case.entity';
 import { McpService } from '../../mcp/mcp.service';
 import { buildUserPrompt, SubjectContext } from './comparables.prompts';
@@ -189,15 +190,8 @@ export class ComparablesService implements OnModuleInit {
       return { ...candidate, ...this.computeAdjustedFields(candidate, subject) };
     });
 
-    const vgRate = subject.landAreaSqm && subject.landAreaSqm > 0
-      ? Math.round(subject.vgValueCurrent / subject.landAreaSqm)
-      : null;
-    const supporting = vgRate !== null
-      ? enriched.filter(item => item.adjusted_rate_per_sqm !== null && Number(item.adjusted_rate_per_sqm) <= vgRate)
-      : enriched;
-
-    this.logEvent('GENERATE.persist', { correlationId, count: supporting.length, filteredOut: enriched.length - supporting.length });
-    const saved = await this.persistComparables(supporting, dto.dispute_case_id, createdById);
+    this.logEvent('GENERATE.persist', { correlationId, count: enriched.length });
+    const saved = await this.persistComparables(enriched, dto.dispute_case_id, createdById);
     this.logEvent('GENERATE.complete', {
       correlationId,
       disputeCaseId: dto.dispute_case_id,
@@ -218,8 +212,8 @@ export class ComparablesService implements OnModuleInit {
     const vn = disputeCase.valuation_notice;
     return {
       pid: dto.pid ?? disputeCase.property?.pid ?? 'unknown',
-      suburb: (disputeCase.property?.suburb ?? '').trim().toUpperCase(),
-      postcode: disputeCase.property?.postcode ?? null,
+      suburb: (dto.suburb ?? disputeCase.property?.suburb ?? '').trim().toUpperCase(),
+      postcode: dto.postcode ?? disputeCase.property?.postcode ?? null,
       landAreaSqm: dto.land_area_sqm ?? (Number(disputeCase.property?.land_area_sqm) || null),
       zoning: dto.zoning ?? disputeCase.property?.zoning ?? 'unknown',
       lotDp: dto.lot_dp ?? disputeCase.property?.lot_dp ?? null,
@@ -229,7 +223,7 @@ export class ComparablesService implements OnModuleInit {
       vgValuePrior: dto.vg_land_value_prior ?? (Number(vn?.prior_land_value) || 0),
       landAreaVgSqm: dto.land_area_vg_sqm ?? (Number(vn?.land_area_vg_sqm) || null),
       valuationDate: dto.valuation_date
-        ?? (vn?.valuation_date ? new Date(vn.valuation_date).toISOString().split('T')[0] : null) ?? (() => { throw new Error(`Valuation notice for dispute case ${disputeCase.id} has no valuation_date`); })(),
+        ?? (vn?.valuation_date ? new Date(vn.valuation_date).toISOString().split('T')[0] : null) ?? (() => { throw new MissingValuationDateException(disputeCase.id); })(),
     };
   }
 
@@ -389,66 +383,58 @@ export class ComparablesService implements OnModuleInit {
     disputeCaseId?: string,
   ): Promise<{ text: string; usage: AnthropicApiResponse['usage'] }> {
     const anthropicT = Date.now();
-    let response: AxiosResponse<AnthropicApiResponse>;
-    try {
-      response = await axios.post<AnthropicApiResponse>(
-        this.configService.getOrThrow<string>('ANTHROPIC_API_URL'),
-        {
-          model: 'claude-sonnet-4-6',
-          max_tokens: 32000,
-          system: [
-            {
-              type: 'text',
-              text: systemPrompt,
-              cache_control: { type: 'ephemeral' },
-            },
-          ],
-          ...(mcpUrl && mcpToken ? {
-            mcp_servers: [
-              {
-                type: 'url',
-                url: mcpUrl,
-                name: 'postgres',
-                authorization_token: mcpToken,
-              },
-            ],
-          } : {}),
-          messages: [{ role: 'user', content: userPrompt }],
-        },
-        {
-          headers: {
-            'x-api-key': this.configService.get<string>('ANTHROPIC_API_KEY'),
-            'anthropic-version': '2023-06-01',
-            'anthropic-beta': 'mcp-client-2025-04-04,prompt-caching-2024-07-31',
-            'Content-Type': 'application/json',
-          },
-        },
-      );
-    } catch (err: unknown) {
-      if (axios.isAxiosError(err)) {
-        const status = err.response?.status;
-        const body = err.response?.data as AnthropicErrorBody | undefined;
-        this.logEvent('GENERATE.anthropic_error', {
-          correlationId,
-          status,
-          errorType: body?.error?.type,
-          errorMessage: body?.error?.message ?? err.message,
-        });
-        if (status === 529 || status === 503) {
-          throw new LlmApiException('Anthropic API is temporarily overloaded. Please retry in a few seconds.', 503);
+    const body = {
+      model: 'claude-sonnet-4-6',
+      max_tokens: 32000,
+      system: [{ type: 'text', text: systemPrompt, cache_control: { type: 'ephemeral' } }],
+      ...(mcpUrl && mcpToken ? { mcp_servers: [{ type: 'url', url: mcpUrl, name: 'postgres', authorization_token: mcpToken }] } : {}),
+      messages: [{ role: 'user', content: userPrompt }],
+    };
+    const headers = {
+      'x-api-key': this.configService.get<string>('ANTHROPIC_API_KEY'),
+      'anthropic-version': '2023-06-01',
+      'anthropic-beta': 'mcp-client-2025-04-04,prompt-caching-2024-07-31',
+      'Content-Type': 'application/json',
+    };
+    const apiUrl = this.configService.getOrThrow<string>('ANTHROPIC_API_URL');
+
+    let response: AxiosResponse<AnthropicApiResponse> | undefined;
+    const maxRetries = 3;
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        response = await axios.post<AnthropicApiResponse>(apiUrl, body, { headers, timeout: 300000 });
+        break;
+      } catch (err: unknown) {
+        if (axios.isAxiosError(err)) {
+          const status = err.response?.status;
+          const errBody = err.response?.data as AnthropicErrorBody | undefined;
+          const errMsg = errBody?.error?.message ?? err.message;
+          this.logEvent('GENERATE.anthropic_error', { correlationId, attempt, status, errorType: errBody?.error?.type, errorMessage: errMsg });
+          if (status === 429 && attempt < maxRetries) {
+            const waitMatch = errMsg.match(/wait (\d+) second/i);
+            const waitSec = waitMatch ? parseInt(waitMatch[1], 10) + 2 : 65;
+            this.logger.warn(`[GENERATE] 429 rate limit — waiting ${waitSec}s then retrying (attempt ${attempt}/${maxRetries})`);
+            await new Promise(resolve => setTimeout(resolve, waitSec * 1000));
+            continue;
+          }
+          // Timeout or network error — no response received; retry without waiting
+          if (!status && attempt < maxRetries) {
+            this.logger.warn(`[GENERATE] Network timeout on attempt ${attempt}/${maxRetries} — retrying`);
+            continue;
+          }
+          if (status === 529 || status === 503) throw new LlmApiException('Anthropic API is temporarily overloaded. Please retry in a few seconds.', 503);
+          if (status === 401) throw new LlmApiException('Anthropic API key is invalid or expired.', 502);
         }
-        if (status === 401) {
-          throw new LlmApiException('Anthropic API key is invalid or expired.', 502);
-        }
+        throw err;
       }
-      throw err;
     }
 
+    if (!response) throw new LlmApiException('No response received after retries', 503);
     const { stop_reason, content, usage } = response.data;
-    console.log('GENERATE.token_usage', {
+    this.logEvent('GENERATE.token_usage', {
       correlationId,
       disputeCaseId,
-      model: 'claude-sonnet-4-6',
+      model: body.model,
       input_tokens: usage?.input_tokens ?? 0,
       output_tokens: usage?.output_tokens ?? 0,
       cache_read_input_tokens: usage?.cache_read_input_tokens ?? 0,
