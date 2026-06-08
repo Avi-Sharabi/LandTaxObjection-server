@@ -8,7 +8,7 @@ export class SkillRegistryService {
   private readonly skills = new Map<string, string>();
 
   constructor() {
-    const skillsDir = join(__dirname, '..', 'skills');
+    const skillsDir = join(__dirname, '..', '..', '..', 'skills');
     if (!fs.existsSync(skillsDir)) return;
     for (const file of fs.readdirSync(skillsDir)) {
       if (!file.endsWith('.md')) continue;
