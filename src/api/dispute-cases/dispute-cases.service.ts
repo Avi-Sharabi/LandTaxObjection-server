@@ -557,6 +557,15 @@ export class DisputeCasesService {
     return this.buildPropertyAddress(disputeCase.property);
   }
 
+  async getCaseReference(id: string): Promise<string> {
+    const found = await this.disputeCasesRepository.findOne({
+      where: { id },
+      select: { id: true, case_reference: true },
+    });
+    if (!found) throw new NotFoundException(`Dispute case #${id} not found`);
+    return found.case_reference;
+  }
+
   private buildPropertyAddress(
     property: {
       address: string | null;

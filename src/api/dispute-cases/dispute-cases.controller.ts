@@ -45,7 +45,7 @@ import { EvidenceIssueResponseDto } from '../supporting-evidence/dto/evidence-is
 import { AnalyzeAiQueueService } from './analyze-ai-queue.service';
 import { ObjectionReasonGeneratorService } from './objection-reason-generator.service';
 import { ObjectionReasonResponseDto } from './dto/objection-reason-response.dto';
-import { AnalyzeAiEnqueueResponseDto, AnalyzeAiStatusResponseDto } from './dto/analyze-ai-response.dto';
+import { AnalyzeAiEnqueueResponseDto, AnalyzeAiQueueResponseDto, AnalyzeAiStatusResponseDto } from './dto/analyze-ai-response.dto';
 
 @ApiTags('dispute-cases')
 @Controller({
@@ -498,6 +498,17 @@ export class DisputeCasesController {
   ): Promise<AnalyzeAiEnqueueResponseDto> {
     const address = await this.disputeCasesService.getPropertyAddressForCase(id);
     return this.analyzeAiQueueService.enqueue(id, address, req.user.id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @Get('analyze-ai/queue')
+  @ApiOperation({ summary: 'List all waiting and active AI analysis jobs' })
+  @ApiResponse({ status: 200, type: AnalyzeAiQueueResponseDto })
+  @ApiResponse({ status: 401, description: 'Unauthorised' })
+  async analyzeAiQueue(): Promise<AnalyzeAiQueueResponseDto> {
+    const jobs = await this.analyzeAiQueueService.getQueueSnapshot();
+    return { jobs, total: jobs.length };
   }
 
   @UseGuards(JwtAuthGuard)
