@@ -3,6 +3,8 @@ import { AnalyzeAiJobNotFoundException } from './exceptions/analyze-ai-job-not-f
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { ANALYZE_AI_QUEUE, AnalyzeAiJobData, AnalyzeAiJobResult } from './analyze-ai.processor';
+import { AnalyzeAiQueueItemDto } from './dto/analyze-ai-response.dto';
+import { DisputeCasesService } from './dispute-cases.service';
 
 export type AnalyzeAiJobStatus = 'waiting' | 'active' | 'completed' | 'failed' | 'unknown';
 
@@ -20,6 +22,7 @@ export class AnalyzeAiQueueService {
   constructor(
     @InjectQueue(ANALYZE_AI_QUEUE)
     private readonly queue: Queue<AnalyzeAiJobData, AnalyzeAiJobResult>,
+    private readonly disputeCasesService: DisputeCasesService,
   ) {}
 
   async enqueue(
@@ -40,10 +43,44 @@ export class AnalyzeAiQueueService {
     const job = await this.queue.add(
       'analyze',
       { disputeCaseId, address, userId },
-      { jobId: disputeCaseId },
+      {
+        jobId: disputeCaseId,
+        removeOnComplete: { age: 3 * 24 * 3600, count: 100 },
+        removeOnFail: { age: 3 * 24 * 3600 },
+      },
     );
     this.logger.log(`Queued analyze-ai job ${job.id} for case ${disputeCaseId}`);
     return { jobId: job.id as string, status: 'queued' };
+  }
+
+  async getQueueSnapshot(): Promise<AnalyzeAiQueueItemDto[]> {
+    const [active, waiting, completed, failed] = await Promise.all([
+      this.queue.getActive(),
+      this.queue.getWaiting(),
+      this.queue.getCompleted(),
+      this.queue.getFailed(),
+    ]);
+
+    const allJobs = [
+      ...active.map(job => ({ job, status: 'active' as const })),
+      ...waiting.map(job => ({ job, status: 'waiting' as const })),
+      ...completed.map(job => ({ job, status: 'completed' as const })),
+      ...failed.map(job => ({ job, status: 'failed' as const })),
+    ];
+
+    return Promise.all(
+      allJobs.map(async ({ job, status }) => {
+        const caseReference = await this.disputeCasesService.getCaseReference(job.data.disputeCaseId);
+        return {
+          jobId: job.id as string,
+          caseId: job.data.disputeCaseId,
+          caseReference,
+          propertyAddress: job.data.address,
+          status,
+          enqueuedAt: job.timestamp,
+        };
+      }),
+    );
   }
 
   async getJobStatus(disputeCaseId: string): Promise<{
