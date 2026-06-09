@@ -19,7 +19,7 @@ export interface AnalyzeAiJobResult {
   status: 'completed';
 }
 
-@Processor(ANALYZE_AI_QUEUE, { concurrency: 1 })
+@Processor(ANALYZE_AI_QUEUE, { concurrency: 1, lockDuration: 600000 })
 export class AnalyzeAiProcessor extends WorkerHost {
   private readonly logger = new Logger(AnalyzeAiProcessor.name);
 
