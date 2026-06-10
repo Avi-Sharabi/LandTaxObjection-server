@@ -14,7 +14,18 @@ export class PuppeteerService {
   async launch(): Promise<Browser> {
     return (puppeteer as unknown as { launch: (opts: unknown) => Promise<Browser> }).launch({
       headless: true,
-      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--no-zygote'],
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--no-zygote',
+        '--single-process',
+        '--disable-extensions',
+        '--disable-background-networking',
+        '--disable-default-apps',
+        '--js-flags=--max-old-space-size=512',
+      ],
     });
   }
 

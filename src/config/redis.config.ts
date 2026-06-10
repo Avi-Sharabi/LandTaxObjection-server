@@ -8,12 +8,13 @@ export function createRedisConfig(config: ConfigService): BullRootModuleOptions 
       host: config.getOrThrow<string>('REDIS_HOST'),
       port: config.getOrThrow<number>('REDIS_PORT'),
       lazyConnect: true,
-      enableOfflineQueue: false,
-      maxRetriesPerRequest: null,
+      maxRetriesPerRequest: null,   // required by BullMQ
+      retryStrategy: (times) => Math.min(times * 200, 5000),
       ...(isProduction(config) && {
         password: config.getOrThrow<string>('REDIS_PASSWORD'),
         tls: {},
         enableReadyCheck: false,
+        keepAlive: 30000,
       }),
     },
   };
