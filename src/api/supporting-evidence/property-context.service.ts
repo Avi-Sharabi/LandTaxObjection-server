@@ -109,14 +109,12 @@ export class PropertyContextService {
       lotAreaM2 = meta.land_area_sqm;
     }
 
-    const [spatialBase64, contextBase64, closeupBase64] = await Promise.all([
-      this.puppeteerSvc.capturePortalScreenshot(confirmedAddress, propId, browser)
-        .catch(e => { this.logger.warn(`Portal screenshot: ${e.message}`); return null; }),
-      this.puppeteerSvc.captureContextSatellite(lat, lng, browser)
-        .catch(e => { this.logger.warn(`Context satellite: ${e.message}`); return null; }),
-      this.puppeteerSvc.captureCloseupSatellite(lat, lng, browser)
-        .catch(e => { this.logger.warn(`Closeup satellite: ${e.message}`); return null; }),
-    ]);
+    const spatialBase64 = await this.puppeteerSvc.capturePortalScreenshot(confirmedAddress, propId, browser)
+      .catch(e => { this.logger.warn(`Portal screenshot: ${e.message}`); return null; });
+    const contextBase64 = await this.puppeteerSvc.captureContextSatellite(lat, lng, browser)
+      .catch(e => { this.logger.warn(`Context satellite: ${e.message}`); return null; });
+    const closeupBase64 = await this.puppeteerSvc.captureCloseupSatellite(lat, lng, browser)
+      .catch(e => { this.logger.warn(`Closeup satellite: ${e.message}`); return null; });
 
     return {
       propId,
