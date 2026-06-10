@@ -4,6 +4,7 @@ import {
   Column,
   CreateDateColumn,
   UpdateDateColumn,
+  DeleteDateColumn,
   ManyToOne,
   OneToMany,
   JoinColumn,
@@ -155,6 +156,12 @@ export class Client {
 
   @UpdateDateColumn({ type: 'timestamptz' })
   updated_at: Date;
+
+  @DeleteDateColumn({ name: 'deleted_at', type: 'timestamptz', nullable: true })
+  deleted_at: Date | null;
+
+  @Column({ name: 'deleted_by', type: 'uuid', nullable: true })
+  deleted_by: string | null;
 
   // ─── Relations ───────────────────────────────────────────────────────────────
 

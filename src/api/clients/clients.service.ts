@@ -2,7 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { AzureBlobService } from 'src/common/azure-blob/azure-blob.service';
 import { XpmService } from 'src/common/xpm/xpm.service';
-import { FindOptionsWhere, ILike, Repository } from 'typeorm';
+import { DataSource, FindOptionsWhere, ILike, Repository } from 'typeorm';
 import { DisputeCase } from '../dispute-cases/entities/dispute-case.entity';
 import { User } from '../users/entities/user.entity';
 import { AcceptTCDto } from './dto/accept-tc.dto';
@@ -20,6 +20,7 @@ import { ConfigService } from '@nestjs/config';
 @Injectable()
 export class ClientsService {
   constructor(
+    private readonly dataSource: DataSource,
     @InjectRepository(Client)
     private clientsRepository: Repository<Client>,
     @InjectRepository(DisputeCase)
@@ -161,9 +162,38 @@ export class ClientsService {
     };
   }
 
-  async remove(id: string): Promise<{ message: string }> {
-    const client = await this.findOne(id);
-    await this.clientsRepository.remove(client);
-    return { message: `Client #${id} removed` };
+  async remove(id: string, deletedById: string): Promise<{ message: string }> {
+    const exists = await this.clientsRepository.findOne({ where: { id }, select: { id: true } });
+    if (!exists) throw new NotFoundException(`Client #${id} not found`);
+
+    const now = new Date();
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      await queryRunner.manager
+        .createQueryBuilder()
+        .update(DisputeCase)
+        .set({ deleted_at: now, deleted_by: deletedById })
+        .where('client_id = :id AND deleted_at IS NULL', { id })
+        .execute();
+
+      await queryRunner.manager
+        .createQueryBuilder()
+        .update(Client)
+        .set({ deleted_at: now, deleted_by: deletedById })
+        .where('id = :id', { id })
+        .execute();
+
+      await queryRunner.commitTransaction();
+    } catch (err) {
+      await queryRunner.rollbackTransaction();
+      throw err;
+    } finally {
+      await queryRunner.release();
+    }
+
+    return { message: `Client #${id} has been deleted` };
   }
 }

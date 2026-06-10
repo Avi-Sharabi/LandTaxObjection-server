@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { AiUpdateDatabaseModule } from './ai-update-database/update-database.module';
 import { AssessmentDocumentsModule } from './assessment-documents/assessment-documents.module';
 import { ClientsModule } from './clients/clients.module';
+import { CleanupModule } from './cleanup/cleanup.module';
 import { ComparablesModule } from './comparables/comparables.module';
 import { DisputeCasesModule } from './dispute-cases/dispute-cases.module';
 import { DisputeConstraintsModule } from './dispute-constraints/dispute-constraints.module';
@@ -22,6 +23,7 @@ import { NotificationsModule } from './notifications/notifications.module';
     AuthModule,
     AssessmentDocumentsModule,
     ClientsModule,
+    CleanupModule,
     ComparablesModule,
     FyiAiModule,
     FyiUploadModule,

@@ -1,15 +1,42 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsOptional, IsEnum, IsEmail, IsUUID } from 'class-validator';
+import { IsString, IsOptional, IsEnum, IsEmail, IsUUID, IsDateString } from 'class-validator';
 import { ClientStatus } from '../entities/client.entity';
 
 export class CreateClientDto {
 
-  @ApiProperty({
-    example: 'ABC Holdings Pty Ltd',
-    description: 'Client name',
-  })
+  @ApiProperty({ example: 'ABC Holdings Pty Ltd', description: 'Client name' })
   @IsString()
   name: string;
+
+  @ApiPropertyOptional({ example: 'Mr' })
+  @IsOptional()
+  @IsString()
+  title?: string;
+
+  @ApiPropertyOptional({ example: 'Male' })
+  @IsOptional()
+  @IsString()
+  gender?: string;
+
+  @ApiPropertyOptional({ example: 'John' })
+  @IsOptional()
+  @IsString()
+  first_name?: string;
+
+  @ApiPropertyOptional({ example: 'A' })
+  @IsOptional()
+  @IsString()
+  middle_name?: string;
+
+  @ApiPropertyOptional({ example: 'Smith' })
+  @IsOptional()
+  @IsString()
+  last_name?: string;
+
+  @ApiPropertyOptional({ example: '1980-01-15' })
+  @IsOptional()
+  @IsDateString()
+  date_of_birth?: string;
 
   @ApiPropertyOptional({
     example: 'client@email.com',
@@ -60,17 +87,37 @@ export class CreateClientDto {
   @IsString()
   postcode?: string;
 
-  @ApiPropertyOptional({
-    example: 'Australia',
-  })
+  @ApiPropertyOptional({ example: 'Australia' })
   @IsOptional()
   @IsString()
   country?: string;
 
-  @ApiPropertyOptional({
-    example: '12345678901',
-    description: 'Australian Business Number',
-  })
+  @ApiPropertyOptional({ example: '123 George St' })
+  @IsOptional()
+  @IsString()
+  postal_address?: string;
+
+  @ApiPropertyOptional({ example: 'Sydney' })
+  @IsOptional()
+  @IsString()
+  postal_city?: string;
+
+  @ApiPropertyOptional({ example: 'NSW' })
+  @IsOptional()
+  @IsString()
+  postal_region?: string;
+
+  @ApiPropertyOptional({ example: '2000' })
+  @IsOptional()
+  @IsString()
+  postal_postcode?: string;
+
+  @ApiPropertyOptional({ example: 'Australia' })
+  @IsOptional()
+  @IsString()
+  postal_country?: string;
+
+  @ApiPropertyOptional({ example: '12345678901', description: 'Australian Business Number' })
   @IsOptional()
   @IsString()
   business_number?: string;
@@ -82,9 +129,32 @@ export class CreateClientDto {
   @IsString()
   company_number?: string;
 
-  @ApiPropertyOptional({
-    example: 'CLIENT001',
-  })
+  @ApiPropertyOptional({ example: 'Pty Ltd' })
+  @IsOptional()
+  @IsString()
+  business_structure?: string;
+
+  @ApiPropertyOptional({ example: '12345678' })
+  @IsOptional()
+  @IsString()
+  tax_number?: string;
+
+  @ApiPropertyOptional({ example: '+6129876543' })
+  @IsOptional()
+  @IsString()
+  fax?: string;
+
+  @ApiPropertyOptional({ example: 'https://example.com' })
+  @IsOptional()
+  @IsString()
+  website?: string;
+
+  @ApiPropertyOptional({ example: 'Referral' })
+  @IsOptional()
+  @IsString()
+  referral_source?: string;
+
+  @ApiPropertyOptional({ example: 'CLIENT001' })
   @IsOptional()
   @IsString()
   client_code?: string;

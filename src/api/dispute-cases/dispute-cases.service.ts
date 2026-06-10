@@ -896,14 +896,21 @@ export class DisputeCasesService {
     }
   }
 
-  async remove(id: string): Promise<{ message: string }> {
+  async remove(id: string, deletedById: string): Promise<{ message: string }> {
     const disputeCase = await this.disputeCasesRepository.findOne({
       where: { id },
     });
     if (!disputeCase)
       throw new NotFoundException(`Dispute case #${id} not found`);
-    await this.disputeCasesRepository.remove(disputeCase);
-    return { message: `Dispute case #${id} removed` };
+
+    await this.disputeCasesRepository
+      .createQueryBuilder()
+      .update()
+      .set({ deleted_at: new Date(), deleted_by: deletedById })
+      .where('id = :id AND deleted_at IS NULL', { id })
+      .execute();
+
+    return { message: `Dispute case #${id} has been deleted` };
   }
 
 
