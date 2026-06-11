@@ -10,6 +10,7 @@ import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { AuthResponseDto } from './dto/auth-response.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { AuthenticatedUser } from './strategies/jwt.strategy';
 
 @ApiTags('auth')
 @Controller({ path: 'auth', version: '1' })
@@ -34,17 +35,21 @@ export class AuthController {
   @ApiOperation({ summary: 'Get current authenticated user' })
   @ApiResponse({ status: 200, type: AuthResponseDto })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
-  getMe(@Req() req: Request & { user: AuthResponseDto }): AuthResponseDto {
-    return req.user;
+  getMe(@Req() req: Request & { user: AuthenticatedUser }): AuthResponseDto {
+    const { id, email, fullName, role } = req.user;
+    return { id, email, fullName, role };
   }
 
   @Post('logout')
   @HttpCode(HttpStatus.NO_CONTENT)
   @UseGuards(JwtAuthGuard)
   @ApiCookieAuth()
-  @ApiOperation({ summary: 'Logout — clears the access_token cookie' })
+  @ApiOperation({ summary: 'Logout — clears the access_token cookie and revokes the token' })
   @ApiResponse({ status: 204, description: 'Logged out successfully' })
-  logout(@Res({ passthrough: true }) response: Response): void {
-    this.authService.logout(response);
+  logout(
+    @Req() req: Request & { user: AuthenticatedUser },
+    @Res({ passthrough: true }) response: Response,
+  ): void {
+    this.authService.logout(response, req.user.jti, req.user.exp);
   }
 }

@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
+import { randomUUID } from 'crypto';
 import type { Response } from 'express';
 import * as bcrypt from 'bcrypt';
 import { UsersService } from '../users/users.service';
@@ -8,6 +9,7 @@ import { LoginDto } from './dto/login.dto';
 import { AuthResponseDto } from './dto/auth-response.dto';
 import { InvalidCredentialsException } from './exceptions/invalid-credentials.exception';
 import { JwtPayload } from './strategies/jwt.strategy';
+import { TokenBlacklistService } from './token-blacklist.service';
 
 @Injectable()
 export class AuthService {
@@ -15,6 +17,7 @@ export class AuthService {
     private readonly usersService: UsersService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
+    private readonly tokenBlacklist: TokenBlacklistService,
   ) {}
 
   async login(dto: LoginDto, response: Response): Promise<AuthResponseDto> {
@@ -37,10 +40,10 @@ export class AuthService {
       sub: user.id,
       email: user.email,
       role: user.role,
+      jti: randomUUID(),
     };
 
     const token = this.jwtService.sign(payload);
-    const isProduction = this.configService.get<string>('NODE_ENV') === 'production';
 
     response.cookie('access_token', token, {
       httpOnly: true,
@@ -68,7 +71,14 @@ export class AuthService {
     };
   }
 
-  logout(response: Response): void {
-    response.clearCookie('access_token', { path: '/' });
+  logout(response: Response, jti: string, exp: number): void {
+    this.tokenBlacklist.add(jti, exp * 1000); // exp is in seconds; convert to ms
+
+    response.clearCookie('access_token', {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'none',
+      path: '/',
+    });
   }
 }
