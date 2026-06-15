@@ -6,6 +6,7 @@ import { ComparablesService } from '../comparables/comparables.service';
 import { SupportingEvidenceService } from '../supporting-evidence/supporting-evidence.service';
 import { InputComparable } from '../supporting-evidence/supporting-evidence.types';
 import { ObjectionReasonGeneratorService } from './objection-reason-generator.service';
+import { AiPropertySearchService } from './ai-property-search.service';
 
 export const ANALYZE_AI_QUEUE = 'analyze-ai';
 
@@ -28,6 +29,7 @@ export class AnalyzeAiProcessor extends WorkerHost {
     private readonly comparablesService: ComparablesService,
     private readonly supportingEvidenceService: SupportingEvidenceService,
     private readonly objectionReasonGeneratorService: ObjectionReasonGeneratorService,
+    private readonly aiPropertySearchService: AiPropertySearchService,
   ) {
     super();
   }
@@ -47,10 +49,15 @@ export class AnalyzeAiProcessor extends WorkerHost {
       this.logger.log(JSON.stringify({ context: 'ANALYZE_AI.gathering_entity_evidence', jobId: job.id, disputeCaseId }));
       await this.objectionReasonGeneratorService.gatherEntityEvidence(disputeCaseId, ctx);
 
+      // Step 1c: AI web search — always runs; AI-found value is preferred over SIX Maps in comparables
+      this.logger.log(JSON.stringify({ context: 'ANALYZE_AI.ai_property_search', jobId: job.id, disputeCaseId }));
+      const aiPropertyDetails = await this.aiPropertySearchService.enrichPropertyFromWeb(disputeCaseId, address, ctx.lotAreaM2 ?? undefined);
+
       // Step 2: Generate comparable sales — enrich DTO with ePlanning-confirmed address fields
       // so the prefetch finds real candidates even when the property entity lacks suburb/postcode.
       this.logger.log(JSON.stringify({ context: 'ANALYZE_AI.generating_comparables', jobId: job.id, disputeCaseId }));
       const addrMatch = ctx.confirmedAddress.match(/^.+\s+([A-Z][A-Z\s]+)\s+(\d{4})\s*$/i);
+      if (!addrMatch) this.logger.warn(JSON.stringify({ context: 'ANALYZE_AI.addr_parse_failed', jobId: job.id, confirmedAddress: ctx.confirmedAddress }));
       const zoningLayer = ctx.apiData.layers?.find(l => l.layerName === 'Land Zoning Map');
       const zoningCode = (zoningLayer?.results?.[0]?.['Zone'] ?? null) as string | null;
       const lotDp =
@@ -60,7 +67,8 @@ export class AnalyzeAiProcessor extends WorkerHost {
       await this.comparablesService.generateComparableSales(
         {
           dispute_case_id: disputeCaseId,
-          land_area_sqm: ctx.lotAreaM2 ?? undefined,
+          land_area_sqm: aiPropertyDetails?.land_area_sqm ?? undefined,
+          land_area_eplanning_sqm: ctx.lotAreaM2 ?? undefined,
           suburb: addrMatch?.[1]?.trim().toUpperCase() ?? undefined,
           postcode: addrMatch?.[2] ?? undefined,
           zoning: zoningCode ?? undefined,

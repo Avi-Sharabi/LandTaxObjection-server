@@ -37,6 +37,7 @@ import { DisputeObjectionReason } from './entities/dispute-objection-reason.enti
 import { ObjectionReasonMarkdownService } from './objection-reason-markdown.service';
 import { ObjectionReasonBrowserService } from './objection-reason-browser.service';
 import { ObjectionReasonGeneratorService } from './objection-reason-generator.service';
+import { AiPropertySearchService } from './ai-property-search.service';
 
 @Module({
   imports: [
@@ -73,6 +74,7 @@ import { ObjectionReasonGeneratorService } from './objection-reason-generator.se
     ObjectionReasonMarkdownService,
     ObjectionReasonBrowserService,
     ObjectionReasonGeneratorService,
+    AiPropertySearchService,
     DisputeIntakeOrchestrator,
     XpmClientHandler,
     PdfStorageHandler,
