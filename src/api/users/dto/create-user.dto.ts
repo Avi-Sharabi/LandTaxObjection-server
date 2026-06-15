@@ -1,4 +1,5 @@
 import { IsString, IsEmail, IsEnum, IsOptional, IsBoolean } from 'class-validator';
+import { Transform } from 'class-transformer';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { UserRole } from '../entities/user.entity';
 
@@ -7,6 +8,7 @@ export class CreateUserDto {
         description: 'User email address',
         example: 'accountant@example.com',
     })
+    @Transform(({ value }) => value?.trim().toLowerCase())
     @IsEmail()
     email: string;
 
