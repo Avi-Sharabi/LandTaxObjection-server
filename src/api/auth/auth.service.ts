@@ -1,5 +1,4 @@
 import { Injectable } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { randomUUID } from 'crypto';
 import type { Response } from 'express';
@@ -16,7 +15,6 @@ export class AuthService {
   constructor(
     private readonly usersService: UsersService,
     private readonly jwtService: JwtService,
-    private readonly configService: ConfigService,
     private readonly tokenBlacklist: TokenBlacklistService,
   ) {}
 
@@ -71,8 +69,8 @@ export class AuthService {
     };
   }
 
-  logout(response: Response, jti: string, exp: number): void {
-    this.tokenBlacklist.add(jti, exp * 1000); // exp is in seconds; convert to ms
+  async logout(response: Response, jti: string, exp: number): Promise<void> {
+    await this.tokenBlacklist.add(jti, exp * 1000); // exp is in seconds; convert to ms
 
     response.clearCookie('access_token', {
       httpOnly: true,

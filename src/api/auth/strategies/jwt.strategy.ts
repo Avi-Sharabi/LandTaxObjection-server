@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PassportStrategy } from '@nestjs/passport';
 import { Request } from 'express';
@@ -25,6 +25,8 @@ export interface AuthenticatedUser extends AuthResponseDto {
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
+  private readonly logger = new Logger(JwtStrategy.name);
+
   constructor(
     private readonly configService: ConfigService,
     private readonly usersService: UsersService,
@@ -40,8 +42,13 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   async validate(payload: DecodedJwtPayload): Promise<AuthenticatedUser> {
-    if (this.tokenBlacklist.has(payload.jti)) {
-      throw new UnauthorizedException('Token has been revoked');
+    // Tokens issued before this blacklist feature was deployed will have no jti.
+    // They cannot be revoked and remain valid until natural expiry (up to JWT_EXPIRES_IN).
+    if (payload.jti && (await this.tokenBlacklist.has(payload.jti))) {
+      this.logger.warn(
+        `Revoked token presented — jti: ${payload.jti}, sub: ${payload.sub}`,
+      );
+      throw new UnauthorizedException();
     }
 
     const user = await this.usersService.findOne(payload.sub);

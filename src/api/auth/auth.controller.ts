@@ -46,10 +46,10 @@ export class AuthController {
   @ApiCookieAuth()
   @ApiOperation({ summary: 'Logout — clears the access_token cookie and revokes the token' })
   @ApiResponse({ status: 204, description: 'Logged out successfully' })
-  logout(
+  async logout(
     @Req() req: Request & { user: AuthenticatedUser },
     @Res({ passthrough: true }) response: Response,
-  ): void {
-    this.authService.logout(response, req.user.jti, req.user.exp);
+  ): Promise<void> {
+    await this.authService.logout(response, req.user.jti, req.user.exp);
   }
 }

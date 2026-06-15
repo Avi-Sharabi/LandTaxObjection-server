@@ -1,28 +1,20 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
+import Redis from 'ioredis';
+import { REDIS_CLIENT } from './redis.provider';
 
 @Injectable()
 export class TokenBlacklistService {
-  private readonly blacklist = new Map<string, number>(); // jti → expiresAt (epoch ms)
+  constructor(@Inject(REDIS_CLIENT) private readonly redis: Redis) {}
 
-  add(jti: string, expiresAt: number): void {
-    this.blacklist.set(jti, expiresAt);
-    this.cleanup();
+  async add(jti: string, expiresAt: number): Promise<void> {
+    const ttlSeconds = Math.ceil((expiresAt - Date.now()) / 1000);
+    if (ttlSeconds > 0) {
+      await this.redis.set(`blacklist:${jti}`, '1', 'EX', ttlSeconds);
+    }
   }
 
-  has(jti: string): boolean {
-    const exp = this.blacklist.get(jti);
-    if (exp === undefined) return false;
-    if (Date.now() > exp) {
-      this.blacklist.delete(jti);
-      return false;
-    }
-    return true;
-  }
-
-  private cleanup(): void {
-    const now = Date.now();
-    for (const [jti, exp] of this.blacklist) {
-      if (now > exp) this.blacklist.delete(jti);
-    }
+  async has(jti: string): Promise<boolean> {
+    const result = await this.redis.exists(`blacklist:${jti}`);
+    return result === 1;
   }
 }
