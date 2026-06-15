@@ -534,7 +534,7 @@ export class DisputeCasesController {
   @ApiResponse({ status: 403, description: 'Forbidden — accountant or admin role required' })
   @ApiResponse({ status: 404, description: 'Dispute case not found' })
   remove(
-    @Param('id') id: string,
+    @Param('id', ParseUUIDPipe) id: string,
     @Req() req: { user: { id: string } },
   ): Promise<{ message: string }> {
     return this.disputeCasesService.remove(id, req.user.id);

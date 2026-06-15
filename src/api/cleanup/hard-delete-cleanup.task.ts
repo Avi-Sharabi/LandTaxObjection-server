@@ -58,121 +58,144 @@ export class HardDeleteCleanupTask implements OnModuleInit {
   }
 
   private async purgeDisputeCases(threshold: Date): Promise<void> {
+    const [{ count }] = await this.dataSource.query<[{ count: number }]>(
+      `SELECT COUNT(*)::int AS count
+         FROM dispute_cases
+        WHERE deleted_at IS NOT NULL
+          AND deleted_at <= $1`,
+      [threshold],
+    );
+
+    if (count === 0) {
+      this.logger.log('[CLEANUP] No soft-deleted dispute cases to purge');
+      return;
+    }
+
+    this.logger.log(`[CLEANUP] Purging ${count} dispute case(s) and their child records`);
+
+    const caseSubquery = `SELECT id FROM dispute_cases WHERE deleted_at IS NOT NULL AND deleted_at <= $1`;
+
+    // Delete child records in FK-safe order before removing the parent cases.
+    const caseChildren: Array<{ table: string; fkCol: string }> = [
+      { table: 'dispute_objection_reasons', fkCol: 'dispute_case_id' },
+      { table: 'dispute_evidence_issues',   fkCol: 'dispute_case_id' },
+      { table: 'package_documents',         fkCol: 'dispute_case_id' },
+      { table: 'comparable_sales',          fkCol: 'dispute_case_id' },
+      { table: 'dispute_documents',         fkCol: 'dispute_id' },
+      { table: 'dispute_legal_grounds',     fkCol: 'dispute_id' },
+      { table: 'dispute_constraints',       fkCol: 'dispute_id' },
+    ];
+
+    const qr = this.dataSource.createQueryRunner();
+    await qr.connect();
+    await qr.startTransaction();
+
     try {
-      const [{ count }] = await this.dataSource.query<[{ count: number }]>(
-        `SELECT COUNT(*)::int AS count
-           FROM dispute_cases
-          WHERE deleted_at IS NOT NULL
-            AND deleted_at <= $1`,
-        [threshold],
-      );
-
-      if (count === 0) {
-        this.logger.log('[CLEANUP] No soft-deleted dispute cases to purge');
-        return;
-      }
-
-      this.logger.log(`[CLEANUP] Purging ${count} dispute case(s) and their child records`);
-
-      const caseSubquery = `SELECT id FROM dispute_cases WHERE deleted_at IS NOT NULL AND deleted_at <= $1`;
-
-      // Delete child records in FK-safe order before removing the parent cases.
-      const caseChildren: Array<{ table: string; fkCol: string }> = [
-        { table: 'dispute_objection_reasons', fkCol: 'dispute_case_id' },
-        { table: 'dispute_evidence_issues',   fkCol: 'dispute_case_id' },
-        { table: 'package_documents',         fkCol: 'dispute_case_id' },
-        { table: 'comparable_sales',          fkCol: 'dispute_case_id' },
-        { table: 'dispute_documents',         fkCol: 'dispute_id' },
-        { table: 'dispute_legal_grounds',     fkCol: 'dispute_id' },
-        { table: 'dispute_constraints',       fkCol: 'dispute_id' },
-      ];
-
       for (const { table, fkCol } of caseChildren) {
-        const deleted = await this.dataSource.query<{ id: string }[]>(
+        const deleted = (await qr.query(
           `DELETE FROM "${table}"
             WHERE "${fkCol}" IN (${caseSubquery})
            RETURNING id`,
           [threshold],
-        );
+        )) as { id: string }[];
         if (deleted.length > 0) {
           this.logger.log(`[CLEANUP]   → ${table}: removed ${deleted.length} row(s)`);
         }
       }
 
-      await this.dataSource.query(
+      const result = (await qr.query(
         `DELETE FROM dispute_cases
           WHERE deleted_at IS NOT NULL
-            AND deleted_at <= $1`,
+            AND deleted_at <= $1
+         RETURNING id`,
         [threshold],
-      );
+      )) as { id: string }[];
 
-      this.logger.log(`[CLEANUP] Hard-deleted ${count} dispute case(s)`);
+      await qr.commitTransaction();
+      this.logger.log(`[CLEANUP] Hard-deleted ${result.length} dispute case(s)`);
     } catch (err) {
+      await qr.rollbackTransaction();
       this.logger.error(
         `[CLEANUP] Failed to purge dispute cases — ${err instanceof Error ? err.message : String(err)}`,
       );
+    } finally {
+      await qr.release();
     }
   }
 
   private async purgeClients(threshold: Date): Promise<void> {
+    const [{ count }] = await this.dataSource.query<[{ count: number }]>(
+      `SELECT COUNT(*)::int AS count
+         FROM clients
+        WHERE deleted_at IS NOT NULL
+          AND deleted_at <= $1`,
+      [threshold],
+    );
+
+    if (count === 0) {
+      this.logger.log('[CLEANUP] No soft-deleted clients to purge');
+      return;
+    }
+
+    this.logger.log(`[CLEANUP] Purging ${count} client(s) and their child records`);
+
+    const clientSubquery = `SELECT id FROM clients WHERE deleted_at IS NOT NULL AND deleted_at <= $1`;
+
+    const qr = this.dataSource.createQueryRunner();
+    await qr.connect();
+    await qr.startTransaction();
+
     try {
-      const [{ count }] = await this.dataSource.query<[{ count: number }]>(
-        `SELECT COUNT(*)::int AS count
-           FROM clients
-          WHERE deleted_at IS NOT NULL
-            AND deleted_at <= $1`,
-        [threshold],
-      );
-
-      if (count === 0) {
-        this.logger.log('[CLEANUP] No soft-deleted clients to purge');
-        return;
-      }
-
-      this.logger.log(`[CLEANUP] Purging ${count} client(s) and their child records`);
-
-      const clientSubquery = `SELECT id FROM clients WHERE deleted_at IS NOT NULL AND deleted_at <= $1`;
-
       // valuation_notices must be removed before properties (valuation_notices.property_id FK).
-      // Guard against notices still referenced by active dispute_cases from other clients.
-      const vnDeleted = await this.dataSource.query<{ id: string }[]>(
+      // Guard against notices still referenced by any surviving dispute_cases (active or soft-deleted).
+      const vnDeleted = (await qr.query(
         `DELETE FROM valuation_notices
           WHERE property_id IN (
                   SELECT id FROM properties WHERE client_id IN (${clientSubquery})
                 )
             AND id NOT IN (
-                  SELECT valuation_notice_id FROM dispute_cases WHERE deleted_at IS NULL
+                  SELECT valuation_notice_id FROM dispute_cases WHERE valuation_notice_id IS NOT NULL
                 )
          RETURNING id`,
         [threshold],
-      );
+      )) as { id: string }[];
       if (vnDeleted.length > 0) {
         this.logger.log(`[CLEANUP]   → valuation_notices: removed ${vnDeleted.length} row(s)`);
       }
 
       // properties.client_id FK — delete after valuation_notices are cleared.
-      const propDeleted = await this.dataSource.query<{ id: string }[]>(
+      const propDeleted = (await qr.query(
         `DELETE FROM properties
           WHERE client_id IN (${clientSubquery})
          RETURNING id`,
         [threshold],
-      );
+      )) as { id: string }[];
       if (propDeleted.length > 0) {
         this.logger.log(`[CLEANUP]   → properties: removed ${propDeleted.length} row(s)`);
       }
 
-      await this.dataSource.query(
+      // Only delete clients that have no remaining dispute_cases referencing them
+      // (catches cases soft-deleted more recently than the retention threshold).
+      const clientsDeleted = (await qr.query(
         `DELETE FROM clients
           WHERE deleted_at IS NOT NULL
-            AND deleted_at <= $1`,
+            AND deleted_at <= $1
+            AND id NOT IN (
+                  SELECT DISTINCT client_id FROM dispute_cases WHERE client_id IS NOT NULL
+                )
+         RETURNING id`,
         [threshold],
-      );
+      )) as { id: string }[];
 
-      this.logger.log(`[CLEANUP] Hard-deleted ${count} client(s)`);
+      await qr.commitTransaction();
+      this.logger.log(`[CLEANUP] Hard-deleted ${clientsDeleted.length} client(s)`);
     } catch (err) {
+      await qr.rollbackTransaction();
       this.logger.error(
         `[CLEANUP] Failed to purge clients — ${err instanceof Error ? err.message : String(err)}`,
       );
+    } finally {
+      await qr.release();
     }
   }
 }

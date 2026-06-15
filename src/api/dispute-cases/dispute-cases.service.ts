@@ -897,10 +897,8 @@ export class DisputeCasesService {
   }
 
   async remove(id: string, deletedById: string): Promise<{ message: string }> {
-    const disputeCase = await this.disputeCasesRepository.findOne({
-      where: { id },
-    });
-    if (!disputeCase)
+    const exists = await this.disputeCasesRepository.findOne({ where: { id }, select: { id: true } });
+    if (!exists)
       throw new NotFoundException(`Dispute case #${id} not found`);
 
     await this.disputeCasesRepository
