@@ -5,7 +5,7 @@ import { Repository, DataSource } from 'typeorm';
 import { plainToInstance } from 'class-transformer';
 import { isAxiosError } from 'axios';
 import { ComparableSale } from './entities/comparable-sale.entity';
-import { AnthropicService } from 'src/ai/anthropic.service';
+import { AnthropicService, ANTHROPIC_MODEL } from 'src/ai/anthropic.service';
 import { CreateComparableDto } from './dto/create-comparable.dto';
 import { ComparableResponseDto } from './dto/comparable-response.dto';
 import { GenerateComparableSalesDto } from './dto/generate-comparable-sales.dto';
@@ -157,11 +157,54 @@ export class ComparablesService implements OnModuleInit {
 
     const subject = this.resolveSubjectContext(dto, disputeCase);
     this.logEvent('GENERATE.subject', { correlationId, subject });
+
+    const vgRate = subject.landAreaSqm && subject.landAreaSqm > 0
+      ? Math.round(subject.vgValueCurrent / subject.landAreaSqm)
+      : null;
+
+    // Round 1: suburb-scoped candidates
     const candidates = await this.prefetchCandidateSales(subject, correlationId);
+    const round1 = await this.runComparableRound(candidates, subject, vgRate, correlationId);
+    let allSupporting = round1.supporting;
+
+    // Round 2: broaden to postcode-prefix zone if fewer than 4 supporting found
+    const MIN_SUPPORTING = 4;
+    if (vgRate !== null && allSupporting.length < MIN_SUPPORTING) {
+      this.logEvent('GENERATE.broadening_search', { correlationId, currentCount: allSupporting.length });
+      const seenIds = new Set(candidates.map(c => c.id));
+      const broadCandidates = await this.prefetchBroadCandidateSales(subject, seenIds, correlationId);
+      if (broadCandidates.length > 0) {
+        const round2 = await this.runComparableRound(broadCandidates, subject, vgRate, correlationId);
+        allSupporting = [...allSupporting, ...round2.supporting];
+      }
+    }
+
+    this.logEvent('GENERATE.persist', {
+      correlationId,
+      supportingCount: allSupporting.length,
+    });
+    const saved = await this.persistComparables(allSupporting, dto.dispute_case_id, createdById);
+    this.logEvent('GENERATE.complete', {
+      correlationId,
+      disputeCaseId: dto.dispute_case_id,
+      savedCount: saved.length,
+      totalDurationMs: Date.now() - start,
+    });
+    return saved;
+  }
+
+  private async runComparableRound(
+    candidates: Record<string, unknown>[],
+    subject: SubjectContext,
+    vgRate: number | null,
+    correlationId: string | undefined,
+  ): Promise<{ enriched: Record<string, unknown>[]; supporting: Record<string, unknown>[] }> {
+    if (candidates.length === 0) return { enriched: [], supporting: [] };
+
     const userPrompt = buildUserPrompt(subject, candidates);
     const systemPrompt = `${this.skillContent}\n\n## property_sales_raw schema (do NOT call list_tables or describe_table — query directly)\n\`\`\`\n${this.schemaBlock}\n\`\`\``;
 
-    this.logEvent('GENERATE.anthropic.start', { correlationId, systemPromptLength: systemPrompt.length });
+    this.logEvent('GENERATE.anthropic.start', { correlationId, systemPromptLength: systemPrompt.length, candidateCount: candidates.length });
     const anthropicT = Date.now();
     let rawText: string;
     try {
@@ -174,8 +217,7 @@ export class ComparablesService implements OnModuleInit {
 
       this.logEvent('GENERATE.token_usage', {
         correlationId,
-        disputeCaseId: dto.dispute_case_id,
-        model: 'claude-sonnet-4-6',
+        model: ANTHROPIC_MODEL,
         input_tokens: result.usage.inputTokens,
         output_tokens: result.usage.outputTokens,
         cache_read_input_tokens: result.usage.cacheReadInputTokens,
@@ -189,19 +231,14 @@ export class ComparablesService implements OnModuleInit {
         throw new LlmTruncationException();
       }
       if (result.stopReason === 'tool_use') {
-        this.logEvent('GENERATE.unexpected_tool_use', { correlationId, disputeCaseId: dto.dispute_case_id });
+        this.logEvent('GENERATE.unexpected_tool_use', { correlationId });
         throw new LlmToolUseException();
       }
-
       rawText = result.text;
     } catch (err: unknown) {
       if (isAxiosError(err)) {
         const status = err.response?.status;
-        this.logEvent('GENERATE.anthropic_error', {
-          correlationId,
-          status,
-          errorMessage: err.message,
-        });
+        this.logEvent('GENERATE.anthropic_error', { correlationId, status, errorMessage: err.message });
         if (status === 529 || status === 503) throw new LlmApiException('Anthropic API is temporarily overloaded. Please retry in a few seconds.', 503);
         if (status === 401) throw new LlmApiException('Anthropic API key is invalid or expired.', 502);
       }
@@ -222,15 +259,79 @@ export class ComparablesService implements OnModuleInit {
       return { ...candidate, ...this.computeAdjustedFields(candidate, subject) };
     });
 
-    this.logEvent('GENERATE.persist', { correlationId, count: enriched.length });
-    const saved = await this.persistComparables(enriched, dto.dispute_case_id, createdById);
-    this.logEvent('GENERATE.complete', {
-      correlationId,
-      disputeCaseId: dto.dispute_case_id,
-      savedCount: saved.length,
-      totalDurationMs: Date.now() - start,
-    });
-    return saved;
+    const supporting = vgRate !== null
+      ? enriched.filter(item => item.adjusted_rate_per_sqm !== null && Number(item.adjusted_rate_per_sqm) <= vgRate)
+      : enriched;
+
+    return { enriched, supporting };
+  }
+
+  private async prefetchBroadCandidateSales(
+    subject: SubjectContext,
+    excludeIds: Set<unknown>,
+    correlationId: string | undefined,
+  ): Promise<Record<string, unknown>[]> {
+    const preT = Date.now();
+    try {
+      const vd = new Date(subject.valuationDate);
+      const searchFrom = new Date(vd);
+      searchFrom.setFullYear(searchFrom.getFullYear() - 5);
+      const searchFromStr = isNaN(searchFrom.getTime())
+        ? new Date(Date.now() - 5 * 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+        : searchFrom.toISOString().split('T')[0];
+
+      const zoningPrefix = subject.zoning !== 'unknown' ? subject.zoning.substring(0, 2).toUpperCase() + '%' : null;
+      const postcodePrefix = subject.postcode ? subject.postcode.substring(0, 3) + '%' : null;
+      if (!postcodePrefix || !zoningPrefix) return [];
+
+      const analysisColumns = `id, property_id, district_code, property_house_number, property_street_name,
+        property_locality, property_post_code, area, zoning, nature_of_property,
+        primary_purpose, component_code, sale_code, interest_of_sale_percent,
+        contract_date, purchase_price, dealing_number, owner_type`;
+
+      const excludeArr = [...excludeIds].map(Number).filter(n => !isNaN(n));
+      const rows: Record<string, unknown>[] = excludeArr.length > 0
+        ? await this.dataSource.query(
+          `SELECT ${analysisColumns} FROM property_sales_raw
+           WHERE property_post_code LIKE $1 AND UPPER(zoning) LIKE $2 AND contract_date >= $3
+           AND id != ALL($4::bigint[])
+           ORDER BY contract_date DESC LIMIT 80`,
+          [postcodePrefix, zoningPrefix, searchFromStr, excludeArr],
+        )
+        : await this.dataSource.query(
+          `SELECT ${analysisColumns} FROM property_sales_raw
+           WHERE property_post_code LIKE $1 AND UPPER(zoning) LIKE $2 AND contract_date >= $3
+           ORDER BY contract_date DESC LIMIT 80`,
+          [postcodePrefix, zoningPrefix, searchFromStr],
+        );
+
+      const isVacantRow = (r: Record<string, unknown>) =>
+        String(r.nature_of_property ?? '').trim().toUpperCase() === 'V';
+      const getRowArea = (r: Record<string, unknown>) => Number(r.area ?? 0);
+      const byDealing = new Map<string, Record<string, unknown>>();
+      for (const row of rows) {
+        const r = row as Record<string, unknown>;
+        const key = String(r.dealing_number ?? r.id);
+        const existing = byDealing.get(key);
+        if (!existing) {
+          byDealing.set(key, r);
+          continue;
+        }
+        if (
+          (!isVacantRow(existing) && isVacantRow(r)) ||
+          (isVacantRow(existing) === isVacantRow(r) && getRowArea(r) > getRowArea(existing))
+        ) {
+          byDealing.set(key, r);
+        }
+      }
+
+      const candidates = [...byDealing.values()].slice(0, MAX_CANDIDATE_SALES);
+      this.logEvent('GENERATE.prefetch_broad', { correlationId, count: candidates.length, durationMs: Date.now() - preT });
+      return candidates;
+    } catch (err) {
+      this.logger.warn('[GENERATE] Broad pre-fetch failed', (err as Error).message);
+      return [];
+    }
   }
 
   private resolveSubjectContext(
@@ -238,11 +339,18 @@ export class ComparablesService implements OnModuleInit {
     disputeCase: DisputeCase,
   ): SubjectContext {
     const vn = disputeCase.valuation_notice;
+    const valuationDate = dto.valuation_date
+      ?? (vn?.valuation_date ? new Date(vn.valuation_date).toISOString().split('T')[0] : null);
+    if (!valuationDate) throw new MissingValuationDateException(disputeCase.id);
     return {
       pid: dto.pid ?? disputeCase.property?.pid ?? 'unknown',
       suburb: (dto.suburb ?? disputeCase.property?.suburb ?? '').trim().toUpperCase(),
       postcode: dto.postcode ?? disputeCase.property?.postcode ?? null,
-      landAreaSqm: dto.land_area_sqm ?? (Number(disputeCase.property?.land_area_sqm) || null),
+      landAreaSqm:
+        dto.land_area_sqm
+        ?? (Number(vn?.land_area_vg_sqm) || null)
+        ?? dto.land_area_eplanning_sqm
+        ?? (Number(disputeCase.property?.land_area_sqm) || null),
       zoning: dto.zoning ?? disputeCase.property?.zoning ?? 'unknown',
       lotDp: dto.lot_dp ?? disputeCase.property?.lot_dp ?? null,
       dimensions: dto.dimensions ?? disputeCase.property?.dimensions ?? null,
@@ -250,8 +358,7 @@ export class ComparablesService implements OnModuleInit {
       vgValueCurrent: dto.vg_land_value_current ?? (Number(vn?.assessed_land_value) || 0),
       vgValuePrior: dto.vg_land_value_prior ?? (Number(vn?.prior_land_value) || 0),
       landAreaVgSqm: dto.land_area_vg_sqm ?? (Number(vn?.land_area_vg_sqm) || null),
-      valuationDate: dto.valuation_date
-        ?? (vn?.valuation_date ? new Date(vn.valuation_date).toISOString().split('T')[0] : null) ?? (() => { throw new MissingValuationDateException(disputeCase.id); })(),
+      valuationDate,
     };
   }
 
@@ -303,16 +410,41 @@ export class ComparablesService implements OnModuleInit {
           : Promise.resolve([]),
       ]);
 
+      // Dedup by DB row ID first
       const seen = new Set<unknown>();
-      const candidates: Record<string, unknown>[] = [];
+      const merged: Record<string, unknown>[] = [];
       for (const row of [...tier1, ...tier2, ...tier3]) {
-        if (!seen.has((row as Record<string, unknown>).id)) {
-          seen.add((row as Record<string, unknown>).id);
-          candidates.push(row as Record<string, unknown>);
-          if (candidates.length >= MAX_CANDIDATE_SALES) break;
+        const r = row as Record<string, unknown>;
+        if (!seen.has(r.id)) {
+          seen.add(r.id);
+          merged.push(r);
         }
       }
 
+      // Dedup by dealing_number — one record per real-world transaction.
+      // NSW sales data records each lot in a multi-lot sale separately; without this,
+      // a single subdivision deal can appear N times and Claude selects all of them.
+      const isVacantRow = (r: Record<string, unknown>) =>
+        String(r.nature_of_property ?? '').trim().toUpperCase() === 'V';
+      const getRowArea = (r: Record<string, unknown>) => Number(r.area ?? 0);
+      const byDealing = new Map<string, Record<string, unknown>>();
+      for (const row of merged) {
+        const key = String(row.dealing_number ?? row.id);
+        const existing = byDealing.get(key);
+        if (!existing) {
+          byDealing.set(key, row);
+          continue;
+        }
+        // Prefer vacant > larger area (most representative lot)
+        if (
+          (!isVacantRow(existing) && isVacantRow(row)) ||
+          (isVacantRow(existing) === isVacantRow(row) && getRowArea(row) > getRowArea(existing))
+        ) {
+          byDealing.set(key, row);
+        }
+      }
+
+      const candidates = [...byDealing.values()].slice(0, MAX_CANDIDATE_SALES);
       this.logEvent('GENERATE.prefetch', { correlationId, count: candidates.length, durationMs: Date.now() - preT });
       return candidates;
     } catch (err) {
@@ -334,6 +466,7 @@ export class ComparablesService implements OnModuleInit {
     let area = candidate.area != null ? Number(candidate.area) : null;
     if (!purchasePrice || !area || !subject.landAreaSqm) return { adjusted_rate_per_sqm: null, adjusted_land_value: null, suggested_land_value: null, explanation: null };
 
+    // Some source records store area in hectares; values < 100 are treated as ha and converted to m²
     if (area < 100) area = Math.round(area * 10000);
 
     const isVacant = !candidate.primary_purpose ||
@@ -364,10 +497,14 @@ export class ComparablesService implements OnModuleInit {
 
     const adjusted_rate_per_sqm = Math.round(sizeAdjustedRate * timeFactor);
     const adjusted_land_value = Math.round(adjusted_rate_per_sqm * area);
-    const suggested_land_value = Math.round(adjusted_rate_per_sqm * subject.landAreaSqm);
 
     const vgRate = Math.round(subject.vgValueCurrent / subject.landAreaSqm);
     const supportsObjection = adjusted_rate_per_sqm <= vgRate;
+
+    // NSW VG definition: comparable's own adjusted land value = land component × time factor only.
+    // No size adjustment — this is what the objector enters for each comparable in the NSW portal.
+    const suggested_land_value = Math.round((purchasePrice - improvementDeduction) * timeFactor);
+
     const address = [candidate.property_house_number, candidate.property_street_name, candidate.property_locality].filter(Boolean).join(' ');
     const saleDateStr = contractDate && !isNaN(contractDate.getTime())
       ? contractDate.toLocaleDateString('en-AU', { day: '2-digit', month: 'short', year: 'numeric' })
@@ -384,7 +521,7 @@ export class ComparablesService implements OnModuleInit {
 
     const conclusionLine = supportsObjection
       ? `The adjusted rate of $${adjusted_rate_per_sqm.toLocaleString()}/m² is below the VG's assessed rate of $${vgRate.toLocaleString()}/m², supporting a lower land value for your property.`
-      : `The adjusted rate of $${adjusted_rate_per_sqm.toLocaleString()}/m² is above the VG's assessed rate of $${vgRate.toLocaleString()}/m² — this sale does not directly support a lower value but is included as market context.`;
+      : `The adjusted rate of $${adjusted_rate_per_sqm.toLocaleString()}/m² exceeds the VG's assessed rate of $${vgRate.toLocaleString()}/m². Included as the closest available market evidence in the ${String(candidate.property_locality ?? subject.suburb)} ${subject.zoning} corridor — insufficient supporting comparable sales were found at this threshold.`;
 
     const explanation = [
       `${address} | ${candidate.zoning} | ${isVacant ? 'Vacant Land' : `Improved - ${candidate.primary_purpose}`}`,
@@ -394,7 +531,9 @@ export class ComparablesService implements OnModuleInit {
       `• Size adjustment: factor ${sizeFactor.toFixed(3)} (${subject.landAreaSqm}m² subject vs ${area}m² comparable) → $${Math.round(sizeAdjustedRate).toLocaleString()}/m²`,
       `• Time adjustment: ${monthsDiff} months — ${monthsDiff <= 12 ? 'nil (within 12-month window)' : `+${((timeFactor - 1) * 100).toFixed(1)}% (factor ${timeFactor.toFixed(3)})`} → $${adjusted_rate_per_sqm.toLocaleString()}/m²`,
       `• Adjusted rate: $${adjusted_rate_per_sqm.toLocaleString()}/m² vs VG rate $${vgRate.toLocaleString()}/m² → ${supportsObjection ? 'Supports objection ✓' : 'Does NOT support objection ✗'}`,
-      `• Suggested land value: $${suggested_land_value.toLocaleString()}`,
+      `• Comparable adj. land value: $${suggested_land_value.toLocaleString()}`,
+      `• Implied subject land value: $${(adjusted_rate_per_sqm * subject.landAreaSqm).toLocaleString()} (at $${adjusted_rate_per_sqm.toLocaleString()}/m² × ${subject.landAreaSqm.toLocaleString()}m²)`,
+      `• VG assessed value: $${subject.vgValueCurrent.toLocaleString()} — potential reduction of $${(subject.vgValueCurrent - adjusted_rate_per_sqm * subject.landAreaSqm).toLocaleString()}`,
       !isVacant ? `• Caveats: Improvement deduction estimated at 50% of purchase price ($${improvementDeduction.toLocaleString()}) — GFA unavailable` : null,
       conclusionLine,
     ].filter(Boolean).join('\n');
