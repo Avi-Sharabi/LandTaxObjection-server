@@ -55,6 +55,7 @@
     "class-validator": "^0.14.4",
     "cookie-parser": "^1.4.7",
     "dotenv": "^17.3.1",
+    "ioredis": "^5.11.1",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
     "pdf-parse": "^2.4.5",
