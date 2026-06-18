@@ -46,6 +46,7 @@ import { AnalyzeAiQueueService } from './analyze-ai-queue.service';
 import { ObjectionReasonGeneratorService } from './objection-reason-generator.service';
 import { ObjectionReasonResponseDto } from './dto/objection-reason-response.dto';
 import { AnalyzeAiEnqueueResponseDto, AnalyzeAiQueueResponseDto, AnalyzeAiStatusResponseDto } from './dto/analyze-ai-response.dto';
+import { ValuationReportService } from './valuation-report.service';
 
 @ApiTags('dispute-cases')
 @Controller({
@@ -59,6 +60,7 @@ export class DisputeCasesController {
     private readonly analyzeAiQueueService: AnalyzeAiQueueService,
     private readonly supportingEvidenceQueueService: SupportingEvidenceQueueService,
     private readonly objectionReasonGeneratorService: ObjectionReasonGeneratorService,
+    private readonly valuationReportService: ValuationReportService,
   ) {}
 
   /**
@@ -111,9 +113,7 @@ export class DisputeCasesController {
   async submitIntakeV2(
     @Body() intakeDto: CreateDisputeIntakeV2Dto,
   ): Promise<unknown> {
-    return this.disputeCasesService.submitIntakeApplication(
-      intakeDto as unknown as CreateDisputeIntakeDto,
-    );
+    return this.disputeCasesService.submitIntakeApplication(intakeDto);
   }
 
   // Public endpoint — no auth guard. Accessed via signed approval token in client email.
@@ -377,7 +377,7 @@ export class DisputeCasesController {
     return this.disputeCasesService.sendObjectionPackage(id);
   }
 
-  @UseGuards(JwtAuthGuard,)
+  @UseGuards(JwtAuthGuard)
   @ApiBearerAuth()
   @Post(':id/submit-to-vg')
   @HttpCode(200)
@@ -436,7 +436,8 @@ export class DisputeCasesController {
     return this.disputeCasesService.calculateTax(id);
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
   @ApiBearerAuth()
   @Post('internal/run-vg-follow-up')
   @HttpCode(200)
@@ -521,6 +522,24 @@ export class DisputeCasesController {
   @ApiResponse({ status: 404, description: 'Job not found for this dispute case' })
   async analyzeAiStatus(@Param('id', ParseUUIDPipe) id: string): Promise<AnalyzeAiStatusResponseDto> {
     return this.analyzeAiQueueService.getJobStatus(id);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.INTERNAL_Assessor)
+  @ApiBearerAuth()
+  @Post(':id/regenerate-valuation-report')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Regenerate valuation report (dev shortcut)',
+    description: 'Skips the full pipeline and regenerates only the valuation report PDF from DB data. Works any time after the analyze-ai pipeline has run at least once for this case.',
+  })
+  @ApiParam({ name: 'id', description: 'Dispute case UUID' })
+  @ApiResponse({ status: 200, description: 'Report regenerated successfully' })
+  async regenerateValuationReport(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<{ status: string }> {
+    await this.valuationReportService.generate(id);
+    return { status: 'ok' };
   }
 
   @UseGuards(JwtAuthGuard)

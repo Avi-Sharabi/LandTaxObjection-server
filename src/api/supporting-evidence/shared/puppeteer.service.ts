@@ -29,6 +29,21 @@ export class PuppeteerService {
     });
   }
 
+  // --single-process crashes the renderer on large PDF payloads; use a separate process for PDF rendering
+  async launchForPdf(): Promise<Browser> {
+    return (puppeteer as unknown as { launch: (opts: unknown) => Promise<Browser> }).launch({
+      headless: true,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-gpu',
+        '--no-zygote',
+        '--disable-extensions',
+      ],
+    });
+  }
+
   async capturePortalScreenshot(address: string, propId: string, browser: Browser): Promise<string | null> {
     this.logger.log('Loading Spatial Viewer for screenshot');
     let page: Page | null = null;
