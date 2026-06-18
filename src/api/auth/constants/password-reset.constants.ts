@@ -1,0 +1,2 @@
+export const PASSWORD_RESET_EXPIRY_MINUTES = 15;
+export const BCRYPT_SALT_ROUNDS = 10;
