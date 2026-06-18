@@ -7,6 +7,8 @@ import { SupportingEvidenceService } from '../supporting-evidence/supporting-evi
 import { InputComparable } from '../supporting-evidence/supporting-evidence.types';
 import { ObjectionReasonGeneratorService } from './objection-reason-generator.service';
 import { AiPropertySearchService } from './ai-property-search.service';
+import { ValuationReportService, SafePlanningCtx, buildSafePlanningCtx } from './valuation-report.service';
+import { ValuationCtxCacheService } from './valuation-ctx-cache.service';
 
 export const ANALYZE_AI_QUEUE = 'analyze-ai';
 
@@ -30,6 +32,8 @@ export class AnalyzeAiProcessor extends WorkerHost {
     private readonly supportingEvidenceService: SupportingEvidenceService,
     private readonly objectionReasonGeneratorService: ObjectionReasonGeneratorService,
     private readonly aiPropertySearchService: AiPropertySearchService,
+    private readonly valuationReportService: ValuationReportService,
+    private readonly ctxCacheService: ValuationCtxCacheService,
   ) {
     super();
   }
@@ -41,20 +45,24 @@ export class AnalyzeAiProcessor extends WorkerHost {
     );
 
     try {
-      // Step 1: Gather property context — saves screenshots + property report to assessment documents
       this.logger.log(JSON.stringify({ context: 'ANALYZE_AI.gathering_context', jobId: job.id, disputeCaseId }));
       const { ctx, artifactDocIds } = await this.propertyContextService.gather(disputeCaseId, address);
 
-      // Step 1b: Entity navigation (ABR/ASIC) — runs now so entity facts are in ctx for all downstream steps
+      // Cache ctx so the regenerate-valuation-report endpoint can restore planning context without re-running the pipeline
+      await this.ctxCacheService.save(disputeCaseId, ctx);
+
+      // Entity navigation runs immediately so entity facts are available to all downstream steps
       this.logger.log(JSON.stringify({ context: 'ANALYZE_AI.gathering_entity_evidence', jobId: job.id, disputeCaseId }));
       await this.objectionReasonGeneratorService.gatherEntityEvidence(disputeCaseId, ctx);
 
-      // Step 1c: AI web search — always runs; AI-found value is preferred over SIX Maps in comparables
       this.logger.log(JSON.stringify({ context: 'ANALYZE_AI.ai_property_search', jobId: job.id, disputeCaseId }));
       const aiPropertyDetails = await this.aiPropertySearchService.enrichPropertyFromWeb(disputeCaseId, address, ctx.lotAreaM2 ?? undefined);
 
-      // Step 2: Generate comparable sales — enrich DTO with ePlanning-confirmed address fields
-      // so the prefetch finds real candidates even when the property entity lacks suburb/postcode.
+      // Area fields stripped to prevent planning-layer area data from contaminating Claude's site-area calculation
+      const planningCtx: SafePlanningCtx = buildSafePlanningCtx(ctx);
+
+      // Enrich the comparables DTO with ePlanning-confirmed suburb/postcode so the prefetch finds real candidates
+      // even when the property entity lacks those fields
       this.logger.log(JSON.stringify({ context: 'ANALYZE_AI.generating_comparables', jobId: job.id, disputeCaseId }));
       const addrMatch = ctx.confirmedAddress.match(/^.+\s+([A-Z][A-Z\s]+)\s+(\d{4})\s*$/i);
       if (!addrMatch) this.logger.warn(JSON.stringify({ context: 'ANALYZE_AI.addr_parse_failed', jobId: job.id, confirmedAddress: ctx.confirmedAddress }));
@@ -78,7 +86,6 @@ export class AnalyzeAiProcessor extends WorkerHost {
         userId,
       );
 
-      // Merge DB comparables + PDF-extracted comparables into context
       const dbSales = await this.comparablesService.findRawByDisputeCaseId(disputeCaseId);
       const mappedSales: InputComparable[] = dbSales
         .filter(s => s.adjusted_land_value != null && s.area != null)
@@ -94,13 +101,25 @@ export class AnalyzeAiProcessor extends WorkerHost {
         }));
       ctx.inputComparables = [...mappedSales, ...ctx.inputComparables];
 
-      // Step 4: Run supporting evidence using pre-built context (no re-gathering)
+      // Pre-built ctx passed directly to avoid re-gathering property data
       this.logger.log(JSON.stringify({ context: 'ANALYZE_AI.running_evidence', jobId: job.id, disputeCaseId }));
       ctx.evidenceResult = await this.supportingEvidenceService.analyzeWithCtx(disputeCaseId, ctx, artifactDocIds);
 
-      // Step 5: Generate objection reasons — passes all prior pipeline outputs as context
       this.logger.log(JSON.stringify({ context: 'ANALYZE_AI.generating_objection_reasons', jobId: job.id, disputeCaseId }));
       await this.objectionReasonGeneratorService.generate(disputeCaseId, ctx);
+
+      // Non-fatal: a PDF/Claude failure here must not fail the whole analysis job
+      this.logger.log(JSON.stringify({ context: 'ANALYZE_AI.generating_valuation_report', jobId: job.id, disputeCaseId }));
+      try {
+        await this.valuationReportService.generate(disputeCaseId, planningCtx);
+      } catch (reportErr: unknown) {
+        this.logger.error(JSON.stringify({
+          context: 'ANALYZE_AI.valuation_report_failed',
+          jobId: job.id,
+          disputeCaseId,
+          error: reportErr instanceof Error ? reportErr.message : String(reportErr),
+        }));
+      }
 
       this.logger.log(
         JSON.stringify({ context: 'ANALYZE_AI.complete', jobId: job.id, disputeCaseId, ts: new Date().toISOString() }),

@@ -69,6 +69,11 @@ export class AuthService {
   }
 
   logout(response: Response): void {
-    response.clearCookie('access_token', { path: '/' });
+    response.clearCookie('access_token', {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'none',
+      path: '/',
+    });
   }
 }

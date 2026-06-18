@@ -45,6 +45,8 @@ export class AnalyzeAiQueueService {
       { disputeCaseId, address, userId },
       {
         jobId: disputeCaseId,
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 30000 },
         removeOnComplete: { age: 3 * 24 * 3600, count: 100 },
         removeOnFail: { age: 3 * 24 * 3600 },
       },

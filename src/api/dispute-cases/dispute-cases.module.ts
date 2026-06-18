@@ -38,6 +38,11 @@ import { ObjectionReasonMarkdownService } from './objection-reason-markdown.serv
 import { ObjectionReasonBrowserService } from './objection-reason-browser.service';
 import { ObjectionReasonGeneratorService } from './objection-reason-generator.service';
 import { AiPropertySearchService } from './ai-property-search.service';
+import { ValuationReportService } from './valuation-report.service';
+import { ValuationReportRepository } from './valuation-report.repository';
+import { ValuationCtxCacheService } from './valuation-ctx-cache.service';
+import { ComparableSale } from '../comparables/entities/comparable-sale.entity';
+import { DisputeEvidenceIssue } from '../supporting-evidence/entities/dispute-evidence-issue.entity';
 
 @Module({
   imports: [
@@ -64,6 +69,8 @@ import { AiPropertySearchService } from './ai-property-search.service';
       PackageDocument,
       AuditLog,
       DisputeObjectionReason,
+      ComparableSale,
+      DisputeEvidenceIssue,
     ]),
   ],
   controllers: [DisputeCasesController],
@@ -75,6 +82,9 @@ import { AiPropertySearchService } from './ai-property-search.service';
     ObjectionReasonBrowserService,
     ObjectionReasonGeneratorService,
     AiPropertySearchService,
+    ValuationReportService,
+    ValuationReportRepository,
+    ValuationCtxCacheService,
     DisputeIntakeOrchestrator,
     XpmClientHandler,
     PdfStorageHandler,
