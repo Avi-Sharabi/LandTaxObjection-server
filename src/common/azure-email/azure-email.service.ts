@@ -20,6 +20,7 @@ const TEMPLATE_NAMES = [
     'vg-submission-confirmation',
     'vg-follow-up-enquiry',
     'vg-response-notification',
+    'password-reset',
 ] as const;
 
 type TemplateName = (typeof TEMPLATE_NAMES)[number];
@@ -285,6 +286,32 @@ export class AzureEmailService implements OnModuleInit {
             },
             content: {
                 subject: `[${params.caseReference}] Follow-Up Enquiry #${params.followUpCount} — Awaiting VG Response`,
+                html,
+            },
+        };
+
+        await this.send(message);
+    }
+
+    async sendPasswordResetEmail(params: {
+        sendTo: string;
+        fullName: string;
+        resetLink: string;
+        expiryMinutes: number;
+    }): Promise<void> {
+        const html = this.loadTemplate('password-reset', {
+            fullName:      params.fullName,
+            resetLink:     params.resetLink,
+            expiryMinutes: String(params.expiryMinutes),
+        });
+
+        const message = {
+            senderAddress: this.sender,
+            recipients: {
+                to: [{ address: params.sendTo, displayName: params.fullName }],
+            },
+            content: {
+                subject: 'Reset Your Land Tax Dispute Password',
                 html,
             },
         };
