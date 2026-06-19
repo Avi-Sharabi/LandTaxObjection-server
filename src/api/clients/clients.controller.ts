@@ -1,7 +1,7 @@
 import { Controller, Get, Post, Body, Patch, Param, Delete, ParseUUIDPipe, Query, UseGuards, Req } from '@nestjs/common';
 import { ClientsService } from './clients.service';
 import { CreateClientDto } from './dto/create-client.dto';
-import { UpdateClientDto } from './dto/update-client.dto';
+import { UpdateClientInfoDto } from './dto/update-client-info.dto';
 import { AcceptTCDto } from './dto/accept-tc.dto';
 import { GetClientsQueryDto } from '../../common/dto/paginated-query.dto';
 import { ApiBearerAuth, ApiOperation, ApiParam, ApiResponse } from '@nestjs/swagger';
@@ -54,8 +54,13 @@ export class ClientsController {
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @Body() updateClientDto: UpdateClientDto) {
-    return this.clientsService.update(id, updateClientDto);
+  @ApiOperation({ summary: 'Update client information' })
+  @ApiParam({ name: 'id', description: 'Client UUID' })
+  @ApiResponse({ status: 200, description: 'Client updated' })
+  @ApiResponse({ status: 400, description: 'Validation failed' })
+  @ApiResponse({ status: 404, description: 'Client not found' })
+  update(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateClientInfoDto) {
+    return this.clientsService.update(id, dto);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
