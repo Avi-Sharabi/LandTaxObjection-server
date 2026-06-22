@@ -9,6 +9,7 @@ import { DisputeConstraintsModule } from './dispute-constraints/dispute-constrai
 import { DisputeLegalGroundsModule } from './dispute-legal-grounds/dispute-legal-grounds.module';
 import { FyiAiModule } from './fyi-ai/fyi-ai.module';
 import { FyiUploadModule } from './fyi-upload/fyi-upload.module';
+import { LocationModule } from './location/location.module';
 import { PropertiesModule } from './properties/properties.module';
 import { UsersModule } from './users/users.module';
 import { ValuationNoticesModule } from './valuation-notices/valuation-notices.module';
@@ -27,6 +28,7 @@ import { NotificationsModule } from './notifications/notifications.module';
     ComparablesModule,
     FyiAiModule,
     FyiUploadModule,
+    LocationModule,
     PropertiesModule,
     DisputeCasesModule,
     DisputeConstraintsModule,
