@@ -1,4 +1,4 @@
-import { IsString, IsUUID, IsOptional, IsEnum, IsDate, IsBoolean, IsNumber } from 'class-validator';
+import { IsString, IsUUID, IsOptional, IsEnum, IsDate, IsBoolean, IsNumber, MaxLength, Min } from 'class-validator';
 import { DisputeStatus, OutcomeResult, Jurisdiction } from '../entities/dispute-case.entity';
 import { Type } from 'class-transformer';
 
@@ -68,21 +68,26 @@ export class CreateDisputeCaseDto {
 
   @IsOptional()
   @IsNumber()
+  @Min(0)
   original_assessed_value?: number;
 
   @IsOptional()
   @IsNumber()
+  @Min(0)
   final_agreed_value?: number;
 
   @IsOptional()
   @IsNumber()
+  @Min(0)
   tax_saving_achieved?: number;
 
   @IsOptional()
   @IsNumber()
+  @Min(0)
   invoice_amount?: number;
 
   @IsOptional()
   @IsString()
+  @MaxLength(1000)
   notes?: string;
 }

@@ -7,7 +7,7 @@ import { StateResponseDto } from './dto/state.response.dto';
 import { SuburbResponseDto } from './dto/suburb.response.dto';
 import { REDIS_CLIENT } from '../../common/redis/redis.constants';
 
-const TTL_24H = 24 * 60 * 60;
+const TTL_7D = 7 * 24 * 60 * 60;
 
 @Injectable()
 export class LocationService {
@@ -28,7 +28,7 @@ export class LocationService {
   }
 
   private async cacheSet(key: string, data: unknown): Promise<void> {
-    await this.redis.set(key, JSON.stringify(data), 'EX', TTL_24H);
+    await this.redis.set(key, JSON.stringify(data), 'EX', TTL_7D);
   }
 
   async getAustraliaStates(): Promise<StateResponseDto[]> {
