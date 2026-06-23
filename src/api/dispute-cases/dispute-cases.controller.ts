@@ -45,7 +45,7 @@ import { EvidenceIssueResponseDto } from '../supporting-evidence/dto/evidence-is
 import { AnalyzeAiQueueService } from './analyze-ai-queue.service';
 import { ObjectionReasonGeneratorService } from './objection-reason-generator.service';
 import { ObjectionReasonResponseDto } from './dto/objection-reason-response.dto';
-import { AnalyzeAiEnqueueResponseDto, AnalyzeAiQueueResponseDto, AnalyzeAiStatusResponseDto } from './dto/analyze-ai-response.dto';
+import { AnalyzeAiEnqueueResponseDto, AnalyzeAiQueueResponseDto, AnalyzeAiStatusResponseDto, BatchAnalyzeAiRequestDto, BatchAnalyzeAiResponseDto } from './dto/analyze-ai-response.dto';
 import { ValuationReportService } from './valuation-report.service';
 
 @ApiTags('dispute-cases')
@@ -479,6 +479,23 @@ export class DisputeCasesController {
   @ApiResponse({ status: 401, description: 'Unauthorised' })
   async getObjectionReasons(@Param('id', ParseUUIDPipe) id: string): Promise<ObjectionReasonResponseDto[]> {
     return this.objectionReasonGeneratorService.getObjectionReasons(id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @Post('analyze-ai/batch')
+  @ApiOperation({
+    summary: 'Batch trigger AI analysis for multiple cases (sequential)',
+    description: 'Enqueues an AI analysis job for each supplied case ID, in order. Jobs are processed one at a time — each case waits for the previous to finish before starting.',
+  })
+  @ApiBody({ type: BatchAnalyzeAiRequestDto })
+  @ApiResponse({ status: 201, type: BatchAnalyzeAiResponseDto })
+  @ApiResponse({ status: 401, description: 'Unauthorised' })
+  async analyzeAiBatch(
+    @Body() dto: BatchAnalyzeAiRequestDto,
+    @Req() req: { user: { id: string } },
+  ): Promise<BatchAnalyzeAiResponseDto> {
+    return this.analyzeAiQueueService.batchEnqueue(dto.caseIds, req.user.id);
   }
 
   @UseGuards(JwtAuthGuard)

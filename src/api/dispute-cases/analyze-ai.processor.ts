@@ -1,14 +1,18 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
+import { InjectRepository } from '@nestjs/typeorm';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
+import { Repository } from 'typeorm';
 import { PropertyContextService } from '../supporting-evidence/property-context.service';
 import { ComparablesService } from '../comparables/comparables.service';
 import { SupportingEvidenceService } from '../supporting-evidence/supporting-evidence.service';
-import { InputComparable } from '../supporting-evidence/supporting-evidence.types';
+import { InputComparable, SupportingEvidenceContext } from '../supporting-evidence/supporting-evidence.types';
 import { ObjectionReasonGeneratorService } from './objection-reason-generator.service';
 import { AiPropertySearchService } from './ai-property-search.service';
 import { ValuationReportService, SafePlanningCtx, buildSafePlanningCtx } from './valuation-report.service';
 import { ValuationCtxCacheService } from './valuation-ctx-cache.service';
+import { DisputeAiSnapshot } from './entities/dispute-ai-snapshot.entity';
+import { DisputeCase } from './entities/dispute-case.entity';
 
 export const ANALYZE_AI_QUEUE = 'analyze-ai';
 
@@ -34,6 +38,10 @@ export class AnalyzeAiProcessor extends WorkerHost {
     private readonly aiPropertySearchService: AiPropertySearchService,
     private readonly valuationReportService: ValuationReportService,
     private readonly ctxCacheService: ValuationCtxCacheService,
+    @InjectRepository(DisputeAiSnapshot)
+    private readonly snapshotRepo: Repository<DisputeAiSnapshot>,
+    @InjectRepository(DisputeCase)
+    private readonly disputeCaseRepo: Repository<DisputeCase>,
   ) {
     super();
   }
@@ -45,61 +53,78 @@ export class AnalyzeAiProcessor extends WorkerHost {
     );
 
     try {
-      this.logger.log(JSON.stringify({ context: 'ANALYZE_AI.gathering_context', jobId: job.id, disputeCaseId }));
-      const { ctx, artifactDocIds } = await this.propertyContextService.gather(disputeCaseId, address);
+      // Guard A: use pre-seeded snapshot if available (skips ePlanning/geocoding/PDF gather)
+      let ctx: SupportingEvidenceContext;
+      let artifactDocIds: Map<string, string> = new Map();
+      const snapshot = await this.snapshotRepo.findOne({ where: { dispute_case_id: disputeCaseId } });
+      if (snapshot) {
+        this.logger.log(JSON.stringify({ context: 'ANALYZE_AI.snapshot_hit', jobId: job.id, disputeCaseId }));
+        ctx = { ...snapshot.context, reportBuffer: null };
+      } else {
+        this.logger.log(JSON.stringify({ context: 'ANALYZE_AI.gathering_context', jobId: job.id, disputeCaseId }));
+        ({ ctx, artifactDocIds } = await this.propertyContextService.gather(disputeCaseId, address));
+        // Cache ctx so the regenerate-valuation-report endpoint can restore planning context without re-running the pipeline
+        await this.ctxCacheService.save(disputeCaseId, ctx);
+      }
 
-      // Cache ctx so the regenerate-valuation-report endpoint can restore planning context without re-running the pipeline
-      await this.ctxCacheService.save(disputeCaseId, ctx);
-
-      // Entity navigation runs immediately so entity facts are available to all downstream steps
-      this.logger.log(JSON.stringify({ context: 'ANALYZE_AI.gathering_entity_evidence', jobId: job.id, disputeCaseId }));
-      await this.objectionReasonGeneratorService.gatherEntityEvidence(disputeCaseId, ctx);
-
-      this.logger.log(JSON.stringify({ context: 'ANALYZE_AI.ai_property_search', jobId: job.id, disputeCaseId }));
-      const aiPropertyDetails = await this.aiPropertySearchService.enrichPropertyFromWeb(disputeCaseId, address, ctx.lotAreaM2 ?? undefined);
+      // Guard B: skip browser run if entityEvidence already provided (e.g. by snapshot)
+      if (!ctx.entityEvidence) {
+        this.logger.log(JSON.stringify({ context: 'ANALYZE_AI.gathering_entity_evidence', jobId: job.id, disputeCaseId }));
+        await this.objectionReasonGeneratorService.gatherEntityEvidence(disputeCaseId, ctx);
+      } else {
+        this.logger.log(JSON.stringify({ context: 'ANALYZE_AI.entity_evidence_from_snapshot', jobId: job.id, disputeCaseId }));
+      }
 
       // Area fields stripped to prevent planning-layer area data from contaminating Claude's site-area calculation
       const planningCtx: SafePlanningCtx = buildSafePlanningCtx(ctx);
 
-      // Enrich the comparables DTO with ePlanning-confirmed suburb/postcode so the prefetch finds real candidates
-      // even when the property entity lacks those fields
-      this.logger.log(JSON.stringify({ context: 'ANALYZE_AI.generating_comparables', jobId: job.id, disputeCaseId }));
-      const addrMatch = ctx.confirmedAddress.match(/^.+\s+([A-Z][A-Z\s]+)\s+(\d{4})\s*$/i);
-      if (!addrMatch) this.logger.warn(JSON.stringify({ context: 'ANALYZE_AI.addr_parse_failed', jobId: job.id, confirmedAddress: ctx.confirmedAddress }));
-      const zoningLayer = ctx.apiData.layers?.find(l => l.layerName === 'Land Zoning Map');
-      const zoningCode = (zoningLayer?.results?.[0]?.['Zone'] ?? null) as string | null;
-      const lotDp =
-        ctx.meta.lot && ctx.meta.plan
-          ? `Lot ${ctx.meta.lot} ${ctx.meta.planType} ${ctx.meta.plan}`
-          : undefined;
-      await this.comparablesService.generateComparableSales(
-        {
-          dispute_case_id: disputeCaseId,
-          land_area_sqm: aiPropertyDetails?.land_area_sqm ?? undefined,
-          land_area_eplanning_sqm: ctx.lotAreaM2 ?? undefined,
-          suburb: addrMatch?.[1]?.trim().toUpperCase() ?? undefined,
-          postcode: addrMatch?.[2] ?? undefined,
-          zoning: zoningCode ?? undefined,
-          lot_dp: lotDp,
-          height_limit_m: ctx.meta.height_limit_m ?? undefined,
-        },
-        userId,
-      );
+      // Guard C: skip comparable generation when a snapshot is active — the snapshot's inputComparables
+      // are the test's controlled inputs; letting generateComparableSales() run would merge non-deterministic
+      // Claude-found sales and contaminate accuracy test results.
+      if (snapshot) {
+        this.logger.log(JSON.stringify({ context: 'ANALYZE_AI.comparables_from_snapshot', jobId: job.id, disputeCaseId, count: ctx.inputComparables.length }));
+      } else {
+        this.logger.log(JSON.stringify({ context: 'ANALYZE_AI.ai_property_search', jobId: job.id, disputeCaseId }));
+        const aiPropertyDetails = await this.aiPropertySearchService.enrichPropertyFromWeb(disputeCaseId, address, ctx.lotAreaM2 ?? undefined);
 
-      const dbSales = await this.comparablesService.findRawByDisputeCaseId(disputeCaseId);
-      const mappedSales: InputComparable[] = dbSales
-        .filter(s => s.adjusted_land_value != null && s.area != null)
-        .map(s => ({
-          address: [s.property_house_number, s.property_street_name, s.property_locality]
-            .filter(Boolean)
-            .join(' '),
-          area_m2: s.area!,
-          zone: s.zoning ?? undefined,
-          analysed_land_value: s.adjusted_land_value!,
-          rate_per_m2: s.adjusted_rate_per_sqm ?? undefined,
-          contract_date: s.contract_date?.toISOString().split('T')[0] ?? undefined,
-        }));
-      ctx.inputComparables = [...mappedSales, ...ctx.inputComparables];
+        this.logger.log(JSON.stringify({ context: 'ANALYZE_AI.generating_comparables', jobId: job.id, disputeCaseId }));
+        const addrMatch = ctx.confirmedAddress.match(/^.+\s+([A-Z][A-Z\s]+)\s+(\d{4})\s*$/i);
+        if (!addrMatch) this.logger.warn(JSON.stringify({ context: 'ANALYZE_AI.addr_parse_failed', jobId: job.id, confirmedAddress: ctx.confirmedAddress }));
+        const zoningLayer = ctx.apiData.layers?.find(l => l.layerName === 'Land Zoning Map');
+        const zoningCode = (zoningLayer?.results?.[0]?.['Zone'] ?? null) as string | null;
+        const lotDp =
+          ctx.meta.lot && ctx.meta.plan
+            ? `Lot ${ctx.meta.lot} ${ctx.meta.planType} ${ctx.meta.plan}`
+            : undefined;
+        await this.comparablesService.generateComparableSales(
+          {
+            dispute_case_id: disputeCaseId,
+            land_area_sqm: aiPropertyDetails?.land_area_sqm ?? undefined,
+            land_area_eplanning_sqm: ctx.lotAreaM2 ?? undefined,
+            suburb: addrMatch?.[1]?.trim().toUpperCase() ?? undefined,
+            postcode: addrMatch?.[2] ?? undefined,
+            zoning: zoningCode ?? undefined,
+            lot_dp: lotDp,
+            height_limit_m: ctx.meta.height_limit_m ?? undefined,
+          },
+          userId,
+        );
+
+        const dbSales = await this.comparablesService.findRawByDisputeCaseId(disputeCaseId);
+        const mappedSales: InputComparable[] = dbSales
+          .filter(s => s.adjusted_land_value != null && s.area != null)
+          .map(s => ({
+            address: [s.property_house_number, s.property_street_name, s.property_locality]
+              .filter(Boolean)
+              .join(' '),
+            area_m2: s.area!,
+            zone: s.zoning ?? undefined,
+            analysed_land_value: s.adjusted_land_value!,
+            rate_per_m2: s.adjusted_rate_per_sqm ?? undefined,
+            contract_date: s.contract_date?.toISOString().split('T')[0] ?? undefined,
+          }));
+        ctx.inputComparables = [...mappedSales, ...ctx.inputComparables];
+      }
 
       // Pre-built ctx passed directly to avoid re-gathering property data
       this.logger.log(JSON.stringify({ context: 'ANALYZE_AI.running_evidence', jobId: job.id, disputeCaseId }));
@@ -112,6 +137,7 @@ export class AnalyzeAiProcessor extends WorkerHost {
       this.logger.log(JSON.stringify({ context: 'ANALYZE_AI.generating_valuation_report', jobId: job.id, disputeCaseId }));
       try {
         await this.valuationReportService.generate(disputeCaseId, planningCtx);
+        await this.disputeCaseRepo.update(disputeCaseId, { is_valuated: true });
       } catch (reportErr: unknown) {
         this.logger.error(JSON.stringify({
           context: 'ANALYZE_AI.valuation_report_failed',

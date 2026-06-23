@@ -152,6 +152,7 @@ export class DisputeCasesService {
         original_assessed_value: true,
         vg_follow_up_count: true,
         reminder_count: true,
+        is_valuated: true,
         created_at: true,
       },
       order: { created_at: 'DESC' },
