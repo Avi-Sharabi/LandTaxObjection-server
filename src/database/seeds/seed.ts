@@ -23,7 +23,7 @@ async function runSeeders(dataSource: DataSource): Promise<void> {
   await seedUsers(dataSource);
   await seedLandTaxRates(dataSource);
 
-
+  if (process.env.NODE_ENV !== 'production') {
     await seedClients(dataSource);
     await seedObjectionPackage(dataSource);
     await seedCaseClosedNoObjection(dataSource);
@@ -37,6 +37,7 @@ async function runSeeders(dataSource: DataSource): Promise<void> {
     await seedTaxSavingsTest(dataSource);
     await testVgEmail(dataSource);
     await seedVgFollowUpTest(dataSource);
+  }
 
 }
 
