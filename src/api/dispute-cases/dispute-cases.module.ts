@@ -34,6 +34,7 @@ import { SupportingEvidenceModule } from '../supporting-evidence/supporting-evid
 import { AnalyzeAiQueueService } from './analyze-ai-queue.service';
 import { AnalyzeAiProcessor, ANALYZE_AI_QUEUE } from './analyze-ai.processor';
 import { DisputeObjectionReason } from './entities/dispute-objection-reason.entity';
+import { DisputeAiSnapshot } from './entities/dispute-ai-snapshot.entity';
 import { ObjectionReasonMarkdownService } from './objection-reason-markdown.service';
 import { ObjectionReasonBrowserService } from './objection-reason-browser.service';
 import { ObjectionReasonGeneratorService } from './objection-reason-generator.service';
@@ -69,6 +70,7 @@ import { DisputeEvidenceIssue } from '../supporting-evidence/entities/dispute-ev
       PackageDocument,
       AuditLog,
       DisputeObjectionReason,
+      DisputeAiSnapshot,
       ComparableSale,
       DisputeEvidenceIssue,
     ]),

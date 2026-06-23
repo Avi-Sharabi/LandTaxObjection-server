@@ -1,7 +1,7 @@
 import { MigrationInterface, QueryRunner } from 'typeorm';
 
-export class AddPasswordResetToUsers1750000000000 implements MigrationInterface {
-    name = 'AddPasswordResetToUsers1750000000000';
+export class AddPasswordResetToUsers1778900000000 implements MigrationInterface {
+    name = 'AddPasswordResetToUsers1778900000000';
 
     public async up(queryRunner: QueryRunner): Promise<void> {
         await queryRunner.query(`ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "password_reset_token" text`);

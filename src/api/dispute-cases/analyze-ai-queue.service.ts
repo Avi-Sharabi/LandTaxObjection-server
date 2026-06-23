@@ -3,7 +3,7 @@ import { AnalyzeAiJobNotFoundException } from './exceptions/analyze-ai-job-not-f
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { ANALYZE_AI_QUEUE, AnalyzeAiJobData, AnalyzeAiJobResult } from './analyze-ai.processor';
-import { AnalyzeAiQueueItemDto } from './dto/analyze-ai-response.dto';
+import { AnalyzeAiQueueItemDto, BatchAnalyzeAiItemDto, BatchAnalyzeAiResponseDto } from './dto/analyze-ai-response.dto';
 import { DisputeCasesService } from './dispute-cases.service';
 
 export type AnalyzeAiJobStatus = 'waiting' | 'active' | 'completed' | 'failed' | 'unknown';
@@ -53,6 +53,49 @@ export class AnalyzeAiQueueService {
     );
     this.logger.log(`Queued analyze-ai job ${job.id} for case ${disputeCaseId}`);
     return { jobId: job.id as string, status: 'queued' };
+  }
+
+  async batchEnqueue(caseIds: string[], userId: string): Promise<BatchAnalyzeAiResponseDto> {
+    const results: BatchAnalyzeAiItemDto[] = [];
+
+    for (const caseId of caseIds) {
+      try {
+        const address = await this.disputeCasesService.getPropertyAddressForCase(caseId);
+        const existing = await this.queue.getJob(caseId);
+        if (existing) {
+          const state = await existing.getState();
+          if (state === 'active' || state === 'waiting') {
+            results.push({ caseId, status: 'skipped', reason: `Job already ${state}` });
+            continue;
+          }
+          await existing.remove();
+        }
+        const job = await this.queue.add(
+          'analyze',
+          { disputeCaseId: caseId, address, userId },
+          {
+            jobId: caseId,
+            attempts: 3,
+            backoff: { type: 'exponential', delay: 30000 },
+            removeOnComplete: { age: 3 * 24 * 3600, count: 100 },
+            removeOnFail: { age: 3 * 24 * 3600 },
+          },
+        );
+        this.logger.log(`Batch: queued analyze-ai job ${job.id} for case ${caseId}`);
+        results.push({ caseId, jobId: job.id as string, status: 'queued' });
+      } catch (error) {
+        this.logger.warn(`Batch: failed to enqueue case ${caseId}: ${error.message}`);
+        results.push({ caseId, status: 'error', reason: error.message });
+      }
+    }
+
+    return {
+      results,
+      total: caseIds.length,
+      queued: results.filter(r => r.status === 'queued').length,
+      skipped: results.filter(r => r.status === 'skipped').length,
+      errors: results.filter(r => r.status === 'error').length,
+    };
   }
 
   async getQueueSnapshot(): Promise<AnalyzeAiQueueItemDto[]> {

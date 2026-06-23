@@ -111,6 +111,9 @@ export class DisputeCase {
   @Column({ type: 'boolean', nullable: false, default: false })
   flag_zoning: boolean;
 
+  @Column({ type: 'boolean', nullable: false, default: false })
+  is_valuated: boolean;
+
   @Column({ type: 'smallint', nullable: true })
   evidence_strength_score: number | null;
 
