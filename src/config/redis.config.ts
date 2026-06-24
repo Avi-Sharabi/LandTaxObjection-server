@@ -10,10 +10,12 @@ export function createRedisConnectionOptions(config: ConfigService): RedisOption
     lazyConnect: true,
     enableOfflineQueue: false,
     maxRetriesPerRequest: null,
+    retryStrategy: (times) => Math.min(times * 200, 5000),
     ...(isProduction(config) && {
       password: config.getOrThrow<string>('REDIS_PASSWORD'),
       tls: {},
       enableReadyCheck: false,
+      keepAlive: 30000,
     }),
   };
 }

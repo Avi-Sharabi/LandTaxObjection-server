@@ -3,6 +3,8 @@ import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
 
+export const ANTHROPIC_MODEL = 'claude-sonnet-4-6';
+
 export interface AnthropicCallOptions {
   systemBlocks: { text: string; cached?: boolean }[];
   userMessage: string;
@@ -56,7 +58,7 @@ export class AnthropicService {
     const mcpToken = mcpUrl ? this.config.get<string>('MCP_SECRET_TOKEN') : null;
 
     const body: Record<string, unknown> = {
-      model: 'claude-sonnet-4-6',
+      model: ANTHROPIC_MODEL,
       max_tokens: maxTokens,
       system,
       messages: [{ role: 'user', content: userMessage }],
@@ -98,6 +100,32 @@ export class AnthropicService {
         cacheCreationInputTokens: usage?.cache_creation_input_tokens ?? 0,
       },
     };
+  }
+
+  async callWithWebSearch(userMessage: string, maxTokens = 2048): Promise<string> {
+    const body = {
+      model: ANTHROPIC_MODEL,
+      max_tokens: maxTokens,
+      tools: [{ type: 'web_search_20260209', name: 'web_search' }],
+      messages: [{ role: 'user', content: userMessage }],
+    };
+
+    const response = await firstValueFrom(
+      this.http.post<{ content: Array<{ type: string; text?: string }> }>(
+        this.config.getOrThrow<string>('ANTHROPIC_API_URL'),
+        body,
+        {
+          headers: {
+            'x-api-key': this.config.getOrThrow<string>('ANTHROPIC_API_KEY'),
+            'anthropic-version': '2023-06-01',
+            'Content-Type': 'application/json',
+          },
+        },
+      ),
+    );
+
+    const textBlocks = response.data.content.filter((b) => b.type === 'text');
+    return textBlocks[textBlocks.length - 1]?.text ?? '';
   }
 
   parseJsonObject<T>(text: string): T {

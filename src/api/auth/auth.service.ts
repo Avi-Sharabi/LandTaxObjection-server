@@ -3,10 +3,16 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import type { Response } from 'express';
 import * as bcrypt from 'bcrypt';
+import * as crypto from 'crypto';
 import { UsersService } from '../users/users.service';
+import { AzureEmailService } from '../../common/azure-email/azure-email.service';
 import { LoginDto } from './dto/login.dto';
 import { AuthResponseDto } from './dto/auth-response.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
+import { BCRYPT_SALT_ROUNDS, PASSWORD_RESET_EXPIRY_MINUTES } from './constants/password-reset.constants';
 import { InvalidCredentialsException } from './exceptions/invalid-credentials.exception';
+import { InvalidResetTokenException } from './exceptions/invalid-reset-token.exception';
 import { JwtPayload } from './strategies/jwt.strategy';
 
 @Injectable()
@@ -15,6 +21,7 @@ export class AuthService {
     private readonly usersService: UsersService,
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
+    private readonly azureEmailService: AzureEmailService,
   ) {}
 
   async login(dto: LoginDto, response: Response): Promise<AuthResponseDto> {
@@ -69,6 +76,49 @@ export class AuthService {
   }
 
   logout(response: Response): void {
-    response.clearCookie('access_token', { path: '/' });
+    response.clearCookie('access_token', {
+      httpOnly: true,
+      secure: true,
+      sameSite: 'none',
+      path: '/',
+    });
+  }
+
+  async forgotPassword(dto: ForgotPasswordDto): Promise<{ message: string }> {
+    const user = await this.usersService.findByEmail(dto.email);
+
+    if (user) {
+      const plainToken = crypto.randomBytes(32).toString('hex');
+      const hashedToken = crypto.createHash('sha256').update(plainToken).digest('hex');
+      const expires = new Date(Date.now() + PASSWORD_RESET_EXPIRY_MINUTES * 60 * 1000);
+
+      await this.usersService.savePasswordResetToken(user.id, hashedToken, expires);
+
+      const frontendUrl = this.configService.getOrThrow<string>('FRONTEND_URL');
+      const resetLink = `${frontendUrl}/reset-password?token=${plainToken}`;
+
+      await this.azureEmailService.sendPasswordResetEmail({
+        sendTo: user.email,
+        fullName: user.fullName,
+        resetLink,
+        expiryMinutes: PASSWORD_RESET_EXPIRY_MINUTES,
+      });
+    }
+
+    return { message: 'If that email exists, a reset link has been sent.' };
+  }
+
+  async resetPassword(dto: ResetPasswordDto): Promise<{ message: string }> {
+    const hashedToken = crypto.createHash('sha256').update(dto.token).digest('hex');
+    const user = await this.usersService.findByResetToken(hashedToken);
+
+    if (!user) {
+      throw new InvalidResetTokenException();
+    }
+
+    const hashedPassword = await bcrypt.hash(dto.newPassword, BCRYPT_SALT_ROUNDS);
+    await this.usersService.resetPasswordAndClearToken(user.id, hashedPassword);
+
+    return { message: 'Password has been reset successfully.' };
   }
 }

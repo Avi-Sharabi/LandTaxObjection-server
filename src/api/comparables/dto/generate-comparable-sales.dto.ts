@@ -62,6 +62,12 @@ export class GenerateComparableSalesDto {
   @IsNumber()
   land_area_sqm?: number;
 
+  @ApiProperty({ example: 4022, required: false, nullable: true, description: 'ePlanning/cadastre lot area in m² — used only when property.land_area_sqm and land_area_sqm are both absent' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  land_area_eplanning_sqm?: number;
+
   @ApiProperty({ example: 'E5 Heavy Industrial', required: false, nullable: true, description: 'Zoning — overrides property.zoning if provided' })
   @IsOptional()
   @IsString()

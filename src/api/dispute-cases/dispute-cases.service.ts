@@ -23,6 +23,7 @@ import { GetDisputeCasesQueryDto } from '../../common/dto/paginated-query.dto';
 import { PaginatedDisputeCasesResponseDto } from '../../common/dto/paginated-response.dto';
 import { UpdateDisputeCaseDto } from './dto/update-dispute-case.dto';
 import { CreateDisputeIntakeDto } from './dto/create-dispute-intake.dto';
+import { CreateDisputeIntakeV2Dto } from './dto/create-dispute-intake-v2.dto';
 import { CloseNoObjectionDto } from './dto/close-no-objection.dto';
 import { DisputeCaseResponseDto } from './dto/dispute-case-response.dto';
 import { AnalysisReportResponseDto } from './dto/analysis-report-response.dto';
@@ -83,9 +84,10 @@ export class DisputeCasesService {
   ) { }
 
   async submitIntakeApplication(
-    intakeDto: CreateDisputeIntakeDto,
+    intakeDto: CreateDisputeIntakeDto | CreateDisputeIntakeV2Dto,
   ): Promise<unknown> {
-    return this.intakeOrchestrator.submitIntakeApplication(intakeDto);
+    // V2 omits grounds/constraints; orchestrator treats those as optional at runtime
+    return this.intakeOrchestrator.submitIntakeApplication(intakeDto as CreateDisputeIntakeDto);
   }
 
   async findAll(clientId?: string): Promise<DisputeCaseResponseDto[]> {
@@ -150,6 +152,7 @@ export class DisputeCasesService {
         original_assessed_value: true,
         vg_follow_up_count: true,
         reminder_count: true,
+        is_valuated: true,
         created_at: true,
       },
       order: { created_at: 'DESC' },
