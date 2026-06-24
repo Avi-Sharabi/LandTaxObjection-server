@@ -61,6 +61,9 @@ export class Client {
   phone: string | null;                    // XPM: phone
 
   @Column({ type: 'text', nullable: true })
+  mobile: string | null;
+
+  @Column({ type: 'text', nullable: true })
   fax: string | null;                      // XPM: fax
 
   @Column({ type: 'text', nullable: true })
