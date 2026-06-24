@@ -24,7 +24,7 @@ export class LocationController {
   @ApiResponse({ status: 200, type: [StateResponseDto] })
   @ApiResponse({ status: 401, description: 'Unauthorised' })
   @ApiResponse({ status: 502, description: 'Upstream location API unavailable' })
-  getAustraliaStates(): Promise<StateResponseDto[]> {
+  getAustraliaStates(): readonly StateResponseDto[] {
     return this.locationService.getAustraliaStates();
   }
 
