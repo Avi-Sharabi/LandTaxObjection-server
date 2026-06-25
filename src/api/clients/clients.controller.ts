@@ -63,7 +63,7 @@ export class ClientsController {
     return this.clientsService.update(id, dto);
   }
 
-  @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseGuards(RolesGuard)
   @Roles(UserRole.ACCOUNTANT, UserRole.ADMIN)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Soft-delete a client and all their associated dispute cases' })

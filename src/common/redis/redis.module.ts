@@ -12,7 +12,7 @@ import { REDIS_CLIENT } from './redis.constant';
       useFactory: (config: ConfigService) =>
         new Redis({
           ...createRedisConnectionOptions(config),
-          lazyConnect: false,
+          lazyConnect: true,
           enableOfflineQueue: true,
           maxRetriesPerRequest: 3,
         }),

@@ -118,6 +118,7 @@ export class HardDeleteCleanupTask implements OnModuleInit {
       this.logger.error(
         `[CLEANUP] Failed to purge dispute cases — ${err instanceof Error ? err.message : String(err)}`,
       );
+      throw err; // abort runCleanup — purgeClients must not run if cases failed
     } finally {
       await qr.release();
     }

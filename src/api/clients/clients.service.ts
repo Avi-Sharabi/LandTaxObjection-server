@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { AzureBlobService } from 'src/common/azure-blob/azure-blob.service';
 import { XpmService } from 'src/common/xpm/xpm.service';
@@ -179,12 +179,16 @@ export class ClientsService {
         .where('client_id = :id AND deleted_at IS NULL', { id })
         .execute();
 
-      await queryRunner.manager
+      const clientResult = await queryRunner.manager
         .createQueryBuilder()
         .update(Client)
         .set({ deleted_at: now, deleted_by: deletedById })
-        .where('id = :id', { id })
+        .where('id = :id AND deleted_at IS NULL', { id })
         .execute();
+
+      if (!clientResult.affected) {
+        throw new ConflictException(`Client #${id} is already deleted`);
+      }
 
       await queryRunner.commitTransaction();
     } catch (err) {
