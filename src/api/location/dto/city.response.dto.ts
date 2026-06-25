@@ -1,6 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 
-export class SuburbStateDto {
+export class CityStateDto {
   @ApiProperty({ example: 'New South Wales' })
   name: string;
 
@@ -8,7 +8,7 @@ export class SuburbStateDto {
   abbreviation: string;
 }
 
-export class SuburbResponseDto {
+export class CityResponseDto {
   @ApiProperty({ example: 12345 })
   id: number;
 
@@ -18,6 +18,6 @@ export class SuburbResponseDto {
   @ApiProperty({ example: '2026' })
   postcode: string;
 
-  @ApiProperty({ type: SuburbStateDto })
-  state: SuburbStateDto;
+  @ApiProperty({ type: CityStateDto })
+  state: CityStateDto;
 }

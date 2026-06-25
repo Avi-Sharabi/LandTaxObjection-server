@@ -1,65 +1,62 @@
-import { BadGatewayException, Injectable, Logger } from '@nestjs/common';
+import { BadGatewayException, Inject, Injectable, Logger, Optional } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
-import { StateResponseDto } from './dto/state.response.dto';
-import { SuburbResponseDto } from './dto/suburb.response.dto';
-import { AU_STATES } from '../../common/enums/australia.constants';
+import type { Redis } from 'ioredis';
+import { CityResponseDto } from './dto/city.response.dto';
+import { REDIS_CLIENT } from '../../common/redis/redis.constant';
 
-const TTL_7D_MS = 7 * 24 * 60 * 60 * 1000;
+const TTL_7D_S = 7 * 24 * 60 * 60;
 
 @Injectable()
 export class LocationService {
   private readonly logger = new Logger(LocationService.name);
   private readonly baseUrl: string;
-  private readonly cache = new Map<string, { data: unknown; expiresAt: number }>();
 
   constructor(
     private readonly http: HttpService,
     config: ConfigService,
+    @Optional() @Inject(REDIS_CLIENT) private readonly redis: Redis | null,
   ) {
     this.baseUrl = config.get<string>('LOCATION_API_URL') ?? 'https://v0.postcodeapi.com.au';
   }
 
-  private cacheGet<T>(key: string): T | null {
-    const entry = this.cache.get(key);
-    if (!entry) return null;
-    if (Date.now() > entry.expiresAt) {
-      this.cache.delete(key);
+  private async cacheGet<T>(key: string): Promise<T | null> {
+    if (!this.redis) return null;
+    try {
+      const raw = await this.redis.get(key);
+      return raw ? (JSON.parse(raw) as T) : null;
+    } catch (err) {
+      this.logger.warn(`LocationCache.get_failed: ${err instanceof Error ? err.message : String(err)}`);
       return null;
     }
-    return entry.data as T;
   }
 
-  private cacheSet(key: string, data: unknown): void {
-    this.cache.set(key, { data, expiresAt: Date.now() + TTL_7D_MS });
+  private async cacheSet(key: string, data: unknown): Promise<void> {
+    if (!this.redis) return;
+    try {
+      await this.redis.set(key, JSON.stringify(data), 'EX', TTL_7D_S);
+    } catch (err) {
+      this.logger.warn(`LocationCache.set_failed: ${err instanceof Error ? err.message : String(err)}`);
+    }
   }
 
-  getAustraliaStates(): readonly StateResponseDto[] {
-    return AU_STATES;
-  }
-
-  async getCitiesByState(state: string): Promise<string[]> {
-    const suburbs = await this.searchSuburbs(state);
-    return suburbs.map((s) => s.name);
-  }
-
-  async searchSuburbs(state: string, q?: string): Promise<SuburbResponseDto[]> {
-    const key = `au:suburbs:${state}:${q ?? ''}`;
-    const cached = this.cacheGet<SuburbResponseDto[]>(key);
+  async searchCities(state: string, q?: string): Promise<CityResponseDto[]> {
+    const key = `au:cities:${state}:${q ?? ''}`;
+    const cached = await this.cacheGet<CityResponseDto[]>(key);
     if (cached) return cached;
 
     try {
       const params = new URLSearchParams({ state });
       if (q) params.append('q', q);
       const { data } = await firstValueFrom(
-        this.http.get<SuburbResponseDto[]>(`${this.baseUrl}/suburbs.json?${params}`),
+        this.http.get<CityResponseDto[]>(`${this.baseUrl}/suburbs.json?${params}`),
       );
       const sorted = (data ?? []).sort((a, b) => a.name.localeCompare(b.name));
-      this.cacheSet(key, sorted);
+      await this.cacheSet(key, sorted);
       return sorted;
     } catch (err) {
-      this.logger.error(`Failed to fetch suburbs — state: ${state}, q: ${q}`, err);
+      this.logger.error(`Failed to fetch cities — state: ${state}, q: ${q}`, err);
       throw new BadGatewayException('Upstream location API unavailable');
     }
   }
