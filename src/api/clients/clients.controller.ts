@@ -64,7 +64,7 @@ export class ClientsController {
   }
 
   @UseGuards(RolesGuard)
-  @Roles(UserRole.ACCOUNTANT, UserRole.ADMIN)
+  @Roles(UserRole.ACCOUNTANT)
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Soft-delete a client and all their associated dispute cases' })
   @ApiParam({ name: 'id', description: 'Client UUID' })

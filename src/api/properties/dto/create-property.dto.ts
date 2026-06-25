@@ -1,14 +1,16 @@
-import { IsString, IsOptional, IsEnum, IsNumber, MaxLength, Min, Max, Matches } from 'class-validator';
+import { IsString, IsOptional, IsEnum, IsNumber, IsNotEmpty, MaxLength, Min, Max, Matches } from 'class-validator';
 import { Transform } from 'class-transformer';
 import { Jurisdiction } from '../entities/property.entity';
 
 export class CreatePropertyDto {
   @IsOptional()
+  @IsNotEmpty()
   @IsString()
   @MaxLength(255)
   address?: string;
 
   @IsOptional()
+  @IsNotEmpty()
   @IsString()
   @MaxLength(100)
   suburb?: string;

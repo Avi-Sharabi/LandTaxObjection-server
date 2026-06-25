@@ -1,6 +1,6 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsIn, IsNotEmpty, IsOptional, IsString } from 'class-validator';
-import { AU_STATES } from '../../../common/enums/australia.constants';
+import { ApiProperty } from '@nestjs/swagger';
+import { IsIn, IsNotEmpty, IsString } from 'class-validator';
+import { AU_STATES } from '../../../common/enums/states.constants';
 
 const AU_STATE_CODES = AU_STATES.map((s) => s.state_code);
 
@@ -10,9 +10,4 @@ export class SearchCitiesQueryDto {
   @IsNotEmpty()
   @IsIn(AU_STATE_CODES, { message: `state must be one of: ${AU_STATE_CODES.join(', ')}` })
   state: string;
-
-  @ApiPropertyOptional({ example: 'bondi', description: 'Search term to filter cities by name or postcode' })
-  @IsOptional()
-  @IsString()
-  q?: string;
 }

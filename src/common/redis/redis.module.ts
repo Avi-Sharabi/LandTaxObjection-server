@@ -9,13 +9,11 @@ import { REDIS_CLIENT } from './redis.constant';
   providers: [
     {
       provide: REDIS_CLIENT,
-      useFactory: (config: ConfigService) =>
-        new Redis({
-          ...createRedisConnectionOptions(config),
-          lazyConnect: true,
-          enableOfflineQueue: true,
-          maxRetriesPerRequest: 3,
-        }),
+      useFactory: (config: ConfigService) => {
+        const client = new Redis(createRedisConnectionOptions(config));
+        client.on('error', (err) => console.error('[Redis] connection error:', err));
+        return client;
+      },
       inject: [ConfigService],
     },
   ],

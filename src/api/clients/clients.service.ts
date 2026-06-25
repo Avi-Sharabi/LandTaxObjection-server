@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { AzureBlobService } from 'src/common/azure-blob/azure-blob.service';
 import { XpmService } from 'src/common/xpm/xpm.service';
@@ -8,7 +8,7 @@ import { User } from '../users/entities/user.entity';
 import { AcceptTCDto } from './dto/accept-tc.dto';
 import { AcceptTcResponseDto } from './dto/accept-tc-response.dto';
 import { CreateClientDto } from './dto/create-client.dto';
-import { UpdateClientDto } from './dto/update-client.dto';
+import { UpdateClientInfoDto } from './dto/update-client-info.dto';
 import { GetClientsQueryDto } from '../../common/dto/paginated-query.dto';
 import { PaginatedClientsResponseDto } from '../../common/dto/paginated-response.dto';
 import { Client, ClientStatus } from './entities/client.entity';
@@ -19,6 +19,8 @@ import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class ClientsService {
+  private readonly logger = new Logger(ClientsService.name);
+
   constructor(
     private readonly dataSource: DataSource,
     @InjectRepository(Client)
@@ -97,7 +99,7 @@ export class ClientsService {
     return client;
   }
 
-  async update(id: string, updateClientDto: UpdateClientDto): Promise<Client> {
+  async update(id: string, updateClientDto: UpdateClientInfoDto): Promise<Client> {
     const client = await this.findOne(id);
     Object.assign(client, updateClientDto);
     return this.clientsRepository.save(client);
@@ -192,7 +194,13 @@ export class ClientsService {
 
       await queryRunner.commitTransaction();
     } catch (err) {
-      await queryRunner.rollbackTransaction();
+      try {
+        await queryRunner.rollbackTransaction();
+      } catch (rollbackErr) {
+        this.logger.error(
+          `[CLIENT] Rollback failed for client ${id} — ${rollbackErr instanceof Error ? rollbackErr.message : String(rollbackErr)}`,
+        );
+      }
       throw err;
     } finally {
       await queryRunner.release();

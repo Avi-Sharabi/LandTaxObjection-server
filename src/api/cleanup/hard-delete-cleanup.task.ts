@@ -24,7 +24,11 @@ export class HardDeleteCleanupTask implements OnModuleInit {
 
   onModuleInit(): void {
     const expression = this.config.get<string>('CLEANUP_CRON_SCHEDULE') || DEFAULT_CRON;
-    const job = new CronJob(expression, () => { void this.runCleanup(); });
+    const job = new CronJob(expression, () => {
+      this.runCleanup().catch(err =>
+        this.logger.error(`[CLEANUP] Unhandled error — ${err instanceof Error ? err.message : String(err)}`),
+      );
+    });
     this.schedulerRegistry.addCronJob('hard-delete-cleanup', job);
     job.start();
     this.logger.log(`[CLEANUP] Scheduled with cron: "${expression}"`);
@@ -164,10 +168,14 @@ export class HardDeleteCleanupTask implements OnModuleInit {
         this.logger.log(`[CLEANUP]   → valuation_notices: removed ${vnDeleted.length} row(s)`);
       }
 
-      // properties.client_id FK — delete after valuation_notices are cleared.
+      // Only delete properties whose client will actually be deleted.
+      // Clients with surviving dispute_cases are retained, so their properties must be too.
       const propDeleted = (await qr.query(
         `DELETE FROM properties
           WHERE client_id IN (${clientSubquery})
+            AND client_id NOT IN (
+                  SELECT DISTINCT client_id FROM dispute_cases WHERE client_id IS NOT NULL
+                )
          RETURNING id`,
         [threshold],
       )) as { id: string }[];
@@ -195,6 +203,7 @@ export class HardDeleteCleanupTask implements OnModuleInit {
       this.logger.error(
         `[CLEANUP] Failed to purge clients — ${err instanceof Error ? err.message : String(err)}`,
       );
+      throw err;
     } finally {
       await qr.release();
     }

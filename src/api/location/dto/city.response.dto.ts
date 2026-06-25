@@ -9,8 +9,6 @@ export class CityStateDto {
 }
 
 export class CityResponseDto {
-  @ApiProperty({ example: 12345 })
-  id: number;
 
   @ApiProperty({ example: 'Bondi Beach' })
   name: string;

@@ -1,5 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsString, IsOptional, IsEnum, IsEmail, IsUUID, IsDateString } from 'class-validator';
+import { IsString, IsOptional, IsEnum, IsEmail, IsUUID, IsDateString, Matches } from 'class-validator';
 import { ClientStatus } from '../entities/client.entity';
 
 export class CreateClientDto {
@@ -18,20 +18,6 @@ export class CreateClientDto {
   @IsString()
   gender?: string;
 
-  @ApiPropertyOptional({ example: 'John' })
-  @IsOptional()
-  @IsString()
-  first_name?: string;
-
-  @ApiPropertyOptional({ example: 'A' })
-  @IsOptional()
-  @IsString()
-  middle_name?: string;
-
-  @ApiPropertyOptional({ example: 'Smith' })
-  @IsOptional()
-  @IsString()
-  last_name?: string;
 
   @ApiPropertyOptional({ example: '1980-01-15' })
   @IsOptional()
@@ -49,14 +35,14 @@ export class CreateClientDto {
     example: '+61412345678',
   })
   @IsOptional()
-  @IsString()
+  @Matches(/^\+?[0-9]{6,15}$/, { message: 'phone must contain digits only (optional leading +)' })
   phone?: string;
 
   @ApiPropertyOptional({
     example: '+61498765432',
   })
   @IsOptional()
-  @IsString()
+  @Matches(/^\+?[0-9]{6,15}$/, { message: 'mobile must contain digits only (optional leading +)' })
   mobile?: string;
 
   @ApiPropertyOptional({
@@ -141,7 +127,7 @@ export class CreateClientDto {
 
   @ApiPropertyOptional({ example: '+6129876543' })
   @IsOptional()
-  @IsString()
+  @Matches(/^\+?[0-9]{6,15}$/, { message: 'fax must contain digits only (optional leading +)' })
   fax?: string;
 
   @ApiPropertyOptional({ example: 'https://example.com' })

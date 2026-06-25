@@ -1,4 +1,4 @@
-import { BadGatewayException, Inject, Injectable, Logger, Optional } from '@nestjs/common';
+import { BadGatewayException, Inject, Injectable, Logger } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
@@ -16,13 +16,12 @@ export class LocationService {
   constructor(
     private readonly http: HttpService,
     config: ConfigService,
-    @Optional() @Inject(REDIS_CLIENT) private readonly redis: Redis | null,
+    @Inject(REDIS_CLIENT) private readonly redis: Redis,
   ) {
     this.baseUrl = config.get<string>('LOCATION_API_URL') ?? 'https://v0.postcodeapi.com.au';
   }
 
   private async cacheGet<T>(key: string): Promise<T | null> {
-    if (!this.redis) return null;
     try {
       const raw = await this.redis.get(key);
       return raw ? (JSON.parse(raw) as T) : null;
@@ -33,7 +32,6 @@ export class LocationService {
   }
 
   private async cacheSet(key: string, data: unknown): Promise<void> {
-    if (!this.redis) return;
     try {
       await this.redis.set(key, JSON.stringify(data), 'EX', TTL_7D_S);
     } catch (err) {
@@ -41,14 +39,13 @@ export class LocationService {
     }
   }
 
-  async searchCities(state: string, q?: string): Promise<CityResponseDto[]> {
-    const key = `au:cities:${state}:${q ?? ''}`;
+  async searchCities(state: string): Promise<CityResponseDto[]> {
+    const key = `au:cities:${state}`;
     const cached = await this.cacheGet<CityResponseDto[]>(key);
     if (cached) return cached;
 
     try {
       const params = new URLSearchParams({ state });
-      if (q) params.append('q', q);
       const { data } = await firstValueFrom(
         this.http.get<CityResponseDto[]>(`${this.baseUrl}/suburbs.json?${params}`),
       );
@@ -56,7 +53,7 @@ export class LocationService {
       await this.cacheSet(key, sorted);
       return sorted;
     } catch (err) {
-      this.logger.error(`Failed to fetch cities — state: ${state}, q: ${q}`, err);
+      this.logger.error(`Failed to fetch cities — state: ${state}`, err);
       throw new BadGatewayException('Upstream location API unavailable');
     }
   }

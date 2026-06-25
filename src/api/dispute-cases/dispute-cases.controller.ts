@@ -560,7 +560,7 @@ export class DisputeCasesController {
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.ACCOUNTANT, UserRole.ADMIN)
+  @Roles(UserRole.ACCOUNTANT)
   @ApiBearerAuth()
   @Delete(':id')
   @ApiOperation({ summary: 'Soft-delete a dispute case' })

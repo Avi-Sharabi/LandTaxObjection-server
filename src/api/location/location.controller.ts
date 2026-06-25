@@ -18,12 +18,12 @@ export class LocationController {
   constructor(private readonly locationService: LocationService) {}
 
   @Get('cities')
-  @ApiOperation({ summary: 'Search Australian cities by state code and optional keyword' })
+  @ApiOperation({ summary: 'Search Australian cities by state code' })
   @ApiResponse({ status: 200, type: [CityResponseDto] })
   @ApiResponse({ status: 400, description: 'state query param is required' })
   @ApiResponse({ status: 401, description: 'Unauthorised' })
   @ApiResponse({ status: 502, description: 'Upstream location API unavailable' })
   searchCities(@Query() query: SearchCitiesQueryDto): Promise<CityResponseDto[]> {
-    return this.locationService.searchCities(query.state, query.q);
+    return this.locationService.searchCities(query.state);
   }
 }
