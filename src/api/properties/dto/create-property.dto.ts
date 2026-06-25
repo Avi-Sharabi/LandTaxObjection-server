@@ -39,6 +39,7 @@ export class CreatePropertyDto {
   @IsOptional()
   @IsNumber()
   @Min(0)
+  @Max(99999999.99)
   land_area_sqm?: number;
 
   @IsOptional()
@@ -59,5 +60,6 @@ export class CreatePropertyDto {
   @IsOptional()
   @IsNumber()
   @Min(0)
+  @Max(9999.99)
   height_limit_m?: number;
 }
