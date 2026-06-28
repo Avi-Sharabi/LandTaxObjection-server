@@ -67,12 +67,14 @@ export class AnalyzeAiProcessor extends WorkerHost {
         await this.ctxCacheService.save(disputeCaseId, ctx);
       }
 
-      // Guard B: skip browser run if entityEvidence already provided (e.g. by snapshot)
-      if (!ctx.entityEvidence) {
+      // Guard B: skip browser run if a snapshot is active (test data) OR entityEvidence already provided.
+      // Snapshot cases with entityEvidence: null still must not run Puppeteer — the seeder controls
+      // which grounds get evidence; browser automation would produce non-deterministic results.
+      if (snapshot || ctx.entityEvidence) {
+        this.logger.log(JSON.stringify({ context: 'ANALYZE_AI.entity_evidence_skipped', jobId: job.id, disputeCaseId, reason: snapshot ? 'snapshot' : 'already_provided' }));
+      } else {
         this.logger.log(JSON.stringify({ context: 'ANALYZE_AI.gathering_entity_evidence', jobId: job.id, disputeCaseId }));
         await this.objectionReasonGeneratorService.gatherEntityEvidence(disputeCaseId, ctx);
-      } else {
-        this.logger.log(JSON.stringify({ context: 'ANALYZE_AI.entity_evidence_from_snapshot', jobId: job.id, disputeCaseId }));
       }
 
       // Area fields stripped to prevent planning-layer area data from contaminating Claude's site-area calculation
@@ -126,25 +128,37 @@ export class AnalyzeAiProcessor extends WorkerHost {
         ctx.inputComparables = [...mappedSales, ...ctx.inputComparables];
       }
 
-      // Pre-built ctx passed directly to avoid re-gathering property data
-      this.logger.log(JSON.stringify({ context: 'ANALYZE_AI.running_evidence', jobId: job.id, disputeCaseId }));
-      ctx.evidenceResult = await this.supportingEvidenceService.analyzeWithCtx(disputeCaseId, ctx, artifactDocIds);
+      // Guard D: skip supporting-evidence analysis for snapshot/test cases — the snapshot already
+      // provides pre-built evidenceResult (or null); running the full analyzeWithCtx pipeline would
+      // call ePlanning, blob storage, and Claude unnecessarily and skew accuracy test results.
+      if (snapshot) {
+        this.logger.log(JSON.stringify({ context: 'ANALYZE_AI.evidence_skipped_snapshot', jobId: job.id, disputeCaseId }));
+      } else {
+        this.logger.log(JSON.stringify({ context: 'ANALYZE_AI.running_evidence', jobId: job.id, disputeCaseId }));
+        ctx.evidenceResult = await this.supportingEvidenceService.analyzeWithCtx(disputeCaseId, ctx, artifactDocIds);
+      }
 
       this.logger.log(JSON.stringify({ context: 'ANALYZE_AI.generating_objection_reasons', jobId: job.id, disputeCaseId }));
       await this.objectionReasonGeneratorService.generate(disputeCaseId, ctx);
 
-      // Non-fatal: a PDF/Claude failure here must not fail the whole analysis job
-      this.logger.log(JSON.stringify({ context: 'ANALYZE_AI.generating_valuation_report', jobId: job.id, disputeCaseId }));
-      try {
-        await this.valuationReportService.generate(disputeCaseId, planningCtx);
-        await this.disputeCaseRepo.update(disputeCaseId, { is_valuated: true });
-      } catch (reportErr: unknown) {
-        this.logger.error(JSON.stringify({
-          context: 'ANALYZE_AI.valuation_report_failed',
-          jobId: job.id,
-          disputeCaseId,
-          error: reportErr instanceof Error ? reportErr.message : String(reportErr),
-        }));
+      // Guard E: skip valuation report generation for snapshot/test cases — the report requires
+      // full planning context from ePlanning which is not gathered when a snapshot is active.
+      if (snapshot) {
+        this.logger.log(JSON.stringify({ context: 'ANALYZE_AI.valuation_report_skipped_snapshot', jobId: job.id, disputeCaseId }));
+      } else {
+        // Non-fatal: a PDF/Claude failure here must not fail the whole analysis job
+        this.logger.log(JSON.stringify({ context: 'ANALYZE_AI.generating_valuation_report', jobId: job.id, disputeCaseId }));
+        try {
+          await this.valuationReportService.generate(disputeCaseId, planningCtx);
+          await this.disputeCaseRepo.update(disputeCaseId, { is_valuated: true });
+        } catch (reportErr: unknown) {
+          this.logger.error(JSON.stringify({
+            context: 'ANALYZE_AI.valuation_report_failed',
+            jobId: job.id,
+            disputeCaseId,
+            error: reportErr instanceof Error ? reportErr.message : String(reportErr),
+          }));
+        }
       }
 
       this.logger.log(

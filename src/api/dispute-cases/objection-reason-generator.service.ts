@@ -241,16 +241,18 @@ export class ObjectionReasonGeneratorService {
       for (const g of grounds) {
         const key = String(g.groundNumber);
         const docIds = ctx.entityEvidence.groundDocIds[key] ?? [];
-        if (docIds.length > 0) {
+        const analysisText = ctx.entityEvidence.groundAnalysis[key] ?? '';
+        if (docIds.length > 0 || analysisText) {
           g.isTick = true;
           g.evidenceDocIds = [...docIds];
-          g.analysis = ctx.entityEvidence.groundAnalysis[key] ?? '';
+          g.analysis = analysisText;
         }
       }
     }
 
     const g1 = grounds.find(g => g.groundNumber === 1);
-    if (g1 && !g1.isTick && ctx.inputComparables.length > 0) {
+    const g2 = grounds.find(g => g.groundNumber === 2);
+    if (g1 && !g1.isTick && !(g2?.isTick) && ctx.inputComparables.length > 0) {
       g1.isTick = true;
       this.logger.log(`[OBJECTION] Ground 1 auto-ticked — ${ctx.inputComparables.length} comparable(s) in pipeline`);
     }
@@ -419,6 +421,8 @@ export class ObjectionReasonGeneratorService {
 
     const zoningLayer = ctx.apiData.layers.find(l => l.layerName === 'Land Zoning Map');
     const zoningCode = zoningLayer?.results?.[0]?.['Zone'] as string | undefined;
+    const zoningLabel = zoningLayer?.results?.[0]?.['Zone Label'] as string | undefined;
+    const zoningFull = zoningCode && zoningLabel ? `${zoningCode} ${zoningLabel}` : zoningCode;
 
     const comparableLines = ctx.inputComparables.slice(0, 5).map(c => {
       const rate = c.rate_per_m2 != null ? Number(c.rate_per_m2) : null;
@@ -428,11 +432,16 @@ export class ObjectionReasonGeneratorService {
     switch (groundNumber) {
       case 1:
       case 2: {
-        if (ctx.meta.assessed_land_value != null) lines.push(`Assessed land value (notice): $${ctx.meta.assessed_land_value.toLocaleString()}`);
-        lines.push(`Lot area: ${ctx.lotAreaM2 ?? ctx.meta.land_area_sqm ?? 'unknown'} m²`);
+        const assessedValue = ctx.meta.assessed_land_value;
+        const lotArea = ctx.lotAreaM2 ?? ctx.meta.land_area_sqm;
+        if (assessedValue != null) lines.push(`Assessed land value (notice): $${assessedValue.toLocaleString()}`);
+        if (lotArea != null) lines.push(`Lot area: ${lotArea} m²`);
+        if (assessedValue != null && lotArea != null && lotArea > 0) {
+          lines.push(`Assessed rate: $${Math.round(assessedValue / lotArea).toLocaleString()}/m²`);
+        }
         if (ctx.meta.fsr_from_pdf != null) lines.push(`FSR (from report): ${ctx.meta.fsr_from_pdf}`);
         if (ctx.meta.height_limit_m != null) lines.push(`Height limit: ${ctx.meta.height_limit_m} m`);
-        if (zoningCode) lines.push(`Zone: ${zoningCode}`);
+        if (zoningFull) lines.push(`Zone: ${zoningFull}`);
         if (comparableLines.length > 0) { lines.push('Comparable sales:'); lines.push(...comparableLines); }
         if (groundNumber === 1 && er) {
           for (const fmt of [
@@ -450,7 +459,7 @@ export class ObjectionReasonGeneratorService {
         break;
       }
       case 4: {
-        if (zoningCode) lines.push(`Zone code from ePlanning: ${zoningCode}`);
+        if (zoningFull) lines.push(`Zone from ePlanning: ${zoningFull}`);
         if (ctx.meta.heritage_mentions.length > 0) {
           lines.push('Heritage mentions from report:');
           ctx.meta.heritage_mentions.forEach(m => lines.push(`  - ${m}`));

@@ -1,6 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Anthropic from '@anthropic-ai/sdk';
+import { readFile } from 'fs/promises';
+import { join } from 'path';
 import type { Page } from 'puppeteer';
 import { NavigationSource } from './objection-reason-markdown.service';
 
@@ -39,22 +41,35 @@ interface GroundForSynthesis {
 }
 
 @Injectable()
-export class ObjectionReasonBrowserService {
+export class ObjectionReasonBrowserService implements OnModuleInit {
   private static readonly SNAPSHOT_CHAR_LIMIT = 6_000;
   private static readonly STEP_MAX_TOKENS = 512;
   private static readonly SYNTHESIS_MAX_TOKENS = 300;
-  private static readonly OBJECTION_MAX_TOKENS = 600;
+  private static readonly OBJECTION_MAX_TOKENS = 800;
   private static readonly CONCESSION_MAX_TOKENS = 200;
 
   private readonly logger = new Logger(ObjectionReasonBrowserService.name);
   private readonly client: Anthropic;
   private readonly model: string;
+  private writingGuide = '';
 
   constructor(private readonly config: ConfigService) {
     const apiKey = this.config.getOrThrow<string>('ANTHROPIC_API_KEY');
     const baseURL = this.config.get<string>('ANTHROPIC_API_URL')?.replace(/\/v1\/messages\/?$/, '');
     this.client = new Anthropic({ apiKey, ...(baseURL ? { baseURL } : {}) });
     this.model = this.config.get<string>('ANTHROPIC_MODEL') ?? 'claude-sonnet-4-6';
+  }
+
+  async onModuleInit(): Promise<void> {
+    try {
+      this.writingGuide = await readFile(
+        join(__dirname, '..', '..', 'skills', 'objection-writing-guide.md'),
+        'utf8',
+      );
+      this.logger.log('[OBJECTION] Loaded objection-writing-guide.md');
+    } catch (err: unknown) {
+      this.logger.warn(`[OBJECTION] Could not load objection-writing-guide.md: ${(err as Error).message}`);
+    }
   }
 
   async runSource(
@@ -188,10 +203,35 @@ Respond ONLY as JSON (no markdown, no extra text):
   ): Promise<string | null> {
     const GROUND_CONTEXT: Record<number, string> = {
       1: 'Ground 1 asserts that the assessed land value is too high. The reason must state the contended value, reference comparable sales (address, DP, sale date, sale price, adjusted land value), and explain how each comparable supports the contended figure.',
+      2: 'Ground 2 asserts that the assessed land value is too low. The reason must state the contended (higher) value, reference comparable sales, and explain the market evidence. If the analysis notes include compulsory acquisition context or a financial warning about increased land tax liability, include those.',
       3: 'Ground 3 asserts that the area or dimensions of the land recorded on the notice are incorrect. The reason must identify the discrepancy between the area on the notice and the area shown by the official source.',
       4: 'Ground 4 asserts that the description of the land (zone, classification) on the notice is incorrect. The reason must identify the correct zone/description from the official planning instrument.',
-      7: 'Ground 7 asserts that the person named on the notice is not the correct owner/lessee/occupier. The reason must identify the correct legal entity and reference the official register confirming it.',
-      9: 'Ground 9 asserts that a concession or allowance has been incorrectly applied or is missing. This objection concerns the special trust rate under the Land Tax Management Act 1956 (NSW) s3A and s10B — the entity is a unit trust and therefore excluded from the definition of "special trust", entitling it to the special trust rate rather than the general trust rate currently applied.',
+      5: 'Ground 5 asserts that lots have been wrongly grouped and should each be valued separately. '
+        + 'Name each lot (Lot X DP XXXXXX) and its separate registered proprietor exactly as shown in the analysis notes. '
+        + 'State that each lot holds its own Certificate of Title per NSW LRS. '
+        + 'State explicitly that no amalgamation order exists. '
+        + 'If owners are different legal entities, name each entity precisely (including ACN if mentioned). '
+        + 'IMPORTANT: These lots have DIFFERENT registered proprietors — do NOT use the phrases "same owner", "common owner", or "single owner" in your response.',
+      6: 'Ground 6 asserts that lots should be valued as a single combined holding. '
+        + 'Name each lot and confirm same owner (same registered proprietor) for all lots via NSW LRS — use the phrase "same owner". '
+        + 'Explain the physical and legal basis for combined valuation from the analysis notes. '
+        + 'Include the combined argued value and any water licence or development approval mentioned.',
+      7: 'Ground 7 asserts that the person named on the notice is not the correct owner/lessee/occupier. '
+        + 'The reason must identify the correct legal entity and reference the official register confirming it. '
+        + 'If the correct proprietor is a trust or trustee, use the word "trust" or "trustee" to describe the entity structure.',
+      8: 'Ground 8 asserts that the valuations are incorrectly apportioned. '
+        + 'Identify the apportionment error: state the VG\'s wrong basis and the correct basis (e.g. lot entitlements from the strata plan, lot area ratio from the deposited plan, or lease formula). '
+        + 'Include the total scheme value, the VG-applied percentage or figure, the correct percentage or figure, and the resulting dollar overcharge.',
+      9: 'Ground 9 asserts that a concession or allowance has been incorrectly applied or is missing. '
+        + 'State the specific concession type and its exact legislative section (e.g. s14L(1)(A), s14T, s585, s62K) exactly as it appears in the analysis notes. '
+        + 'Cite the Land Tax Management Act 1956 (NSW) and the section number. '
+        + 'Include all key figures: taxable value, allowance amount, overcharge. '
+        + 'Reference the supporting document or register cited in the notes. '
+        + 'Write 5–8 sentences — do not truncate at 3–5. '
+        + 'Use exact figure formats from the notes ($X/m², dollar amounts with commas). '
+        + 'Include ALL regulatory identifiers verbatim (SEPP numbers, mining lease ML numbers, construction certificate CC numbers, DA references). '
+        + 'For scenarios involving Section 124 Heritage Act 1977, also cite Valuation of Land Act 1916 (NSW) in addition to Land Tax Management Act 1956 (NSW). '
+        + 'Use "Onsite" and "Offsite" as single unhyphenated words.',
     };
 
     const groundCtx = GROUND_CONTEXT[ground.groundNumber] ?? `Ground ${ground.groundNumber}: "${ground.label}"`;
@@ -211,18 +251,27 @@ ${ground.analysis || '(none)'}
 ${generationCtx ? `\nADDITIONAL PIPELINE CONTEXT (comparable sales, zoning, notice details, prior issue analysis):\n${generationCtx}\n` : ''}
 WRITING RULES — the VG portal text box expects:
 1. First person as the objector ("I contend...", "The entity named on my notice...", "The land tax notice incorrectly...")
-2. 3–5 sentences — concise, no padding
+2. 5–8 sentences for Ground 9; 3–6 sentences for Grounds 1–8. Include all required figures and legislative references even at the expense of brevity.
 3. Name the official source by its proper title (Australian Business Register, Land Tax Management Act 1956 (NSW), NSW Planning Portal) — never say "the screenshot", "the PNG", "the automation", "the agent"
-4. Include specific values from the observation notes: ABN, entity type, zone code, area (m²), lot/DP, legislative section numbers
+4. Include specific values from the observation notes: ABN, entity type, zone code, area (m²), lot/DP, legislative section numbers, comparable land rates. Write rates as $X/m² with a forward slash (e.g., "$2,000/m²") — never as "per m²" or "per square metre".
 5. End by stating clearly how the evidence supports the objection ground
 6. Formal, professional tone appropriate for a statutory objection to a government body
+7. Always cite the Valuation of Land Act 1916 (NSW) as the statutory basis for the land valuation (Grounds 1–8)
+8. For Ground 9, always cite the Land Tax Management Act 1956 (NSW) and the specific section number of the concession from the analysis notes — do NOT cite the Valuation of Land Act for Ground 9. Exception: for Ground 9 scenarios involving Section 124 Heritage Act 1977 (NSW) heritage restrictions, ALSO cite Valuation of Land Act 1916 (NSW) — heritage directly affects the assessed land value.
+9. If the scenario involves a change of registered proprietor, land tax liability, or Revenue NSW, also cite the Land Tax Management Act 1956 (NSW)
+10. Never hyphenate "onsite" or "offsite" — write as single unhyphenated words.
+11. Always include a sentence stating the 60-day objection deadline: for Grounds 1–8 cite the Valuation of Land Act 1916 (NSW) and state that this objection must be lodged within 60 days of the date of the valuation notice; for Ground 9 cite the Land Tax Management Act 1956 (NSW) and state that this objection must be lodged within 60 days of the date of the land tax assessment. Example: "I note that an objection under the Valuation of Land Act 1916 (NSW) must be lodged within 60 days of the date of the notice."
 
 Return ONLY the text to paste into the portal text box — no preamble, no labels, no markdown.`;
+
+    const guideSection = this.writingGuide
+      ? `\n\nOBJECTION WRITING GUIDE — use the templates, field requirements, and golden rules in this guide:\n${this.writingGuide}`
+      : '';
 
     try {
       const response = await this.client.messages.create({
         model: this.model,
-        system: 'You write NSW land tax objection reasons for the VG portal. Return only the portal text — plain prose, no metadata, no formatting.',
+        system: `You write NSW land tax objection reasons for the NSW Valuer General portal. Return only the portal text — plain prose, no metadata, no formatting.${guideSection}`,
         messages: [{ role: 'user', content: prompt }],
         max_tokens: ObjectionReasonBrowserService.OBJECTION_MAX_TOKENS,
       });
