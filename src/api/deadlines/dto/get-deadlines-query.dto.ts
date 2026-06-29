@@ -12,7 +12,7 @@ export class GetDeadlinesQueryDto {
   @Min(1)
   page?: number;
 
-  @ApiPropertyOptional({ default: 4, minimum: 1, maximum: 50 })
+  @ApiPropertyOptional({ default: 8, minimum: 1, maximum: 50 })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
