@@ -1,12 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { DeadlineCaseResponseDto } from './deadline-case-response.dto';
 
-class HasMoreDto {
-  @ApiProperty() safe: boolean;
-  @ApiProperty() approaching: boolean;
-  @ApiProperty() urgent: boolean;
-}
-
 export class CategorizedDeadlineResponseDto {
   @ApiProperty({ type: [DeadlineCaseResponseDto] })
   safe: DeadlineCaseResponseDto[];
@@ -29,6 +23,6 @@ export class CategorizedDeadlineResponseDto {
   @ApiProperty()
   total: number;
 
-  @ApiProperty({ type: HasMoreDto, description: 'Per-category pagination flags' })
-  hasMore: HasMoreDto;
+  @ApiProperty({ description: 'True if any category has more pages' })
+  hasMore: boolean;
 }

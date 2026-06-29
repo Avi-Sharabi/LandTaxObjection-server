@@ -75,11 +75,7 @@ export class DeadlinesService {
       approachingTotal,
       urgentTotal,
       total: safeTotal + approachingTotal + urgentTotal,
-      hasMore: {
-        safe:        skip + limit < safeTotal,
-        approaching: skip + limit < approachingTotal,
-        urgent:      skip + limit < urgentTotal,
-      },
+      hasMore: skip + limit < safeTotal || skip + limit < approachingTotal || skip + limit < urgentTotal,
     };
   }
 
