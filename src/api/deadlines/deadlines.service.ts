@@ -3,10 +3,14 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { In, Not, Repository } from 'typeorm';
 import { DisputeCase, DisputeStatus } from '../dispute-cases/entities/dispute-case.entity';
 import { DeadlineCaseResponseDto } from './dto/deadline-case-response.dto';
+import { CategorizedDeadlineResponseDto } from './dto/categorized-deadline-response.dto';
 import { GetDeadlinesQueryDto, UrgencyCategory } from './dto/get-deadlines-query.dto';
 
 const TERMINAL_STATUSES: DisputeStatus[] = [
-  DisputeStatus.OUTCOME_RECEIVED,
+  DisputeStatus.SUBMITTED_TO_VG,
+  DisputeStatus.VG_APPROVED,
+  DisputeStatus.VG_DECLINED,
+  DisputeStatus.FOR_REVIEW,
   DisputeStatus.CLOSED,
   DisputeStatus.CLOSED_NO_OBJECTION,
 ];
@@ -23,17 +27,45 @@ export class DeadlinesService {
     private readonly disputeCasesRepository: Repository<DisputeCase>,
   ) {}
 
-  async getDeadlineCases(query: GetDeadlinesQueryDto): Promise<DeadlineCaseResponseDto[]> {
+  async getDeadlineCases(query: GetDeadlinesQueryDto): Promise<CategorizedDeadlineResponseDto> {
+    const mapped = await this.fetchMappedCases();
+
+    const allSafe = mapped.filter((c) => c.urgency_category === 'safe');
+    const allApproaching = mapped.filter((c) => c.urgency_category === 'approaching');
+    const allUrgent = mapped.filter((c) => c.urgency_category === 'urgent');
+
+    const safeTotal = allSafe.length;
+    const approachingTotal = allApproaching.length;
+    const urgentTotal = allUrgent.length;
+    const total = mapped.length;
+
+    const page = query.page ?? 1;
+    const limit = query.limit ?? 4;
+    const skip = (page - 1) * limit;
+
+    const safe = allSafe.slice(skip, skip + limit);
+    const approaching = allApproaching.slice(skip, skip + limit);
+    const urgent = allUrgent.slice(skip, skip + limit);
+
+    const hasMore =
+      skip + limit < safeTotal ||
+      skip + limit < approachingTotal ||
+      skip + limit < urgentTotal;
+
+    return { safe, approaching, urgent, safeTotal, approachingTotal, urgentTotal, total, hasMore };
+  }
+
+  private async fetchMappedCases(): Promise<DeadlineCaseResponseDto[]> {
     const cases = await this.disputeCasesRepository.find({
       where: { status: Not(In(TERMINAL_STATUSES)) },
       relations: ['client', 'property', 'assigned_accountant'],
-      order: { statutory_deadline: 'ASC' },
+      order: { created_at: 'DESC' },
     });
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    const mapped = cases.map((c): DeadlineCaseResponseDto => {
+    return cases.map((c): DeadlineCaseResponseDto => {
       const deadline = new Date(c.statutory_deadline);
       deadline.setHours(0, 0, 0, 0);
 
@@ -65,12 +97,6 @@ export class DeadlinesService {
         assigned_accountant: c.assigned_accountant?.fullName ?? null,
       };
     });
-
-    if (query.urgency) {
-      return mapped.filter((c) => c.urgency_category === query.urgency);
-    }
-
-    return mapped;
   }
 
   private static resolveUrgency(daysRemaining: number): UrgencyCategory {
