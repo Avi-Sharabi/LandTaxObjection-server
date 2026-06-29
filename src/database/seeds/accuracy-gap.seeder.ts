@@ -27,6 +27,7 @@ const ADV_001 = {
     { address: '31 DARLING ST BALMAIN NSW 2041', area_m2: 345, zone: 'R2', analysed_land_value: 2139000, rate_per_m2: 6200, contract_date: '2024-05-01' },
   ],
   groundAnalysis: {
+    '2': 'ASSESSED VALUE TOO LOW. Assessed $1,800,000 ($5,143/m²). Three comparable sales average $6,233/m². VG used inferior non-waterfront sales at $5,100/m². Argued higher value: $6,233/m² × 350 m² = $2,182,000. FINANCIAL WARNING: higher assessed value will increase land tax liability — accounting advice required.',
     '7': 'ABR: owner correctly named as Ash Ash Testing ATF Ash Ash Testing. No wrong-person issue. R5 must NOT be ticked.',
     '9': 'No concession applies to this property. No contamination, no heritage, no SEPP, no stratum, no subdivider intent, no coal, no attributable part. R9 must NOT be ticked.',
   },
@@ -45,6 +46,7 @@ const ADV_002 = {
     { address: '22 BAULKHAM HILLS RD CASTLE HILL NSW 2154', area_m2: 910, zone: 'R2', analysed_land_value: 2162000, rate_per_m2: 2376, contract_date: '2024-04-01' },
   ],
   groundAnalysis: {
+    '1': 'Assessed $2,400,000 ($2,667/m²). High voltage easement: rear 150 m² sterilised — -8% adjustment. Comparable average $2,375/m². Combined adjustment: -8% easement + market rate adjustment. Argued lower value: $2,375/m² × 92% = $2,185/m² × 900 m² = $1,966,500 vs assessed $2,400,000. Overvaluation: $433,500.',
     '9': 'PPR flag is set in the system. However NO supporting evidence is attached — no statutory declaration, no council rates notice, no occupancy confirmation. PPR exemption cannot be applied on the basis of a flag alone. AI must explicitly flag that PPR evidence is missing and request it. AI must NOT apply any PPR reduction to taxable value.',
   },
   reportNotes: "R2 Low Density Residential (Hills Local LEP 2012). Area 900 m2. Assessed $2,400,000 ($2,667/m2). Comparable average $2,375/m2. High voltage easement: rear 150 m2 sterilised — -8% adjustment. Argued lower value: $2,375/m2 * 92% = $2,185/m2 * 900 m2 = $1,966,500. PPR FLAG SET IN SYSTEM BUT NO SUPPORTING EVIDENCE ATTACHED — no statutory declaration, no occupancy confirmation, no rate notice. AI must explicitly note PPR exemption cannot be applied without evidence and must request evidence. AI must NOT silently apply PPR reduction.",
@@ -56,6 +58,9 @@ const ADV_003 = {
   pid: '8844101', lotDp: 'Lot 4 SP 88441', lot: '4', plan: '88441', planType: 'SP',
   assessedValue: 2200000, priorValue: 2000000, landAreaSqm: 120,
   zoningCode: 'B3', zoningLabel: 'Commercial Core',
+  groundAnalysis: {
+    '8': 'CONFLICTING ENTITLEMENT SCHEDULES — cannot resolve without adjudication. Schedule A (2019 registration): Lot 4 = 9 units / 500 total = 9% → $198,000. Schedule B (2022 by-law amendment): Lot 4 = 12 units / 500 total = 12% → $264,000. VG applied Schedule B (12%) without documented basis. Conflict unresolved — no resolution document or adjudication exists. AI must identify BOTH schedules, flag the conflict, and explicitly state that a complete objection cannot be prepared until the conflict is resolved. Conditional overcharge if 9% is correct: $66,000.',
+  },
   reportNotes: "Strata lot SP 88441, 50 lots. CONFLICTING ENTITLEMENT SCHEDULES — Schedule A (2019 registration): Lot 4 = 9 units out of 500 total = 9% -> $198,000. Schedule B (2022 by-law amendment): Lot 4 = 12 units out of 500 total = 12% -> $264,000. VG applied 12% (Schedule B) without documented basis. Conflict is unresolved — no resolution document or adjudication available. AI must identify BOTH schedules, must NOT silently select either, must NOT produce a complete R6 objection, must flag the conflict and request resolution. 60-day deadline still applies.",
   inputDocuments: [
     'Schedule A (2019 strata plan registration): Lot 4 entitlement = 9 units / 500 total = 9%. Schedule B (2022 by-law amendment): Lot 4 entitlement = 12 units / 500 total = 12%. Both schedules currently active in system. No resolution document or adjudication exists. VG applied 12% without documented basis. Conflict must be resolved before a complete R6 objection can be prepared. Potential overcharge if 9% is correct: $264,000 - $198,000 = $66,000 (conditional on resolution).',
@@ -75,6 +80,10 @@ const CRX_001 = {
     { address: '95 LINKS RD ERSKINE PARK NSW 2759', area_m2: 7300, zone: 'E4', analysed_land_value: 6059000, rate_per_m2: 830, contract_date: '2024-04-01' },
     { address: '62 STURT RD ERSKINE PARK NSW 2759', area_m2: 7000, zone: 'E4', analysed_land_value: 5810000, rate_per_m2: 830, contract_date: '2023-12-01' },
   ],
+  groundAnalysis: {
+    '1': 'VG rate even at correct area 7,200 m²: $7,560,000 ÷ 7,200 m² = $1,050/m² — above E4 market. Three E4 Erskine Park comparable sales average $830/m². Argued lower value: $830/m² × 7,200 m² = $5,976,000 vs assessed $7,560,000. Overassessment at correct area: $1,584,000. Both Ground 1 (value too high) and Ground 3 (area incorrect) apply.',
+    '3': 'VG recorded area 8,400 m² — WRONG. Correct area per Deposited Plan DP 667744 (NSW LRS title search): 7,200 m². Area overstated 1,200 m². Both Ground 3 (area incorrect) and Ground 1 (value too high even at correct area) apply.',
+  },
   reportNotes: 'E4 General Industrial (Penrith LEP 2010). BOTH R3 AND R1 APPLY. R3: VG recorded area 8,400 m2 — WRONG. Correct area per DP 667744 title search: 7,200 m2. Area overstated 1,200 m2. R1: Even at correct area 7,200 m2, implied rate $7,560,000 / 7,200 = $1,050/m2 EXCEEDS market. Three E4 Erskine Park comparables average $830/m2. Combined correct value: $830/m2 * 7,200 m2 = $5,976,000. Total overassessment: $7,560,000 - $5,976,000 = $1,584,000. Title search + 3 comparable sales both cited.',
   inputDocuments: [
     'Current title search (DP 667744): Lot 3 area = 7,200 m2 (correct). VG recorded 8,400 m2 — overstated 1,200 m2. VG rate even at correct area: $7,560,000 / 7,200 m2 = $1,050/m2 — above market. Both R3 and R1 must be argued.',
@@ -91,7 +100,7 @@ const CRX_002 = {
   entityClientName: 'Burwood Unit Trust No. 11 ATF Burwood Investments',
   groundAnalysis: {
     '7': 'Notice to John Smith — previous owner. Transfer: Burwood Unit Trust No. 11 ATF Burwood Investments, 8 October 2023.',
-    '6': 'VG used lot count (15 / 80 = 18.75%) not entitlement units. Correct: 12 / 800 = 1.5%.',
+    '8': 'VG applied lot count (15 lots / 80 lots = 18.75%) — incorrect. Correct basis: entitlement units. SP 99201 Schedule of Entitlements: Lot 11 = 12 units / 800 total = 1.5%. Total scheme land value: $950,000. VG value: 18.75% × $950,000 = $178,125. Correct value: 1.5% × $950,000 = $14,250. Overcharge: $163,875.',
   },
   reportNotes: "BOTH R5 AND R6 APPLY. R5: Notice issued to John Smith (previous individual owner, sold September 2023). Correct current owner: Burwood Unit Trust No. 11 ATF Burwood Investments (registered transfer 8 October 2023). R6: VG entitlement error — applied 15 / 80 (lots, not entitlements) = 18.75% = $178,125. Correct: 12 / 800 (entitlement units) = 1.5% * $950,000 = $14,250. Overcharge: $178,125 - $14,250 = $163,875.",
 };
@@ -107,6 +116,10 @@ const CRX_003 = {
     { address: '22 ORANGE GROVE RD PRESTONS NSW 2170', area_m2: 5000, zone: 'E5', analysed_land_value: 3000000, rate_per_m2: 600, contract_date: '2024-05-01' },
     { address: '8 BERNERA RD PRESTONS NSW 2170', area_m2: 4900, zone: 'E5', analysed_land_value: 2940000, rate_per_m2: 600, contract_date: '2024-01-01' },
   ],
+  groundAnalysis: {
+    '1': 'VG used B2 Local Centre retail comparable sales averaging $875/m² — entirely inappropriate for an E5 Heavy Industrial site. Correct E5 comparable sales (Prestons/Hoxton Park) average $600/m². Argued lower value: $600/m² × 4,800 m² = $2,880,000 vs assessed $4,200,000. Overassessment at correct zone comparables: $1,320,000. Both Ground 4 (zone description incorrect) and Ground 1 (value too high) apply.',
+    '4': 'VG recorded zone B2 Local Centre — WRONG. Section 10.7 Planning Certificate (Liverpool City Council) confirms correct zone: E5 Heavy Industrial (Liverpool LEP 2008). VG used inapplicable B2 retail comparables. Both Ground 4 (zone description incorrect) and Ground 1 (value too high) apply.',
+  },
   reportNotes: 'BOTH R4 AND R1 APPLY. R4: VG recorded zone B2 Local Centre — WRONG. Correct zone: E5 Heavy Industrial (Liverpool LEP 2008) — confirmed Section 10.7. R1: VG used B2 retail comparables averaging $875/m2 — inappropriate for E5 industrial. Correct E5 comparables average $600/m2. Combined correct value: $600/m2 * 4,800 m2 = $2,880,000. Overassessment: $4,200,000 - $2,880,000 = $1,320,000.',
   inputDocuments: [
     'Section 10.7 Planning Certificate (Liverpool City Council): E5 Heavy Industrial — Liverpool LEP 2008. VG notice records B2 Local Centre — incorrect. VG B2 retail comparables avg $875/m2 — entirely inappropriate for E5 industrial. E5 comparables avg $600/m2. Both R4 and R1 must be argued.',
@@ -126,6 +139,9 @@ const MIS_001 = {
     { address: '44 VICTORIA RD DRUMMOYNE NSW 2047', area_m2: 660, zone: 'R2', analysed_land_value: 2904000, rate_per_m2: 4400, contract_date: '2024-01-01' },
     { address: '50 VICTORIA RD DRUMMOYNE NSW 2047', area_m2: 640, zone: 'R2', analysed_land_value: 2816000, rate_per_m2: 4400, contract_date: '2024-04-01' },
   ],
+  groundAnalysis: {
+    '1': 'LAND AREA FIELD IS NULL — MISSING DATA. Land area is not recorded in the VG assessment database. Land area is required to calculate the $/m² rate and the argued land value. DO NOT use a comparable sale\'s lot area as a proxy estimate. Request the cadastral area from the current title search or the relevant deposited plan before completing this objection. Rear right-of-way easement recorded: -7% adjustment applicable once area is confirmed. Comparable sales at $4,400/m² are available but cannot be applied without confirmed land area.',
+  },
   reportNotes: 'R2 Low Density Residential (Canada Bay LEP 2013). LAND AREA FIELD IS NULL — MISSING DATA. AI must identify that land area is not recorded and is required to calculate $/m2 rate and argued value. AI must NOT use a comparable lot area as a proxy estimate. AI must request cadastral area from current title or deposited plan. Rear right-of-way easement recorded: -7% adjustment. Comparable sales at $4,400/m2 are available but cannot be applied without land area.',
 };
 
@@ -138,6 +154,9 @@ const MIS_002 = {
   concessionMentions: [
     's14L(1)(A) Onsite Allowance — FLAG IS ACTIVE in system — SEPP No 55 contamination overlay confirmed — BUT REMEDIATION COST FIELD IS BLANK/NULL — XYZ Environmental Report (April 2024) attached as evidence document but cost not extracted to database field',
   ],
+  groundAnalysis: {
+    '9': 's14L(1)(A) Onsite Allowance — flag is ACTIVE but has not been applied. SEPP No 55 contamination overlay confirmed. HOWEVER: remediation cost field is BLANK — no dollar amount recorded. XYZ Environmental Engineering Report (April 2024) is attached as evidence but the cost figure has not been extracted into the database. AI must identify s14L(1)(A) under Land Tax Management Act 1956 (NSW) as the applicable concession and SEPP No 55 as the overlay. AI must NOT calculate taxable value or overcharge without the cost figure. AI must explicitly state the remediation cost is missing and request it be extracted from the XYZ report.',
+  },
   reportNotes: 'E5 Heavy Industrial. s14L(1)(A) Onsite Allowance flag is ACTIVE. SEPP No 55 contamination confirmed. HOWEVER: Remediation cost field is BLANK — no dollar amount recorded. XYZ Environmental Engineering Report (April 2024) is attached as evidence but the cost figure has not been extracted into the database. AI must identify s14L(1)(A) as the applicable concession and SEPP No 55 as the overlay, but must NOT calculate taxable value or overcharge without the cost figure. AI must explicitly state the remediation cost is missing and request it to be extracted from the XYZ report. AI must NOT estimate the cost.',
 };
 
@@ -166,7 +185,7 @@ const INV_001 = {
     's14L(1)(A) Onsite Allowance — CURRENTLY ACTIVE — $750,000 deduction — but REMEDIATION IS COMPLETE — EPA Site Audit Statement SAS/2021/4456 (14 June 2021) confirms site clean — concession should have been REMOVED — current taxable value $4,250,000 is WRONG — correct taxable $5,000,000',
   ],
   groundAnalysis: {
-    '9': 's14L(1)(A) is currently active ($750,000 deduction). Remediation COMPLETE: EPA SAS/2021/4456 (14 June 2021) confirms site clean. Concession should be REMOVED. Correct taxable: $5,000,000. Compulsory acquisition: Transport for NSW requires full unencumbered market value.',
+    '9': 's14L(1)(A) Onsite Allowance is currently active ($750,000 deduction, current taxable $4,250,000). Remediation COMPLETE: EPA Site Audit Statement SAS/2021/4456 (14 June 2021) confirms site is clean — the basis for the allowance no longer exists. Concession should be REMOVED. Correct taxable: $5,000,000 (full, unencumbered). Context: compulsory acquisition by Transport for NSW — Valuation of Land Act 1916 (NSW) applies as the full unencumbered market value underpins the compensation amount. Land Tax Management Act 1956 (NSW) s14L(1)(A).',
   },
   reportNotes: 'E5 Heavy Industrial (Fairfield LEP 2013). s14L(1)(A) Onsite Allowance is currently active: $750,000 deduction, current taxable $4,250,000. HOWEVER: remediation is COMPLETE. NSW EPA Site Audit Statement SAS/2021/4456 (signed 14 June 2021) confirms site is clean. The basis for the allowance no longer exists. AI must recommend REMOVAL of the s14L(1)(A) concession. Correct taxable value: $5,000,000 (full, unencumbered). Purpose: compulsory acquisition by Transport for NSW — full unencumbered value required.',
 };
@@ -181,7 +200,7 @@ const INV_002 = {
     "PPR Exemption — CURRENTLY ACTIVE — but property is INVESTMENT PROPERTY — tenanted since 15 March 2019 — tenant Sarah Brown $2,800/week — owner PPR is 44 Palm Beach Road Palm Beach NSW 2108 — PPR exemption must be REMOVED",
   ],
   groundAnalysis: {
-    '9': "PPR exemption active — INCORRECT. Property tenanted since 15 March 2019 (Sarah Brown, $2,800/week). Owner's PPR: 44 Palm Beach Road, Palm Beach NSW 2108. PPR exemption must be REMOVED. Land tax payable: 1.6% * $1,650,000 = $26,400/yr.",
+    '9': "PPR (Principal Place of Residence) exemption is currently active — INCORRECT. Property has been tenanted since 15 March 2019 (tenant: Sarah Brown, $2,800/week rental income). Owner's actual PPR: 44 Palm Beach Road, Palm Beach NSW 2108. PPR exemption must be REMOVED. Correct land tax payable: 1.6% × $1,650,000 = $26,400 per year. Context: Revenue NSW audit — owner self-reporting error. Land Tax Management Act 1956 (NSW).",
   },
   reportNotes: "R2 Low Density Residential (Northern Beaches LEP 2021). PPR exemption currently active — INCORRECT. Property is an investment property: tenanted since 15 March 2019 (tenant Sarah Brown, $2,800/week rental income). Owner's principal place of residence is 44 Palm Beach Road, Palm Beach NSW 2108. AI must identify the PPR exemption as wrongly applied, confirm investment property status via tenancy evidence, identify owner's true PPR, and recommend REMOVAL of the PPR exemption. Correct land tax payable: 1.6% * $1,650,000 = $26,400 per year. Revenue NSW audit — owner self-reporting error.",
 };
@@ -197,6 +216,9 @@ const R1X_001 = {
   concessionMentions: [
     'SEPP (Resilience and Hazards) 2021 — Flood Planning Area — Category 1 flood constraint — $180,000 flood mitigation cost confirmed by council flood certificate — FSR restricted 0.35:1 vs standard 0.5:1 — combined -25% adjustment',
   ],
+  groundAnalysis: {
+    '1': 'SEPP (Resilience and Hazards) 2021 — Flood Planning Area Category 1. Flood mitigation cost $180,000 confirmed by council flood certificate. FSR restricted 0.35:1 vs standard R2 0.5:1 (30% reduction in developable floor space — Section 10.7). VG used unconstrained R2 comparables at $917/m² — no flood or FSR adjustment applied. Combined adjustment: −15% flood/mitigation + −10% FSR restriction = −25%. Argued: $900/m² avg × 75% = $675/m² × 1,200 m² = $810,000 vs assessed $1,100,000. Overvaluation: $290,000.',
+  },
   comparables: [
     { address: '8 GEORGE ST WINDSOR NSW 2756', area_m2: 1180, zone: 'R2', analysed_land_value: 1062000, rate_per_m2: 900, contract_date: '2024-02-01' },
     { address: '19 THOMPSON SQ WINDSOR NSW 2756', area_m2: 1220, zone: 'R2', analysed_land_value: 1098000, rate_per_m2: 900, contract_date: '2024-04-01' },
@@ -217,6 +239,9 @@ const R2X_001 = {
   heritageMentions: [
     'Heritage Item I45 — individually listed — Woollahra Local Environmental Plan 2014 — Woollahra Heritage Conservation Area — Section 10.7 certificate — NSW Heritage Office 2023 market study: 18% premium over non-heritage equivalents',
   ],
+  groundAnalysis: {
+    '2': 'ASSESSED VALUE TOO LOW. Heritage Item I45 — individually listed under Woollahra Local Environmental Plan 2014 + Woollahra Heritage Conservation Area (Section 10.7 certificate confirms). NSW Heritage Office 2023 market study: heritage-listed Woollahra properties average 18% premium over non-heritage equivalents. VG used non-heritage R2 comparables at $6,100/m² — incorrect for an individually listed heritage property. Heritage comparable sales average $7,400/m². Argued value: $7,400/m² × 620 m² = $4,588,000 vs assessed $3,800,000. Undervaluation: $788,000. FINANCIAL WARNING: higher valuation increases land tax liability — accounting advice required.',
+  },
   comparables: [
     { address: '9 MANNING RD WOOLLAHRA NSW 2025', area_m2: 610, zone: 'R2', analysed_land_value: 4514000, rate_per_m2: 7400, contract_date: '2024-03-01' },
     { address: '3 OCEAN ST WOOLLAHRA NSW 2025', area_m2: 630, zone: 'R2', analysed_land_value: 4662000, rate_per_m2: 7400, contract_date: '2024-01-01' },

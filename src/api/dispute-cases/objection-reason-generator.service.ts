@@ -243,7 +243,9 @@ export class ObjectionReasonGeneratorService {
         const docIds = ctx.entityEvidence.groundDocIds[key] ?? [];
         const analysisText = ctx.entityEvidence.groundAnalysis[key] ?? '';
         if (docIds.length > 0 || analysisText) {
-          g.isTick = true;
+          if (!this.isNegativeTick(analysisText)) {
+            g.isTick = true;
+          }
           g.evidenceDocIds = [...docIds];
           g.analysis = analysisText;
         }
@@ -252,7 +254,8 @@ export class ObjectionReasonGeneratorService {
 
     const g1 = grounds.find(g => g.groundNumber === 1);
     const g2 = grounds.find(g => g.groundNumber === 2);
-    if (g1 && !g1.isTick && !(g2?.isTick) && ctx.inputComparables.length > 0) {
+    const lotAreaForAutoTick = ctx.lotAreaM2 ?? ctx.meta.land_area_sqm;
+    if (g1 && !g1.isTick && !(g2?.isTick) && ctx.inputComparables.length > 0 && lotAreaForAutoTick != null && lotAreaForAutoTick > 0) {
       g1.isTick = true;
       this.logger.log(`[OBJECTION] Ground 1 auto-ticked — ${ctx.inputComparables.length} comparable(s) in pipeline`);
     }
@@ -263,7 +266,10 @@ export class ObjectionReasonGeneratorService {
     propertyDetails: ObjectionPropertyDetails,
     ctx: SupportingEvidenceContext,
   ): Promise<{ concessionType: string | null; concessionNote: string | null }> {
-    for (const g of grounds.filter(g => g.isTick)) {
+    const tickedGrounds = grounds.filter(g => g.isTick);
+    const tickedGroundNumbers = tickedGrounds.map(g => g.groundNumber);
+
+    for (const g of tickedGrounds) {
       if (g.evidenceDocIds.length > 1) {
         const synthesis = await this.browserService.synthesiseEvidence({
           groundNumber: g.groundNumber,
@@ -278,7 +284,7 @@ export class ObjectionReasonGeneratorService {
       }
 
       this.logger.log(`[OBJECTION]   ✍  Generating reason text for Ground ${g.groundNumber}`);
-      const generationCtx = this.buildGenerationContext(ctx, g.groundNumber);
+      const generationCtx = this.buildGenerationContext(ctx, g.groundNumber, tickedGroundNumbers);
       const reason = await this.browserService.generateObjectionReason(
         { groundNumber: g.groundNumber, label: g.label, evidenceFiles: g.evidenceDocIds, analysis: g.analysis },
         propertyDetails,
@@ -415,9 +421,20 @@ export class ObjectionReasonGeneratorService {
     return parts.join('\n');
   }
 
-  private buildGenerationContext(ctx: SupportingEvidenceContext, groundNumber: number): string {
+  private buildGenerationContext(ctx: SupportingEvidenceContext, groundNumber: number, tickedGroundNumbers: number[] = []): string {
     const lines: string[] = [];
     const er = ctx.evidenceResult;
+
+    if (tickedGroundNumbers.length > 1) {
+      const allGroundDescriptions = tickedGroundNumbers
+        .map(n => `Ground ${n} — ${GROUND_LABELS[n] ?? `Ground ${n}`}`)
+        .join('; ');
+      lines.push(
+        `CROSS-GROUND NOTICE: This objection raises MULTIPLE grounds simultaneously: ${allGroundDescriptions}. ` +
+        `When writing the text for Ground ${groundNumber}, you MUST explicitly name ALL of the following grounds by number and official label: ${allGroundDescriptions}. ` +
+        `You MUST separately and fully argue the specific merits of Ground ${groundNumber} on its own terms. Naming the other grounds is required but is NOT sufficient — Ground ${groundNumber} must stand alone as a complete, self-contained argument addressing its own specific facts and evidence.`,
+      );
+    }
 
     const zoningLayer = ctx.apiData.layers.find(l => l.layerName === 'Land Zoning Map');
     const zoningCode = zoningLayer?.results?.[0]?.['Zone'] as string | undefined;
@@ -449,6 +466,19 @@ export class ObjectionReasonGeneratorService {
             this.formatIssueResult('Environmental impacts', er.issues.environmental),
             this.formatIssueResult('Access constraints', er.issues.access_constraints),
           ]) { if (fmt) lines.push(fmt); }
+        }
+        if (ctx.meta.concession_mentions.length > 0) {
+          lines.push('Concession/planning mentions from report:');
+          ctx.meta.concession_mentions.forEach(m => lines.push(`  - ${m}`));
+        }
+        if (groundNumber === 2 && ctx.meta.heritage_mentions.length > 0) {
+          lines.push('Heritage mentions from report:');
+          ctx.meta.heritage_mentions.forEach(m => lines.push(`  - ${m}`));
+        }
+        const docSnippet12 = ctx.inputDocumentsText?.[0];
+        if (docSnippet12) lines.push(`Document evidence: ${docSnippet12.slice(0, 400)}`);
+        if (!lotArea || lotArea === 0) {
+          lines.push('WARNING: Land area is null/zero — cannot calculate $/m² rate or argued value without it. Explicitly state the land area is missing and must be obtained from the current title or deposited plan.');
         }
         break;
       }
@@ -513,16 +543,33 @@ export class ObjectionReasonGeneratorService {
         break;
       }
       case 9: {
+        if (ctx.meta.assessed_land_value != null) lines.push(`Assessed land value (notice): $${ctx.meta.assessed_land_value.toLocaleString()}`);
         if (ctx.meta.concession_mentions.length > 0) {
           lines.push('Concession mentions from report:');
           ctx.meta.concession_mentions.forEach(m => lines.push(`  - ${m}`));
         }
         if (er) { const fmt = this.formatIssueResult('Concession analysis', er.issues.concession); if (fmt) lines.push(fmt); }
+        const docSnippet9 = ctx.inputDocumentsText?.[0];
+        if (docSnippet9) lines.push(`Document evidence: ${docSnippet9.slice(0, 400)}`);
         break;
       }
     }
 
     return lines.join('\n');
+  }
+
+  private isNegativeTick(text: string): boolean {
+    if (!text) return false;
+    const lower = text.toLowerCase();
+    return (
+      lower.includes('must not be ticked') ||
+      lower.includes('must not tick') ||
+      lower.includes('not be ticked') ||
+      lower.includes('should not be ticked') ||
+      lower.includes('do not tick') ||
+      lower.includes('r5 must not') ||
+      lower.includes('r9 must not')
+    );
   }
 
   private isNegativeComment(comment: string | null): boolean {
