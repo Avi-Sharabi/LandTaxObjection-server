@@ -1,6 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { InjectRepository } from '@nestjs/typeorm';
-import { Between, FindOptionsWhere, In, LessThan, MoreThan, Not, Repository } from 'typeorm';
+import { Between, DataSource, EntityManager, FindOptionsWhere, In, LessThan, MoreThan, Not } from 'typeorm';
 import { DisputeCase, DisputeStatus } from '../dispute-cases/entities/dispute-case.entity';
 import { DeadlineCaseResponseDto } from './dto/deadline-case-response.dto';
 import { CategorizedDeadlineResponseDto } from './dto/categorized-deadline-response.dto';
@@ -20,6 +19,12 @@ const SAFE_THRESHOLD_DAYS = 14;
 const APPROACHING_THRESHOLD_DAYS = 7;
 const MS_PER_DAY = 86_400_000;
 
+interface CategoryCounts {
+  safeTotal: number;
+  approachingTotal: number;
+  urgentTotal: number;
+}
+
 function addDays(date: Date, days: number): Date {
   const result = new Date(date);
   result.setUTCDate(result.getUTCDate() + days);
@@ -30,10 +35,7 @@ function addDays(date: Date, days: number): Date {
 export class DeadlinesService {
   private readonly logger = new Logger(DeadlinesService.name);
 
-  constructor(
-    @InjectRepository(DisputeCase)
-    private readonly disputeCasesRepository: Repository<DisputeCase>,
-  ) {}
+  constructor(private readonly dataSource: DataSource) {}
 
   async getDeadlineCases(query: GetDeadlinesQueryDto): Promise<CategorizedDeadlineResponseDto> {
     const page  = query.page  ?? 1;
@@ -43,49 +45,48 @@ export class DeadlinesService {
     const today = new Date();
     today.setUTCHours(0, 0, 0, 0);
 
-    const safeThreshold       = addDays(today, SAFE_THRESHOLD_DAYS);
+    const safeThreshold        = addDays(today, SAFE_THRESHOLD_DAYS);
     const approachingThreshold = addDays(today, APPROACHING_THRESHOLD_DAYS);
 
     const baseWhere: FindOptionsWhere<DisputeCase> = {
       status: Not(In(TERMINAL_STATUSES)),
     };
 
-    const [
-      safeCases,
-      approachingCases,
-      urgentCases,
-      safeTotal,
-      approachingTotal,
-      urgentTotal,
-    ] = await Promise.all([
-      this.fetchPage({ ...baseWhere, statutory_deadline: MoreThan(safeThreshold) }, skip, limit, 'ASC'),
-      this.fetchPage({ ...baseWhere, statutory_deadline: Between(approachingThreshold, safeThreshold) }, skip, limit, 'ASC'),
-      // ASC on urgent: lowest date (most overdue) surfaces first
-      this.fetchPage({ ...baseWhere, statutory_deadline: LessThan(approachingThreshold) }, skip, limit, 'ASC'),
-      this.countCategory({ ...baseWhere, statutory_deadline: MoreThan(safeThreshold) }),
-      this.countCategory({ ...baseWhere, statutory_deadline: Between(approachingThreshold, safeThreshold) }),
-      this.countCategory({ ...baseWhere, statutory_deadline: LessThan(approachingThreshold) }),
-    ]);
+    const { safeCases, approachingCases, urgentCases, safeTotal, approachingTotal, urgentTotal } =
+      await this.dataSource.transaction('REPEATABLE READ', async (manager) => {
+        const [safeCases, approachingCases, urgentCases, counts] = await Promise.all([
+          this.fetchPage(manager, { ...baseWhere, statutory_deadline: MoreThan(safeThreshold) }, skip, limit, 'ASC'),
+          this.fetchPage(manager, { ...baseWhere, statutory_deadline: Between(approachingThreshold, safeThreshold) }, skip, limit, 'ASC'),
+          // ASC on urgent: lowest date (most overdue) surfaces first
+          this.fetchPage(manager, { ...baseWhere, statutory_deadline: LessThan(approachingThreshold) }, skip, limit, 'ASC'),
+          this.countAllCategories(manager, approachingThreshold, safeThreshold),
+        ]);
+
+        return { safeCases, approachingCases, urgentCases, ...counts };
+      });
 
     return {
-      safe:        this.mapCases(safeCases, today),
-      approaching: this.mapCases(approachingCases, today),
-      urgent:      this.mapCases(urgentCases, today),
+      safe:               this.mapCases(safeCases, today),
+      approaching:        this.mapCases(approachingCases, today),
+      urgent:             this.mapCases(urgentCases, today),
       safeTotal,
       approachingTotal,
       urgentTotal,
-      total: safeTotal + approachingTotal + urgentTotal,
-      hasMore: skip + limit < safeTotal || skip + limit < approachingTotal || skip + limit < urgentTotal,
+      total:              safeTotal + approachingTotal + urgentTotal,
+      safeHasMore:        skip + limit < safeTotal,
+      approachingHasMore: skip + limit < approachingTotal,
+      urgentHasMore:      skip + limit < urgentTotal,
     };
   }
 
-  private async fetchPage(
+  private fetchPage(
+    manager: EntityManager,
     where: FindOptionsWhere<DisputeCase>,
     skip: number,
     limit: number,
     order: 'ASC' | 'DESC',
   ): Promise<DisputeCase[]> {
-    return this.disputeCasesRepository.find({
+    return manager.find(DisputeCase, {
       where,
       relations: ['client', 'property', 'assigned_accountant'],
       order: { statutory_deadline: order },
@@ -94,8 +95,25 @@ export class DeadlinesService {
     });
   }
 
-  private async countCategory(where: FindOptionsWhere<DisputeCase>): Promise<number> {
-    return this.disputeCasesRepository.count({ where });
+  private async countAllCategories(
+    manager: EntityManager,
+    approachingThreshold: Date,
+    safeThreshold: Date,
+  ): Promise<CategoryCounts> {
+    const raw = await manager
+      .createQueryBuilder(DisputeCase, 'd')
+      .select('SUM(CASE WHEN d.statutory_deadline > :safe        THEN 1 ELSE 0 END)', 'safeTotal')
+      .addSelect('SUM(CASE WHEN d.statutory_deadline BETWEEN :approaching AND :safe THEN 1 ELSE 0 END)', 'approachingTotal')
+      .addSelect('SUM(CASE WHEN d.statutory_deadline < :approaching             THEN 1 ELSE 0 END)', 'urgentTotal')
+      .where('d.status NOT IN (:...terminalStatuses)', { terminalStatuses: TERMINAL_STATUSES })
+      .setParameters({ safe: safeThreshold, approaching: approachingThreshold })
+      .getRawOne<{ safeTotal: string; approachingTotal: string; urgentTotal: string }>();
+
+    return {
+      safeTotal:        Number(raw?.safeTotal)        || 0,
+      approachingTotal: Number(raw?.approachingTotal) || 0,
+      urgentTotal:      Number(raw?.urgentTotal)      || 0,
+    };
   }
 
   private mapCases(cases: DisputeCase[], today: Date): DeadlineCaseResponseDto[] {
@@ -113,8 +131,8 @@ export class DeadlinesService {
         const deadline = new Date(c.statutory_deadline);
         deadline.setUTCHours(0, 0, 0, 0);
 
-        const days_remaining = Math.ceil((deadline.getTime() - today.getTime()) / MS_PER_DAY);
-        const days_elapsed   = Math.min(Math.max(DEADLINE_WINDOW_DAYS - days_remaining, 0), DEADLINE_WINDOW_DAYS);
+        const days_remaining   = Math.ceil((deadline.getTime() - today.getTime()) / MS_PER_DAY);
+        const days_elapsed     = Math.min(Math.max(DEADLINE_WINDOW_DAYS - days_remaining, 0), DEADLINE_WINDOW_DAYS);
         const urgency_category = DeadlinesService.resolveUrgency(days_remaining);
 
         return {
