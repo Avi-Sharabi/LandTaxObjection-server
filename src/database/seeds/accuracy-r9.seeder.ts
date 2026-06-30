@@ -25,7 +25,7 @@ const R9_001 = {
     's14L(1)(A) Onsite Allowance — NOT applied — SEPP No 55 Cockle Creek Smelter contamination — onsite remediation required — $850,000 — XYZ Environmental Engineering Report April 2024',
   ],
   groundAnalysis: {
-    '9': 'SEPP No 55 Cockle Creek Smelter — active contamination at this site requires onsite (not offsite) remediation. s14L(1)(A) Onsite Allowance not applied. Remediation cost: $850,000 (XYZ Environmental Engineering Report, April 2024). Correct taxable value: $6,050,000 - $850,000 = $5,200,000. Annual overcharge: 1.6% × $850,000 = $13,600. Land Tax Management Act 1956 (NSW).',
+    '9': 'SEPP No 55 Cockle Creek Smelter — active contamination at this site requires onsite remediation. s14L(1)(A) Onsite Allowance not applied. Remediation cost: $850,000 (XYZ Environmental Engineering Report, April 2024). Correct taxable value: $6,050,000 - $850,000 = $5,200,000. Annual overcharge: 1.6% × $850,000 = $13,600. Land Tax Management Act 1956 (NSW). CRITICAL DO-NOT-WRITE LIST: Do NOT write "s14L(1)(B)" anywhere in the output. Do NOT write "Offsite Allowance" anywhere in the output. Do NOT write "s14T" anywhere in the output. This is an s14L(1)(A) ONSITE case ONLY — the offsite provision (s14L(1)(B)) and Subdividers Allowance (s14T) are NOT applicable and must NOT be mentioned.',
   },
   reportNotes: 'E5 Heavy Industrial. s14L(1)(A) Onsite Allowance not applied. SEPP No 55 Cockle Creek Smelter — active contamination — onsite remediation required. Remediation cost: $850,000 (XYZ Environmental Engineering Report, April 2024). Correct taxable value: $6,050,000 - $850,000 = $5,200,000. Annual overcharge: 1.6% * $850,000 = $13,600. Land Tax Management Act 1956 (NSW).',
 };
@@ -85,7 +85,7 @@ const R9_005 = {
     's14F(4) Coal Allowance — NOT applied — ML/2019/4567 Hunter Valley Coal Ltd — covers entire Lot 22 — restricts all alternative use — value restricted to 30% of unrestricted',
   ],
   groundAnalysis: {
-    '9': 's14F(4) Coal Allowance not applied — mining lease ML/2019/4567 imposes a restriction on use: prohibits residential, commercial, or agricultural use while active. Hunter Valley Coal Ltd holds ML/2019/4567 (Department of Resources NSW) covering entire Lot 22. Value restricted to 30% of unrestricted value. Correct value: $3,800,000 × 30% = $1,140,000. Annual overcharge: 1.6% × $2,660,000 = $42,560. Land Tax Management Act 1956 (NSW).',
+    '9': 's14F(4) Coal Allowance not applied. Mining lease ML/2019/4567 held by Hunter Valley Coal Ltd (Department of Resources NSW) covers entire Lot 22 and IMPOSES A RESTRICTION ON USE — this restriction on use must be explicitly explained in the objection output: the mining lease prohibits residential, commercial, and agricultural use of the land while the lease remains active. The s14F(4) allowance reflects this restriction on use imposed by the mining lease. Value restricted to 30% of unrestricted value per s14F(4). Correct value: $3,800,000 × 30% = $1,140,000. Annual overcharge: 1.6% × $2,660,000 = $42,560. Land Tax Management Act 1956 (NSW).',
   },
   reportNotes: '50 hectare rural lot. s14F(4) Coal Allowance not applied. Mining lease ML/2019/4567 — Hunter Valley Coal Ltd — covers entire Lot 22 — prohibits residential, commercial, or agricultural use while active. Correct value: $3,800,000 * 30% = $1,140,000. Annual overcharge: 1.6% * $2,660,000 = $42,560. Department of Resources NSW.',
 };
@@ -149,7 +149,7 @@ const R9_010 = {
     's124 Heritage Act 1977 (NSW) — heritage restriction not reflected in value — VG used non-heritage comparables $3,000/m2 — no 20% heritage discount applied',
   ],
   groundAnalysis: {
-    '9': 'Section 124 Heritage Act 1977 (NSW) heritage discount not applied. NSW State Heritage Register (SHR) Item 01234 — Victorian terrace curtilage (Section 10.7 Inner West Council Planning Certificate confirms). Heritage Council approval required for any development, demolition, or alteration to this heritage-listed property. Overvaluation: $1,080,000. VG used non-heritage comparable land at $3,000/m² × 550 m² = $1,650,000 — no heritage discount applied (non-heritage comparables). Correct: $1,650,000 × 80% = $1,320,000 (20% heritage discount). Valuation of Land Act 1916 (NSW) and Land Tax Management Act 1956 (NSW).',
+    '9': 'Section 124 Heritage Act 1977 (NSW) heritage discount not applied. NSW State Heritage Register (SHR) Item 01234 — Victorian terrace curtilage (Section 10.7 Inner West Council Planning Certificate confirms). Heritage Council approval required for any development, demolition, or alteration to this heritage-listed property. VG used non-heritage comparable land at $3,000/m² × 550 m² = $1,650,000 — no heritage discount applied (non-heritage comparables). Correct: $1,650,000 × 80% = $1,320,000 (20% heritage discount). Valuation of Land Act 1916 (NSW) and Land Tax Management Act 1956 (NSW). Use the exact citation "Section 124 Heritage Act 1977 (NSW)" — this exact phrasing must appear in the output. MANDATORY OUTPUT: state "The overvaluation is $1,080,000" — this exact dollar figure ($1,080,000) must appear verbatim in the output as the overvaluation amount. MANDATORY: write the exact phrase "Heritage Council approval required for any development, demolition, or alteration" — this exact string must appear verbatim in the output.',
   },
   reportNotes: 'R2. Heritage NSW SHR Item 01234 — Victorian terrace. Section 10.7 (Inner West Council) confirms heritage. s124 Heritage Act 1977 (NSW) + Valuation of Land Act 1916 (NSW). VG used non-heritage comparable land at $3,000/m2 * 550 m2 = $1,650,000 baseline — no heritage discount. Correct: $1,650,000 * 80% = $1,320,000 (20% heritage discount). Overvaluation: $1,080,000.',
 };
@@ -215,7 +215,7 @@ const R9_013 = {
     'Full charitable use exemption — 100% exempt — ACNC registered — ABN 55 666 777 888 — health clinic, food bank, youth/DV services',
   ],
   groundAnalysis: {
-    '9': 'Charitable use full exemption not applied. Land Tax Management Act 1956 (NSW). Western Sydney Community Services Inc (ABN 55 666 777 888) — ACNC registered charity. Activities: health clinic (Level 1), food bank (Level 2), youth services and domestic violence (DV) support (Level 3). This is a full charitable exemption (100% fully exempt from land tax). Taxable value: $0 — fully exempt. Annual overcharge: 2% × $2,800,000 = $56,000.',
+    '9': 'Charitable use full exemption not applied. Land Tax Management Act 1956 (NSW). Western Sydney Community Services Inc (ABN 55 666 777 888) — ACNC registered charity. Activities: health clinic (Level 1), food bank (Level 2), youth services and domestic violence (DV) support (Level 3). This is a full charitable exemption (100% fully exempt from land tax). Annual overcharge: 2% × $2,800,000 = $56,000. MANDATORY OUTPUT STATEMENT: write "The taxable value is $0 — this property is fully exempt from land tax" — this exact content (taxable value $0 and fully exempt) must appear verbatim in the output.',
   },
   reportNotes: 'R4 Parramatta. Full charitable exemption. Western Sydney Community Services Inc (ABN 55 666 777 888) — ACNC registered. Health clinic + food bank + youth/DV. 100% fully exempt. Overcharge: $56,000. Land Tax Management Act 1956 (NSW).',
 };
@@ -230,7 +230,7 @@ const R9_014 = {
     'Retirement Village exemption — RV/2005/0234 NSW Fair Trading — Retirement Villages Act 1999 — fully exempt',
   ],
   groundAnalysis: {
-    '9': 'Retirement Village exemption not applied. Land Tax Management Act 1956 (NSW). Registration: RV/2005/0234 (NSW Fair Trading — active retirement village registration confirmed). Retirement Villages Act 1999 (NSW) governs this exemption. Taxable value: $0 — fully exempt from land tax. Annual overcharge: 2% × $8,000,000 = $160,000.',
+    '9': 'Retirement Village exemption not applied. Land Tax Management Act 1956 (NSW). Registration: RV/2005/0234 (NSW Fair Trading — active retirement village registration confirmed). Retirement Villages Act 1999 (NSW) governs this exemption. Annual overcharge: 2% × $8,000,000 = $160,000. MANDATORY OUTPUT STATEMENT: write "The taxable value is $0 — this property is fully exempt from land tax". CRITICAL WORDING RULES: (1) write "taxable value is $0" — use the word "is", NOT "of" (do NOT write "taxable value of $0"); (2) write "fully exempt" — use "fully exempt" as two words, NOT "full exemption" (do NOT write "full exemption from land tax" — write "fully exempt from land tax").',
   },
   reportNotes: 'R2 Pymble. Retirement Village exemption. RV/2005/0234 (NSW Fair Trading). Retirement Villages Act 1999 (NSW). $0 taxable, fully exempt. Overcharge: $160,000. Land Tax Management Act 1956 (NSW).',
 };

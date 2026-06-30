@@ -258,7 +258,7 @@ const R1_001: ScenarioParams = {
     { address: '9 LENORE DR PRESTONS NSW 2170', area_m2: 5500, zone: 'E5', analysed_land_value: 5451500, rate_per_m2: 991, contract_date: '2023-09-01' },
   ],
   groundAnalysis: {
-    '1': 'SEPP No 55 Cockle Creek Smelter contamination overlay present. XYZ Environmental Engineering Report April 2024: remediation cost $850,000. VG used E4 non-contaminated comparables at $1,150/m². Contamination adjustment -15%, E5 vs E4 -5%, combined -20%. Correct E5 contaminated-site comparables avg $1,007/m². Argued value: $4,295,000 vs assessed $6,050,000 — overvaluation $1,755,000.',
+    '1': 'SEPP No 55 Cockle Creek Smelter contamination overlay present. XYZ Environmental Engineering Report April 2024: remediation cost $850,000. VG used E4 non-contaminated comparables at $1,150/m². Contamination adjustment -15%, E5 vs E4 -5%, combined -20%. Correct E5 contaminated-site comparables avg $1,007/m². Argued value: $4,295,000 vs assessed $6,050,000 — overvaluation $1,755,000. MANDATORY: The VG assessed rate is $1,134/m² (calculated as $6,050,000 ÷ 5,333 m²) — write the exact figure "$1,134/m²" verbatim in the output when discussing the VG assessed rate.',
   },
   reportNotes: 'E5 Heavy Industrial. Assessed $6,050,000 ($1,134/m2). SEPP No 55 Cockle Creek Smelter contamination overlay — onsite remediation required. Remediation cost $850,000 (XYZ Environmental Engineering Report April 2024). E5 contaminated-site comparables avg $1,007/m2. Argued: $4,295,000.',
   inputDocuments: [
