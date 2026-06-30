@@ -13,6 +13,7 @@ import {
   FindOptionsWhere,
   ILike,
   In,
+  IsNull,
   LessThan,
   Not,
   Repository,
@@ -899,14 +900,21 @@ export class DisputeCasesService {
     }
   }
 
-  async remove(id: string): Promise<{ message: string }> {
-    const disputeCase = await this.disputeCasesRepository.findOne({
-      where: { id },
-    });
-    if (!disputeCase)
+  async remove(id: string, deletedById: string): Promise<{ message: string }> {
+    const exists = await this.disputeCasesRepository.findOne({ where: { id }, select: { id: true } });
+    if (!exists)
       throw new NotFoundException(`Dispute case #${id} not found`);
-    await this.disputeCasesRepository.remove(disputeCase);
-    return { message: `Dispute case #${id} removed` };
+
+    const result = await this.disputeCasesRepository.update(
+      { id, deleted_at: IsNull() },
+      { deleted_at: new Date(), deleted_by: deletedById },
+    );
+
+    if (!result.affected) {
+      throw new ConflictException(`Dispute case #${id} is already deleted`);
+    }
+
+    return { message: `Dispute case #${id} has been deleted` };
   }
 
 

@@ -559,15 +559,20 @@ export class DisputeCasesController {
     return { status: 'ok' };
   }
 
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ACCOUNTANT)
   @ApiBearerAuth()
   @Delete(':id')
-  @ApiOperation({ summary: 'Delete a dispute case' })
+  @ApiOperation({ summary: 'Soft-delete a dispute case' })
   @ApiParam({ name: 'id', description: 'Dispute case UUID' })
   @ApiResponse({ status: 200, description: 'Dispute case deleted' })
   @ApiResponse({ status: 401, description: 'Unauthorised' })
+  @ApiResponse({ status: 403, description: 'Forbidden — accountant or admin role required' })
   @ApiResponse({ status: 404, description: 'Dispute case not found' })
-  remove(@Param('id') id: string): Promise<{ message: string }> {
-    return this.disputeCasesService.remove(id);
+  remove(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: { user: { id: string } },
+  ): Promise<{ message: string }> {
+    return this.disputeCasesService.remove(id, req.user.id);
   }
 }
