@@ -1,8 +1,8 @@
-import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { AzureBlobService } from 'src/common/azure-blob/azure-blob.service';
 import { XpmService } from 'src/common/xpm/xpm.service';
-import { DataSource, FindOptionsWhere, ILike, Repository } from 'typeorm';
+import { DataSource, FindOptionsWhere, ILike, IsNull, Repository } from 'typeorm';
 import { DisputeCase } from '../dispute-cases/entities/dispute-case.entity';
 import { User } from '../users/entities/user.entity';
 import { AcceptTCDto } from './dto/accept-tc.dto';
@@ -19,7 +19,6 @@ import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class ClientsService {
-  private readonly logger = new Logger(ClientsService.name);
 
   constructor(
     private readonly dataSource: DataSource,
@@ -169,42 +168,24 @@ export class ClientsService {
     if (!exists) throw new NotFoundException(`Client #${id} not found`);
 
     const now = new Date();
-    const queryRunner = this.dataSource.createQueryRunner();
-    await queryRunner.connect();
-    await queryRunner.startTransaction();
 
-    try {
-      await queryRunner.manager
-        .createQueryBuilder()
-        .update(DisputeCase)
-        .set({ deleted_at: now, deleted_by: deletedById })
-        .where('client_id = :id AND deleted_at IS NULL', { id })
-        .execute();
+    await this.dataSource.transaction(async (manager) => {
+      await manager.update(
+        DisputeCase,
+        { client_id: id, deleted_at: IsNull() },
+        { deleted_at: now, deleted_by: deletedById },
+      );
 
-      const clientResult = await queryRunner.manager
-        .createQueryBuilder()
-        .update(Client)
-        .set({ deleted_at: now, deleted_by: deletedById })
-        .where('id = :id AND deleted_at IS NULL', { id })
-        .execute();
+      const clientResult = await manager.update(
+        Client,
+        { id, deleted_at: IsNull() },
+        { deleted_at: now, deleted_by: deletedById },
+      );
 
       if (!clientResult.affected) {
         throw new ConflictException(`Client #${id} is already deleted`);
       }
-
-      await queryRunner.commitTransaction();
-    } catch (err) {
-      try {
-        await queryRunner.rollbackTransaction();
-      } catch (rollbackErr) {
-        this.logger.error(
-          `[CLIENT] Rollback failed for client ${id} — ${rollbackErr instanceof Error ? rollbackErr.message : String(rollbackErr)}`,
-        );
-      }
-      throw err;
-    } finally {
-      await queryRunner.release();
-    }
+    });
 
     return { message: `Client #${id} has been deleted` };
   }

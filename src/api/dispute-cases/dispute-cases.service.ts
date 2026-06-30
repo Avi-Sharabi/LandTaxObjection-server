@@ -13,6 +13,7 @@ import {
   FindOptionsWhere,
   ILike,
   In,
+  IsNull,
   LessThan,
   Not,
   Repository,
@@ -904,12 +905,10 @@ export class DisputeCasesService {
     if (!exists)
       throw new NotFoundException(`Dispute case #${id} not found`);
 
-    const result = await this.disputeCasesRepository
-      .createQueryBuilder()
-      .update()
-      .set({ deleted_at: new Date(), deleted_by: deletedById })
-      .where('id = :id AND deleted_at IS NULL', { id })
-      .execute();
+    const result = await this.disputeCasesRepository.update(
+      { id, deleted_at: IsNull() },
+      { deleted_at: new Date(), deleted_by: deletedById },
+    );
 
     if (!result.affected) {
       throw new ConflictException(`Dispute case #${id} is already deleted`);
