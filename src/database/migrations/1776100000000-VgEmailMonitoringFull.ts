@@ -27,7 +27,7 @@ export class VgEmailMonitoringFull1776100000000 implements MigrationInterface {
 
     await queryRunner.query(`
       CREATE TABLE IF NOT EXISTS "case_audit_logs" (
-        "id"             UUID        NOT NULL DEFAULT gen_random_uuid(),
+        "id"             UUID        NOT NULL DEFAULT uuid_generate_v4(),
         "case_id"        UUID        NOT NULL,
         "action"         TEXT        NOT NULL,
         "performed_by"   UUID,

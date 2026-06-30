@@ -13,7 +13,6 @@ import {
   FindOptionsWhere,
   ILike,
   In,
-  IsNull,
   LessThan,
   Not,
   Repository,
@@ -24,7 +23,6 @@ import { GetDisputeCasesQueryDto } from '../../common/dto/paginated-query.dto';
 import { PaginatedDisputeCasesResponseDto } from '../../common/dto/paginated-response.dto';
 import { UpdateDisputeCaseDto } from './dto/update-dispute-case.dto';
 import { CreateDisputeIntakeDto } from './dto/create-dispute-intake.dto';
-import { CreateDisputeIntakeV2Dto } from './dto/create-dispute-intake-v2.dto';
 import { CloseNoObjectionDto } from './dto/close-no-objection.dto';
 import { DisputeCaseResponseDto } from './dto/dispute-case-response.dto';
 import { AnalysisReportResponseDto } from './dto/analysis-report-response.dto';
@@ -45,14 +43,15 @@ import {
   PackageDocument,
   PackageDocumentStatus,
 } from '../objection-package/entities/package-document.entity';
+import { ClientEmailMissingException } from './exceptions/client-email-missing.exception';
 import { CaseAlreadySubmittedException } from './exceptions/case-already-submitted.exception';
 import { CaseNotClientApprovedException } from './exceptions/case-not-client-approved.exception';
-import { ClientEmailMissingException } from './exceptions/client-email-missing.exception';
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/entities/notification.entity';
 import { AuditAction, AuditLog } from '../audit-log/entities/audit-log.entity';
 
-const MAX_VG_FOLLOW_UPS = 3;
+const VG_FOLLOW_UP_WINDOW_DAYS = 90;
+const SYSTEM_ACTOR_ID = '00000000-0000-0000-0000-000000000000';
 
 const THREE_DAY_WINDOW_DAYS = 3;
 const THREE_DAY_WINDOW_MINUTES = THREE_DAY_WINDOW_DAYS * 24 * 60;
@@ -84,11 +83,17 @@ export class DisputeCasesService {
     private readonly taxComputationService: LandTaxComputationService,
   ) { }
 
+  async getPropertyAddressForCase(id: string): Promise<string> {
+    const c = await this.disputeCasesRepository.findOne({ where: { id }, relations: ['property'] });
+    if (!c) throw new NotFoundException(`Dispute case ${id} not found`);
+    const p = c.property;
+    return `${p.address}, ${p.suburb} ${p.state} ${p.postcode}`;
+  }
+
   async submitIntakeApplication(
-    intakeDto: CreateDisputeIntakeDto | CreateDisputeIntakeV2Dto,
+    intakeDto: CreateDisputeIntakeDto,
   ): Promise<unknown> {
-    // V2 omits grounds/constraints; orchestrator treats those as optional at runtime
-    return this.intakeOrchestrator.submitIntakeApplication(intakeDto as CreateDisputeIntakeDto);
+    return this.intakeOrchestrator.submitIntakeApplication(intakeDto);
   }
 
   async findAll(clientId?: string): Promise<DisputeCaseResponseDto[]> {
@@ -153,7 +158,6 @@ export class DisputeCasesService {
         original_assessed_value: true,
         vg_follow_up_count: true,
         reminder_count: true,
-        is_valuated: true,
         created_at: true,
       },
       order: { created_at: 'DESC' },
@@ -552,24 +556,6 @@ export class DisputeCasesService {
     return !expiresAt || expiresAt < new Date();
   }
 
-  async getPropertyAddressForCase(id: string): Promise<string> {
-    const disputeCase = await this.disputeCasesRepository.findOne({
-      where: { id },
-      relations: ['property'],
-    });
-    if (!disputeCase) throw new NotFoundException(`Dispute case #${id} not found`);
-    return this.buildPropertyAddress(disputeCase.property);
-  }
-
-  async getCaseReference(id: string): Promise<string> {
-    const found = await this.disputeCasesRepository.findOne({
-      where: { id },
-      select: { id: true, case_reference: true },
-    });
-    if (!found) throw new NotFoundException(`Dispute case #${id} not found`);
-    return found.case_reference;
-  }
-
   private buildPropertyAddress(
     property: {
       address: string | null;
@@ -642,6 +628,7 @@ export class DisputeCasesService {
         throw new NotFoundException(`Dispute case #${id} not found`);
       }
 
+
       const postSubmissionStatuses: DisputeStatus[] = [
         DisputeStatus.SUBMITTED_TO_VG,
         DisputeStatus.VG_RESPONSE_RECEIVED,
@@ -712,31 +699,39 @@ export class DisputeCasesService {
 
   async findCasesDueForVGFollowUp(): Promise<DisputeCase[]> {
     const fiveDaysAgo = new Date(Date.now() - 5 * 24 * 60 * 60 * 1000);
+    const ninetyDaysAgo = new Date(
+      Date.now() - VG_FOLLOW_UP_WINDOW_DAYS * 24 * 60 * 60 * 1000,
+    );
     return this.disputeCasesRepository
       .createQueryBuilder('dc')
       .leftJoinAndSelect('dc.property', 'property')
       .leftJoinAndSelect('dc.valuation_notice', 'valuation_notice')
+      .leftJoinAndSelect('dc.assigned_accountant', 'assigned_accountant')
       .where('dc.status = :status', { status: DisputeStatus.SUBMITTED_TO_VG })
+      .andWhere('dc.vg_follow_up_count < :maxFollowUps', { maxFollowUps: 5 })
       .andWhere(
-        'COALESCE(dc.last_vg_follow_up_sent_at, dc.submitted_at) <= :threshold',
-        { threshold: fiveDaysAgo },
+        '(dc.last_vg_follow_up_sent_at IS NULL AND dc.submitted_at <= :ninetyDaysAgo)' +
+          ' OR (dc.last_vg_follow_up_sent_at IS NOT NULL AND dc.last_vg_follow_up_sent_at <= :fiveDaysAgo)',
+        { ninetyDaysAgo, fiveDaysAgo },
       )
-      .andWhere('dc.vg_follow_up_count < :max', { max: MAX_VG_FOLLOW_UPS })
       .getMany();
   }
 
   async sendVGFollowUp(caseId: string): Promise<void> {
+
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
     await queryRunner.startTransaction();
 
     let resolvedCase: DisputeCase | null = null;
     let newFollowUpCount = 0;
+    let now = new Date();
 
     try {
+      // Lock only the bare row — PostgreSQL rejects FOR UPDATE on the nullable
+      // side of a LEFT JOIN, so relations must be loaded in a separate query.
       resolvedCase = await queryRunner.manager.findOne(DisputeCase, {
         where: { id: caseId },
-        relations: ['property'],
         lock: { mode: 'pessimistic_write' },
       });
 
@@ -745,31 +740,27 @@ export class DisputeCasesService {
       }
 
       newFollowUpCount = resolvedCase.vg_follow_up_count + 1;
-      const now = new Date();
+      now = new Date();
 
       resolvedCase.vg_follow_up_count = newFollowUpCount;
       resolvedCase.last_vg_follow_up_sent_at = now;
       await queryRunner.manager.save(DisputeCase, resolvedCase);
 
-      const vgEmail = this.config.getOrThrow<string>('VG_SUBMISSION_EMAIL');
-      await this.azureEmailService.sendVgFollowUpEnquiry({
-        sendTo: vgEmail,
-        caseReference: resolvedCase.case_reference,
-        propertyAddress: this.buildPropertyAddress(resolvedCase.property),
-        lodgmentReferenceNumber: resolvedCase.lodgment_reference_number ?? '',
-        submittedAt: (resolvedCase.submitted_at ?? now).toLocaleString(
-          'en-AU',
-          {
-            timeZone: 'Australia/Melbourne',
-            day: '2-digit',
-            month: 'long',
-            year: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit',
-          },
-        ),
-        followUpCount: String(newFollowUpCount),
+      // Load relations after the write, within the same transaction — no lock needed.
+      const caseWithRelations = await queryRunner.manager.findOne(DisputeCase, {
+        where: { id: caseId },
+        relations: ['property', 'assigned_accountant'],
       });
+      resolvedCase.property = caseWithRelations?.property ?? resolvedCase.property;
+      resolvedCase.assigned_accountant = caseWithRelations?.assigned_accountant ?? resolvedCase.assigned_accountant;
+
+      const auditEntry = queryRunner.manager.create(AuditLog, {
+        action: AuditAction.VG_FOLLOW_UP_SENT,
+        performedBy: SYSTEM_ACTOR_ID,
+        caseId,
+        lodgmentReferenceNumber: resolvedCase.lodgment_reference_number ?? null,
+      });
+      await queryRunner.manager.save(AuditLog, auditEntry);
 
       await queryRunner.commitTransaction();
     } catch (err) {
@@ -779,7 +770,31 @@ export class DisputeCasesService {
       await queryRunner.release();
     }
 
-    // Notification fires only after a successful commit; failure here is non-critical
+    // Email and notification fire only after a successful commit — failures here do not
+    // roll back the DB state (follow-up count and audit log are already persisted).
+    const vgEmail = this.config.get<string>('VG_SUBMISSION_EMAIL');
+    if (vgEmail) {
+      await this.azureEmailService.sendVgFollowUpEnquiry({
+        sendTo: vgEmail,
+        caseReference: resolvedCase!.case_reference,
+        propertyAddress: this.buildPropertyAddress(resolvedCase!.property),
+        lodgmentReferenceNumber: resolvedCase!.lodgment_reference_number ?? '',
+        submittedAt: (resolvedCase!.submitted_at ?? now).toLocaleString('en-AU', {
+          timeZone: 'Australia/Melbourne',
+          day: '2-digit',
+          month: 'long',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+        }),
+        followUpCount: String(newFollowUpCount),
+      });
+    } else {
+      this.logger.warn(
+        `[VG-FOLLOW-UP] VG_SUBMISSION_EMAIL not configured — email skipped for caseId=${caseId}`,
+      );
+    }
+
     if (resolvedCase?.assigned_accountant_id) {
       await this.notificationsService.create(
         resolvedCase.assigned_accountant_id,
@@ -839,82 +854,16 @@ export class DisputeCasesService {
         caseId,
       );
     }
-
-    const isVgOutcome =
-      newStatus === DisputeStatus.VG_APPROVED ||
-      newStatus === DisputeStatus.VG_DECLINED;
-
-    if (isVgOutcome) {
-      const caseWithRelations = await this.disputeCasesRepository.findOne({
-        where: { id: caseId },
-        relations: ['client', 'property', 'valuation_notice', 'assigned_accountant'],
-      });
-
-      if (caseWithRelations?.client?.email) {
-        const isApproved = newStatus === DisputeStatus.VG_APPROVED;
-
-        const resolvedAt = new Date().toLocaleString('en-AU', {
-          day: '2-digit',
-          month: 'long',
-          year: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit',
-          timeZone: 'Australia/Sydney',
-        });
-
-        const rawAssessedValue =
-          caseWithRelations.original_assessed_value ??
-          caseWithRelations.valuation_notice?.assessed_land_value;
-        const assessedLandValue =
-          rawAssessedValue != null
-            ? new Intl.NumberFormat('en-AU', {
-                style: 'currency',
-                currency: 'AUD',
-              }).format(Number(rawAssessedValue))
-            : 'N/A';
-
-        const propertyAddress = caseWithRelations.property
-          ? [
-              caseWithRelations.property.address,
-              caseWithRelations.property.suburb,
-              caseWithRelations.property.state,
-              caseWithRelations.property.postcode,
-            ]
-              .filter(Boolean)
-              .join(', ')
-          : 'Address not available';
-
-        await this.azureEmailService.sendVgResponseNotification({
-          clientEmail: caseWithRelations.client.email,
-          clientName: caseWithRelations.client.name,
-          caseReference: caseWithRelations.case_reference,
-          propertyAddress,
-          lodgmentReferenceNumber: caseWithRelations.lodgment_reference_number ?? 'N/A',
-          isApproved,
-          assessorFullName:
-            caseWithRelations.assigned_accountant?.fullName ?? 'Your YML Adviser',
-          resolvedAt,
-          assessedLandValue,
-        });
-      }
-    }
   }
 
-  async remove(id: string, deletedById: string): Promise<{ message: string }> {
-    const exists = await this.disputeCasesRepository.findOne({ where: { id }, select: { id: true } });
-    if (!exists)
+  async remove(id: string): Promise<{ message: string }> {
+    const disputeCase = await this.disputeCasesRepository.findOne({
+      where: { id },
+    });
+    if (!disputeCase)
       throw new NotFoundException(`Dispute case #${id} not found`);
-
-    const result = await this.disputeCasesRepository.update(
-      { id, deleted_at: IsNull() },
-      { deleted_at: new Date(), deleted_by: deletedById },
-    );
-
-    if (!result.affected) {
-      throw new ConflictException(`Dispute case #${id} is already deleted`);
-    }
-
-    return { message: `Dispute case #${id} has been deleted` };
+    await this.disputeCasesRepository.remove(disputeCase);
+    return { message: `Dispute case #${id} removed` };
   }
 
 

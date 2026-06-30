@@ -75,7 +75,6 @@ export class DisputeIntakeOrchestrator {
     }
 
     const caseReferences: string[] = [];
-    const propertyAddresses: string[] = [];
 
     for (const prop of intakeDto.properties) {
       const property = await this.createProperty(client.id, prop);
@@ -93,11 +92,10 @@ export class DisputeIntakeOrchestrator {
 
       await this.createLegalGrounds(disputeCase.id, prop.grounds ?? []);
       caseReferences.push(caseReference);
-      propertyAddresses.push(prop.address);
     }
 
     if (caseReferences.length > 0) {
-      await this.notifyAssessors(caseReferences, propertyAddresses, intakeDto.fullName, intakeDto.accountantId);
+      await this.notifyAssessors(caseReferences, intakeDto.accountantId);
     }
 
     return { case_references: caseReferences };
@@ -192,27 +190,23 @@ export class DisputeIntakeOrchestrator {
     if (!accountant) throw new AccountantNotFoundException(accountantId);
   }
 
-  private async notifyAssessors(caseReferences: string[], propertyAddresses: string[], clientName: string, accountantId?: string): Promise<void> {
+  private async notifyAssessors(caseReferences: string[], accountantId?: string): Promise<void> {
     if (accountantId) {
-      await this.notifyInternalAssessor(caseReferences, propertyAddresses, clientName, accountantId);
+      await this.notifyInternalAssessor(caseReferences, accountantId);
       return;
     }
     const assessorEmail = this.config.get<string>('ASSESSOR_EMAIL');
     if (!assessorEmail) return;
-    await this.azureEmailService.sendDisputeApplication(caseReferences, assessorEmail, { clientName, propertyAddresses });
+    await this.azureEmailService.sendDisputeApplication(caseReferences, assessorEmail);
   }
 
-  private async notifyInternalAssessor(caseReferences: string[], propertyAddresses: string[], clientName: string, accountantId: string): Promise<void> {
+  private async notifyInternalAssessor(caseReferences: string[], accountantId: string): Promise<void> {
     const user = await this.usersRepository.findOne({ where: { id: accountantId } });
     if (!user) {
       this.logger.warn(`Accountant with ID ${accountantId} not found. Skipping email notification.`);
       return;
     }
-    await this.azureEmailService.sendDisputeApplication(caseReferences, user.email, {
-      clientName,
-      propertyAddresses,
-      assessorName: user.fullName,
-    });
+    await this.azureEmailService.sendDisputeApplication(caseReferences, user.email);
   }
 
   private async generateCaseReference(): Promise<string> {

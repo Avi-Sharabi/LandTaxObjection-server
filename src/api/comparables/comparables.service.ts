@@ -3,9 +3,9 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import { plainToInstance } from 'class-transformer';
-import { isAxiosError } from 'axios';
+import { ConfigService } from '@nestjs/config';
+import axios, { type AxiosResponse } from 'axios';
 import { ComparableSale } from './entities/comparable-sale.entity';
-import { AnthropicService, ANTHROPIC_MODEL } from 'src/ai/anthropic.service';
 import { CreateComparableDto } from './dto/create-comparable.dto';
 import { ComparableResponseDto } from './dto/comparable-response.dto';
 import { GenerateComparableSalesDto } from './dto/generate-comparable-sales.dto';
@@ -19,14 +19,28 @@ import { LlmTruncationException } from './exceptions/llm-truncation.exception';
 import { LlmToolUseException } from './exceptions/llm-tool-use.exception';
 import { LlmParseException } from './exceptions/llm-parse.exception';
 import { LlmApiException } from './exceptions/llm-api.exception';
-import { MissingValuationDateException } from './exceptions/missing-valuation-date.exception';
 import { DisputeCase } from '../dispute-cases/entities/dispute-case.entity';
-import { SkillRegistryService } from '../../mcp/skill-registry.service';
+import { McpService } from '../../mcp/mcp.service';
 import { buildUserPrompt, SubjectContext } from './comparables.prompts';
 
 
 const MAX_CANDIDATE_SALES = 80;
 
+interface AnthropicErrorBody {
+  type: string;
+  error: { type: string; message: string };
+}
+
+interface AnthropicApiResponse {
+  stop_reason: string;
+  content: { type: string; text?: string }[];
+  usage?: {
+    input_tokens: number;
+    output_tokens: number;
+    cache_read_input_tokens?: number;
+    cache_creation_input_tokens?: number;
+  };
+}
 
 @Injectable()
 export class ComparablesService implements OnModuleInit {
@@ -39,9 +53,9 @@ export class ComparablesService implements OnModuleInit {
     private readonly comparablesRepository: Repository<ComparableSale>,
     @InjectRepository(DisputeCase)
     private readonly disputeCasesRepository: Repository<DisputeCase>,
+    private readonly configService: ConfigService,
     @InjectDataSource() private readonly dataSource: DataSource,
-    private readonly skillRegistry: SkillRegistryService,
-    private readonly anthropic: AnthropicService,
+    private readonly mcpService: McpService,
   ) { }
 
   private logEvent(context: string, data: Record<string, unknown>): void {
@@ -49,7 +63,7 @@ export class ComparablesService implements OnModuleInit {
   }
 
   async onModuleInit(): Promise<void> {
-    this.skillContent = this.skillRegistry.getSkillContent('nsw-land-tax-comparables');
+    this.skillContent = this.mcpService.getSkillContent('nsw-land-tax-comparables');
 
     const schemaRows: { column_name: string; data_type: string; is_nullable: string }[] =
       await this.dataSource.query(
@@ -146,8 +160,12 @@ export class ComparablesService implements OnModuleInit {
     correlationId?: string,
   ): Promise<ComparableResponseDto[]> {
     const start = Date.now();
+    const mcpPublicUrl = this.configService.get<string>('MCP_PUBLIC_URL');
+    const mcpUrl = mcpPublicUrl ? `${mcpPublicUrl}/api/mcp` : null;
+    // MCP_SECRET_TOKEN is only needed when MCP_PUBLIC_URL is configured
+    const mcpToken = mcpUrl ? this.configService.getOrThrow<string>('MCP_SECRET_TOKEN') : null;
 
-    this.logEvent('GENERATE.start', { correlationId, disputeCaseId: dto.dispute_case_id });
+    this.logEvent('GENERATE.start', { correlationId, disputeCaseId: dto.dispute_case_id, mcpUrl: mcpUrl ?? 'disabled (no MCP_PUBLIC_URL)' });
 
     const disputeCase = await this.disputeCasesRepository.findOne({
       where: { id: dto.dispute_case_id },
@@ -157,101 +175,13 @@ export class ComparablesService implements OnModuleInit {
 
     const subject = this.resolveSubjectContext(dto, disputeCase);
     this.logEvent('GENERATE.subject', { correlationId, subject });
-
-    const vgRate = subject.landAreaSqm && subject.landAreaSqm > 0
-      ? Math.round(subject.vgValueCurrent / subject.landAreaSqm)
-      : null;
-
-    // Round 1: suburb-scoped candidates
     const candidates = await this.prefetchCandidateSales(subject, correlationId);
-    const round1 = await this.runComparableRound(candidates, subject, vgRate, correlationId);
-    let allSupporting = round1.supporting;
-
-    // Round 2: broaden to postcode-prefix zone if fewer than 4 supporting found
-    const MIN_SUPPORTING = 4;
-    if (vgRate !== null && allSupporting.length < MIN_SUPPORTING) {
-      this.logEvent('GENERATE.broadening_search', { correlationId, currentCount: allSupporting.length });
-      const seenIds = new Set(candidates.map(c => c.id));
-      const broadCandidates = await this.prefetchBroadCandidateSales(subject, seenIds, correlationId);
-      if (broadCandidates.length > 0) {
-        const round2 = await this.runComparableRound(broadCandidates, subject, vgRate, correlationId);
-        allSupporting = [...allSupporting, ...round2.supporting];
-      }
-    }
-
-    this.logEvent('GENERATE.persist', {
-      correlationId,
-      supportingCount: allSupporting.length,
-    });
-    const saved = await this.persistComparables(allSupporting, dto.dispute_case_id, createdById);
-    this.logEvent('GENERATE.complete', {
-      correlationId,
-      disputeCaseId: dto.dispute_case_id,
-      savedCount: saved.length,
-      totalDurationMs: Date.now() - start,
-    });
-    return saved;
-  }
-
-  private async runComparableRound(
-    candidates: Record<string, unknown>[],
-    subject: SubjectContext,
-    vgRate: number | null,
-    correlationId: string | undefined,
-  ): Promise<{ enriched: Record<string, unknown>[]; supporting: Record<string, unknown>[] }> {
-    if (candidates.length === 0) return { enriched: [], supporting: [] };
-
     const userPrompt = buildUserPrompt(subject, candidates);
     const systemPrompt = `${this.skillContent}\n\n## property_sales_raw schema (do NOT call list_tables or describe_table — query directly)\n\`\`\`\n${this.schemaBlock}\n\`\`\``;
 
-    this.logEvent('GENERATE.anthropic.start', { correlationId, systemPromptLength: systemPrompt.length, candidateCount: candidates.length });
-    const anthropicT = Date.now();
-    let rawText: string;
-    try {
-      const result = await this.anthropic.call({
-        systemBlocks: [{ text: systemPrompt }],
-        userMessage: userPrompt,
-        maxTokens: 32000,
-        mcpServers: true,
-      });
-
-      this.logEvent('GENERATE.token_usage', {
-        correlationId,
-        model: ANTHROPIC_MODEL,
-        input_tokens: result.usage.inputTokens,
-        output_tokens: result.usage.outputTokens,
-        cache_read_input_tokens: result.usage.cacheReadInputTokens,
-        cache_creation_input_tokens: result.usage.cacheCreationInputTokens,
-        durationMs: Date.now() - anthropicT,
-        stop_reason: result.stopReason,
-      });
-
-      if (result.stopReason === 'max_tokens') {
-        this.logger.error('[GENERATE] Response was truncated at max_tokens — increase max_tokens or reduce result set');
-        throw new LlmTruncationException();
-      }
-      if (result.stopReason === 'tool_use') {
-        this.logEvent('GENERATE.unexpected_tool_use', { correlationId });
-        throw new LlmToolUseException();
-      }
-      rawText = result.text;
-    } catch (err: unknown) {
-      if (isAxiosError(err)) {
-        const status = err.response?.status;
-        this.logEvent('GENERATE.anthropic_error', { correlationId, status, errorMessage: err.message });
-        if (status === 529 || status === 503) throw new LlmApiException('Anthropic API is temporarily overloaded. Please retry in a few seconds.', 503);
-        if (status === 401) throw new LlmApiException('Anthropic API key is invalid or expired.', 502);
-      }
-      throw err;
-    }
-
-    let parsed: Record<string, unknown>[];
-    try {
-      parsed = this.anthropic.parseJsonArray<Record<string, unknown>>(rawText);
-    } catch (parseErr) {
-      this.logger.error('[GENERATE] Could not parse JSON array from response', rawText.slice(0, 200));
-      throw new LlmParseException(parseErr instanceof Error ? parseErr.message : 'JSON parse failed');
-    }
+    this.logEvent('GENERATE.anthropic.start', { correlationId, systemPromptLength: systemPrompt.length });
+    const { text: rawText, usage } = await this.callAnthropicApi(systemPrompt, userPrompt, mcpUrl, mcpToken, correlationId, dto.dispute_case_id);
+    const parsed = this.extractJsonArray(rawText);
 
     const candidateMap = new Map(candidates.map(c => [String(c.id), c]));
     const enriched = parsed.map(item => {
@@ -259,79 +189,26 @@ export class ComparablesService implements OnModuleInit {
       return { ...candidate, ...this.computeAdjustedFields(candidate, subject) };
     });
 
+    const vgRate = subject.landAreaSqm && subject.landAreaSqm > 0
+      ? Math.round(subject.vgValueCurrent / subject.landAreaSqm)
+      : null;
     const supporting = vgRate !== null
       ? enriched.filter(item => item.adjusted_rate_per_sqm !== null && Number(item.adjusted_rate_per_sqm) <= vgRate)
       : enriched;
 
-    return { enriched, supporting };
-  }
-
-  private async prefetchBroadCandidateSales(
-    subject: SubjectContext,
-    excludeIds: Set<unknown>,
-    correlationId: string | undefined,
-  ): Promise<Record<string, unknown>[]> {
-    const preT = Date.now();
-    try {
-      const vd = new Date(subject.valuationDate);
-      const searchFrom = new Date(vd);
-      searchFrom.setFullYear(searchFrom.getFullYear() - 5);
-      const searchFromStr = isNaN(searchFrom.getTime())
-        ? new Date(Date.now() - 5 * 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
-        : searchFrom.toISOString().split('T')[0];
-
-      const zoningPrefix = subject.zoning !== 'unknown' ? subject.zoning.substring(0, 2).toUpperCase() + '%' : null;
-      const postcodePrefix = subject.postcode ? subject.postcode.substring(0, 3) + '%' : null;
-      if (!postcodePrefix || !zoningPrefix) return [];
-
-      const analysisColumns = `id, property_id, district_code, property_house_number, property_street_name,
-        property_locality, property_post_code, area, zoning, nature_of_property,
-        primary_purpose, component_code, sale_code, interest_of_sale_percent,
-        contract_date, purchase_price, dealing_number, owner_type`;
-
-      const excludeArr = [...excludeIds].map(Number).filter(n => !isNaN(n));
-      const rows: Record<string, unknown>[] = excludeArr.length > 0
-        ? await this.dataSource.query(
-          `SELECT ${analysisColumns} FROM property_sales_raw
-           WHERE property_post_code LIKE $1 AND UPPER(zoning) LIKE $2 AND contract_date >= $3
-           AND id != ALL($4::bigint[])
-           ORDER BY contract_date DESC LIMIT 80`,
-          [postcodePrefix, zoningPrefix, searchFromStr, excludeArr],
-        )
-        : await this.dataSource.query(
-          `SELECT ${analysisColumns} FROM property_sales_raw
-           WHERE property_post_code LIKE $1 AND UPPER(zoning) LIKE $2 AND contract_date >= $3
-           ORDER BY contract_date DESC LIMIT 80`,
-          [postcodePrefix, zoningPrefix, searchFromStr],
-        );
-
-      const isVacantRow = (r: Record<string, unknown>) =>
-        String(r.nature_of_property ?? '').trim().toUpperCase() === 'V';
-      const getRowArea = (r: Record<string, unknown>) => Number(r.area ?? 0);
-      const byDealing = new Map<string, Record<string, unknown>>();
-      for (const row of rows) {
-        const r = row as Record<string, unknown>;
-        const key = String(r.dealing_number ?? r.id);
-        const existing = byDealing.get(key);
-        if (!existing) {
-          byDealing.set(key, r);
-          continue;
-        }
-        if (
-          (!isVacantRow(existing) && isVacantRow(r)) ||
-          (isVacantRow(existing) === isVacantRow(r) && getRowArea(r) > getRowArea(existing))
-        ) {
-          byDealing.set(key, r);
-        }
-      }
-
-      const candidates = [...byDealing.values()].slice(0, MAX_CANDIDATE_SALES);
-      this.logEvent('GENERATE.prefetch_broad', { correlationId, count: candidates.length, durationMs: Date.now() - preT });
-      return candidates;
-    } catch (err) {
-      this.logger.warn('[GENERATE] Broad pre-fetch failed', (err as Error).message);
-      return [];
-    }
+    this.logEvent('GENERATE.persist', { correlationId, count: supporting.length, filteredOut: enriched.length - supporting.length });
+    const saved = await this.persistComparables(supporting, dto.dispute_case_id, createdById);
+    this.logEvent('GENERATE.complete', {
+      correlationId,
+      disputeCaseId: dto.dispute_case_id,
+      savedCount: saved.length,
+      totalDurationMs: Date.now() - start,
+      input_tokens: usage?.input_tokens ?? 0,
+      output_tokens: usage?.output_tokens ?? 0,
+      cache_read_input_tokens: usage?.cache_read_input_tokens ?? 0,
+      cache_creation_input_tokens: usage?.cache_creation_input_tokens ?? 0,
+    });
+    return saved;
   }
 
   private resolveSubjectContext(
@@ -339,18 +216,11 @@ export class ComparablesService implements OnModuleInit {
     disputeCase: DisputeCase,
   ): SubjectContext {
     const vn = disputeCase.valuation_notice;
-    const valuationDate = dto.valuation_date
-      ?? (vn?.valuation_date ? new Date(vn.valuation_date).toISOString().split('T')[0] : null);
-    if (!valuationDate) throw new MissingValuationDateException(disputeCase.id);
     return {
       pid: dto.pid ?? disputeCase.property?.pid ?? 'unknown',
-      suburb: (dto.suburb ?? disputeCase.property?.suburb ?? '').trim().toUpperCase(),
-      postcode: dto.postcode ?? disputeCase.property?.postcode ?? null,
-      landAreaSqm:
-        dto.land_area_sqm
-        ?? (Number(vn?.land_area_vg_sqm) || null)
-        ?? dto.land_area_eplanning_sqm
-        ?? (Number(disputeCase.property?.land_area_sqm) || null),
+      suburb: (disputeCase.property?.suburb ?? '').trim().toUpperCase(),
+      postcode: disputeCase.property?.postcode ?? null,
+      landAreaSqm: dto.land_area_sqm ?? (Number(disputeCase.property?.land_area_sqm) || null),
       zoning: dto.zoning ?? disputeCase.property?.zoning ?? 'unknown',
       lotDp: dto.lot_dp ?? disputeCase.property?.lot_dp ?? null,
       dimensions: dto.dimensions ?? disputeCase.property?.dimensions ?? null,
@@ -358,7 +228,8 @@ export class ComparablesService implements OnModuleInit {
       vgValueCurrent: dto.vg_land_value_current ?? (Number(vn?.assessed_land_value) || 0),
       vgValuePrior: dto.vg_land_value_prior ?? (Number(vn?.prior_land_value) || 0),
       landAreaVgSqm: dto.land_area_vg_sqm ?? (Number(vn?.land_area_vg_sqm) || null),
-      valuationDate,
+      valuationDate: dto.valuation_date
+        ?? (vn?.valuation_date ? new Date(vn.valuation_date).toISOString().split('T')[0] : null) ?? (() => { throw new Error(`Valuation notice for dispute case ${disputeCase.id} has no valuation_date`); })(),
     };
   }
 
@@ -410,41 +281,16 @@ export class ComparablesService implements OnModuleInit {
           : Promise.resolve([]),
       ]);
 
-      // Dedup by DB row ID first
       const seen = new Set<unknown>();
-      const merged: Record<string, unknown>[] = [];
+      const candidates: Record<string, unknown>[] = [];
       for (const row of [...tier1, ...tier2, ...tier3]) {
-        const r = row as Record<string, unknown>;
-        if (!seen.has(r.id)) {
-          seen.add(r.id);
-          merged.push(r);
+        if (!seen.has((row as Record<string, unknown>).id)) {
+          seen.add((row as Record<string, unknown>).id);
+          candidates.push(row as Record<string, unknown>);
+          if (candidates.length >= MAX_CANDIDATE_SALES) break;
         }
       }
 
-      // Dedup by dealing_number — one record per real-world transaction.
-      // NSW sales data records each lot in a multi-lot sale separately; without this,
-      // a single subdivision deal can appear N times and Claude selects all of them.
-      const isVacantRow = (r: Record<string, unknown>) =>
-        String(r.nature_of_property ?? '').trim().toUpperCase() === 'V';
-      const getRowArea = (r: Record<string, unknown>) => Number(r.area ?? 0);
-      const byDealing = new Map<string, Record<string, unknown>>();
-      for (const row of merged) {
-        const key = String(row.dealing_number ?? row.id);
-        const existing = byDealing.get(key);
-        if (!existing) {
-          byDealing.set(key, row);
-          continue;
-        }
-        // Prefer vacant > larger area (most representative lot)
-        if (
-          (!isVacantRow(existing) && isVacantRow(row)) ||
-          (isVacantRow(existing) === isVacantRow(row) && getRowArea(row) > getRowArea(existing))
-        ) {
-          byDealing.set(key, row);
-        }
-      }
-
-      const candidates = [...byDealing.values()].slice(0, MAX_CANDIDATE_SALES);
       this.logEvent('GENERATE.prefetch', { correlationId, count: candidates.length, durationMs: Date.now() - preT });
       return candidates;
     } catch (err) {
@@ -466,7 +312,6 @@ export class ComparablesService implements OnModuleInit {
     let area = candidate.area != null ? Number(candidate.area) : null;
     if (!purchasePrice || !area || !subject.landAreaSqm) return { adjusted_rate_per_sqm: null, adjusted_land_value: null, suggested_land_value: null, explanation: null };
 
-    // Some source records store area in hectares; values < 100 are treated as ha and converted to m²
     if (area < 100) area = Math.round(area * 10000);
 
     const isVacant = !candidate.primary_purpose ||
@@ -497,14 +342,10 @@ export class ComparablesService implements OnModuleInit {
 
     const adjusted_rate_per_sqm = Math.round(sizeAdjustedRate * timeFactor);
     const adjusted_land_value = Math.round(adjusted_rate_per_sqm * area);
+    const suggested_land_value = Math.round(adjusted_rate_per_sqm * subject.landAreaSqm);
 
     const vgRate = Math.round(subject.vgValueCurrent / subject.landAreaSqm);
     const supportsObjection = adjusted_rate_per_sqm <= vgRate;
-
-    // NSW VG definition: comparable's own adjusted land value = land component × time factor only.
-    // No size adjustment — this is what the objector enters for each comparable in the NSW portal.
-    const suggested_land_value = Math.round((purchasePrice - improvementDeduction) * timeFactor);
-
     const address = [candidate.property_house_number, candidate.property_street_name, candidate.property_locality].filter(Boolean).join(' ');
     const saleDateStr = contractDate && !isNaN(contractDate.getTime())
       ? contractDate.toLocaleDateString('en-AU', { day: '2-digit', month: 'short', year: 'numeric' })
@@ -521,7 +362,7 @@ export class ComparablesService implements OnModuleInit {
 
     const conclusionLine = supportsObjection
       ? `The adjusted rate of $${adjusted_rate_per_sqm.toLocaleString()}/m² is below the VG's assessed rate of $${vgRate.toLocaleString()}/m², supporting a lower land value for your property.`
-      : `The adjusted rate of $${adjusted_rate_per_sqm.toLocaleString()}/m² exceeds the VG's assessed rate of $${vgRate.toLocaleString()}/m². Included as the closest available market evidence in the ${String(candidate.property_locality ?? subject.suburb)} ${subject.zoning} corridor — insufficient supporting comparable sales were found at this threshold.`;
+      : `The adjusted rate of $${adjusted_rate_per_sqm.toLocaleString()}/m² is above the VG's assessed rate of $${vgRate.toLocaleString()}/m² — this sale does not directly support a lower value but is included as market context.`;
 
     const explanation = [
       `${address} | ${candidate.zoning} | ${isVacant ? 'Vacant Land' : `Improved - ${candidate.primary_purpose}`}`,
@@ -531,14 +372,139 @@ export class ComparablesService implements OnModuleInit {
       `• Size adjustment: factor ${sizeFactor.toFixed(3)} (${subject.landAreaSqm}m² subject vs ${area}m² comparable) → $${Math.round(sizeAdjustedRate).toLocaleString()}/m²`,
       `• Time adjustment: ${monthsDiff} months — ${monthsDiff <= 12 ? 'nil (within 12-month window)' : `+${((timeFactor - 1) * 100).toFixed(1)}% (factor ${timeFactor.toFixed(3)})`} → $${adjusted_rate_per_sqm.toLocaleString()}/m²`,
       `• Adjusted rate: $${adjusted_rate_per_sqm.toLocaleString()}/m² vs VG rate $${vgRate.toLocaleString()}/m² → ${supportsObjection ? 'Supports objection ✓' : 'Does NOT support objection ✗'}`,
-      `• Comparable adj. land value: $${suggested_land_value.toLocaleString()}`,
-      `• Implied subject land value: $${(adjusted_rate_per_sqm * subject.landAreaSqm).toLocaleString()} (at $${adjusted_rate_per_sqm.toLocaleString()}/m² × ${subject.landAreaSqm.toLocaleString()}m²)`,
-      `• VG assessed value: $${subject.vgValueCurrent.toLocaleString()} — potential reduction of $${(subject.vgValueCurrent - adjusted_rate_per_sqm * subject.landAreaSqm).toLocaleString()}`,
+      `• Suggested land value: $${suggested_land_value.toLocaleString()}`,
       !isVacant ? `• Caveats: Improvement deduction estimated at 50% of purchase price ($${improvementDeduction.toLocaleString()}) — GFA unavailable` : null,
       conclusionLine,
     ].filter(Boolean).join('\n');
 
     return { adjusted_rate_per_sqm, adjusted_land_value, suggested_land_value, explanation };
+  }
+
+  private async callAnthropicApi(
+    systemPrompt: string,
+    userPrompt: string,
+    mcpUrl: string | null,
+    mcpToken: string | null,
+    correlationId?: string,
+    disputeCaseId?: string,
+  ): Promise<{ text: string; usage: AnthropicApiResponse['usage'] }> {
+    const anthropicT = Date.now();
+    let response: AxiosResponse<AnthropicApiResponse>;
+    try {
+      response = await axios.post<AnthropicApiResponse>(
+        this.configService.getOrThrow<string>('ANTHROPIC_API_URL'),
+        {
+          model: 'claude-sonnet-4-6',
+          max_tokens: 32000,
+          system: [
+            {
+              type: 'text',
+              text: systemPrompt,
+              cache_control: { type: 'ephemeral' },
+            },
+          ],
+          ...(mcpUrl && mcpToken ? {
+            mcp_servers: [
+              {
+                type: 'url',
+                url: mcpUrl,
+                name: 'postgres',
+                authorization_token: mcpToken,
+              },
+            ],
+          } : {}),
+          messages: [{ role: 'user', content: userPrompt }],
+        },
+        {
+          headers: {
+            'x-api-key': this.configService.get<string>('ANTHROPIC_API_KEY'),
+            'anthropic-version': '2023-06-01',
+            'anthropic-beta': 'mcp-client-2025-04-04,prompt-caching-2024-07-31',
+            'Content-Type': 'application/json',
+          },
+        },
+      );
+    } catch (err: unknown) {
+      if (axios.isAxiosError(err)) {
+        const status = err.response?.status;
+        const body = err.response?.data as AnthropicErrorBody | undefined;
+        this.logEvent('GENERATE.anthropic_error', {
+          correlationId,
+          status,
+          errorType: body?.error?.type,
+          errorMessage: body?.error?.message ?? err.message,
+        });
+        if (status === 529 || status === 503) {
+          throw new LlmApiException('Anthropic API is temporarily overloaded. Please retry in a few seconds.', 503);
+        }
+        if (status === 401) {
+          throw new LlmApiException('Anthropic API key is invalid or expired.', 502);
+        }
+      }
+      throw err;
+    }
+
+    const { stop_reason, content, usage } = response.data;
+    console.log('GENERATE.token_usage', {
+      correlationId,
+      disputeCaseId,
+      model: 'claude-sonnet-4-6',
+      input_tokens: usage?.input_tokens ?? 0,
+      output_tokens: usage?.output_tokens ?? 0,
+      cache_read_input_tokens: usage?.cache_read_input_tokens ?? 0,
+      cache_creation_input_tokens: usage?.cache_creation_input_tokens ?? 0,
+      durationMs: Date.now() - anthropicT,
+      stop_reason,
+    });
+
+    if (stop_reason === 'max_tokens') {
+      this.logger.error('[GENERATE] Response was truncated at max_tokens — increase max_tokens or reduce result set');
+      throw new LlmTruncationException();
+    }
+    if (stop_reason === 'tool_use') {
+      this.logEvent('GENERATE.unexpected_tool_use', { correlationId, disputeCaseId });
+      throw new LlmToolUseException();
+    }
+
+    const textBlock = content?.findLast((b) => b.type === 'text');
+    if (!textBlock) this.logger.warn('[GENERATE] No text block found in response content');
+    return { text: textBlock?.text ?? '', usage };
+  }
+
+  private extractJsonArray(raw: string): Record<string, unknown>[] {
+    // Find the first '[' that begins a JSON array ('{' or ']' follows after whitespace).
+    // Skips prose like "[Tool call: ...]" that the MCP beta sometimes emits in text blocks.
+    let arrayStart = -1;
+    for (let i = raw.indexOf('['); i !== -1; i = raw.indexOf('[', i + 1)) {
+      const next = raw.slice(i + 1).trimStart();
+      if (next.startsWith('{') || next.startsWith(']')) { arrayStart = i; break; }
+    }
+    if (arrayStart === -1) {
+      this.logger.error('[GENERATE] Could not locate JSON array in response', raw.slice(0, 200));
+      throw new LlmParseException('response did not contain a JSON array');
+    }
+
+    // Walk the string with bracket depth to find the matching closing ']'.
+    // Using lastIndexOf(']') would pick up brackets in trailing prose (e.g. "[flagged]").
+    let arrayEnd = -1;
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    for (let i = arrayStart; i < raw.length; i++) {
+      const ch = raw[i];
+      if (escaped) { escaped = false; continue; }
+      if (ch === '\\' && inString) { escaped = true; continue; }
+      if (ch === '"') { inString = !inString; continue; }
+      if (inString) { continue; }
+      if (ch === '[' || ch === '{') depth++;
+      else if (ch === ']' || ch === '}') { if (--depth === 0) { arrayEnd = i; break; } }
+    }
+    if (arrayEnd === -1) {
+      this.logger.error('[GENERATE] Could not find closing bracket for JSON array', raw.slice(0, 200));
+      throw new LlmParseException('JSON array was not properly closed');
+    }
+
+    return JSON.parse(raw.slice(arrayStart, arrayEnd + 1)) as Record<string, unknown>[];
   }
 
   private async persistComparables(

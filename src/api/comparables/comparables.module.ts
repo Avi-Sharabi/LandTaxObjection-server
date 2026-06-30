@@ -1,7 +1,6 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { BullModule } from '@nestjs/bullmq';
-import { AiModule } from '../../ai/ai.module';
 import { ComparableSale } from './entities/comparable-sale.entity';
 import { ComparablesController } from './comparables.controller';
 import { ComparablesService } from './comparables.service';
@@ -14,7 +13,6 @@ import { McpModule } from '../../mcp/mcp.module';
   imports: [
     TypeOrmModule.forFeature([ComparableSale, DisputeCase]),
     BullModule.registerQueue({ name: COMPARABLE_GENERATION_QUEUE }),
-    AiModule,
     McpModule,
   ],
   controllers: [ComparablesController],

@@ -28,8 +28,6 @@ export interface ReportMeta {
   assessed_land_value: number | null;
   revenue_nsw_notice_date: string | null;
   fsr_from_pdf: number | null;
-  land_area_sqm: number | null;
-  height_limit_m: number | null;
   concession_mentions: string[];
   heritage_mentions: string[];
   multiple_lots_in_report: string[];
@@ -52,8 +50,6 @@ export interface SupportingEvidenceContext {
   inputBenchmarkReport: BenchmarkReport | null;
   landTaxNotice: LandTaxNotice | null;
   inputDocumentsText: string[];
-  entityEvidence: EntityEvidence | null;
-  evidenceResult: SupportingEvidenceResult | null;
 }
 
 export interface EvidenceRawData {
@@ -144,12 +140,6 @@ export interface SupportingEvidenceResult {
     inspection_environmental: IssueResult | null;
     inspection_views: IssueResult | null;
   };
-}
-
-export interface EntityEvidence {
-  groundDocIds: Record<string, string[]>;
-  groundAnalysis: Record<string, string>;
-  clientName: string;
 }
 
 export interface CadastreFeature {

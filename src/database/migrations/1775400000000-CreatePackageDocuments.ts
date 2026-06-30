@@ -22,7 +22,7 @@ export class CreatePackageDocuments1775400000000 implements MigrationInterface {
 
     await queryRunner.query(`
       CREATE TABLE "package_documents" (
-        "id"              uuid                              NOT NULL DEFAULT gen_random_uuid(),
+        "id"              uuid                              NOT NULL DEFAULT uuid_generate_v4(),
         "dispute_case_id" uuid                              NOT NULL,
         "name"            text                              NOT NULL,
         "category"        package_document_category_enum   NOT NULL,

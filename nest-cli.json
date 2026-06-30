@@ -4,8 +4,10 @@
   "sourceRoot": "src",
   "compilerOptions": {
     "assets": [
-      { "include": "skills/**/*.md", "watchAssets": true },
-      { "include": "skills/**/*.j2", "watchAssets": true },
+      {
+        "include": "skills/*.md",
+        "watchAssets": true
+      },
       "**/*.html"
     ],
     "deleteOutDir": true

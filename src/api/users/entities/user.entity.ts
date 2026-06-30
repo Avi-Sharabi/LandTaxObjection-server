@@ -36,12 +36,6 @@ export class User {
   @Column({ type: 'text', nullable: true, select: false })
   password: string | null;
 
-  @Column({ name: 'password_reset_token', type: 'text', nullable: true, select: false })
-  passwordResetToken: string | null;
-
-  @Column({ name: 'password_reset_expires', type: 'timestamptz', nullable: true, select: false })
-  passwordResetExpires: Date | null;
-
   @Column({ name: 'is_active', type: 'boolean', default: true })
   isActive: boolean;
 

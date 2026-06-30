@@ -1,69 +1,46 @@
-name: Build and deploy Node.js app to Azure Web App - landtaxdispute-server
+# Repo:    https://github.com/YML-AIDev/LandTaxObjection-server
+# Branch:  qa
+# Target:  landtaxdispute-server-qa.azurewebsites.net
+
+name: Deploy NestJS Backend to Azure App Service (QA)
 
 on:
   push:
     branches:
-      - test
-  workflow_dispatch:
+      - qa
 
 jobs:
-  build-and-deploy:
+  build_and_deploy:
     runs-on: ubuntu-latest
-
-    permissions:
-      contents: read
-
-    environment:
-      name: ${{ github.ref == 'refs/heads/main' && 'production' || github.ref == 'refs/heads/qa' && 'qa' || 'development' }}
+    name: Build and Deploy (QA)
 
     steps:
-      - name: Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22.x'
-          cache: npm
+          node-version: '20'
+          cache: 'npm'
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Build application
+      - name: Build NestJS
         run: npm run build
-
-      - name: Run database migrations
-        env:
-          NODE_ENV: production
-
-          DB_HOST: ${{ github.ref == 'refs/heads/main' && secrets.DB_HOST_PROD || github.ref == 'refs/heads/qa' && secrets.DB_HOST_QA || secrets.DB_HOST_DEV }}
-
-          DB_PORT: ${{ github.ref == 'refs/heads/main' && secrets.DB_PORT_PROD || github.ref == 'refs/heads/qa' && secrets.DB_PORT_QA || secrets.DB_PORT_DEV }}
-
-          DB_USERNAME: ${{ github.ref == 'refs/heads/main' && secrets.DB_USERNAME_PROD || github.ref == 'refs/heads/qa' && secrets.DB_USERNAME_QA || secrets.DB_USERNAME_DEV }}
-
-          DB_PASSWORD: ${{ github.ref == 'refs/heads/main' && secrets.DB_PASSWORD_PROD || github.ref == 'refs/heads/qa' && secrets.DB_PASSWORD_QA || secrets.DB_PASSWORD_DEV }}
-
-          DB_NAME: ${{ github.ref == 'refs/heads/main' && secrets.DB_NAME_PROD || github.ref == 'refs/heads/qa' && secrets.DB_NAME_QA || secrets.DB_NAME_DEV }}
-
-          DB_SSL: ${{ github.ref == 'refs/heads/main' && secrets.DB_SSL_PROD || github.ref == 'refs/heads/qa' && secrets.DB_SSL_QA || secrets.DB_SSL_DEV }}
-
-        run: npm run migration:run
 
       - name: Prepare deployment package
         run: |
-          rm -rf deployment
-          mkdir deployment
-          cp -r dist deployment/
-          cp package.json deployment/
-          cp package-lock.json deployment/
-          cat > deployment/.deployment << 'EOF'
-          [config]
-          SCM_DO_BUILD_DURING_DEPLOYMENT=false
-          EOF
-          # Explicitly make sure these never get included
-          rm -f deployment/node_modules.tar.gz
-          rm -f deployment/oryx-manifest.toml
+          mkdir -p deployment
+          cp -r dist deployment/dist
+          cp package.json deployment/package.json
+          cp package-lock.json deployment/package-lock.json
+
+      - name: Install production dependencies
+        run: |
+          cd deployment
+          npm ci --omit=dev
 
       - name: Deploy to Azure App Service
         uses: azure/webapps-deploy@v3

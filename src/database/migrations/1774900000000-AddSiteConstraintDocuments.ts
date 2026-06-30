@@ -7,7 +7,7 @@ export class AddSiteConstraintDocuments1774900000000 implements MigrationInterfa
     // 1. Create the new documents table
     await queryRunner.query(`
       CREATE TABLE "site_constraint_documents" (
-        "id"            uuid          NOT NULL DEFAULT gen_random_uuid(),
+        "id"            uuid          NOT NULL DEFAULT uuid_generate_v4(),
         "constraint_id" uuid          NOT NULL,
         "blob_path"     text          NOT NULL,
         "uploaded_at"   TIMESTAMPTZ   NOT NULL DEFAULT now(),

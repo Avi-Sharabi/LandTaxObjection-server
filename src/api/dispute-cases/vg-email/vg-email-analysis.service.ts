@@ -1,9 +1,11 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { HttpService } from '@nestjs/axios';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
+import { firstValueFrom } from 'rxjs';
 import { isAxiosError } from 'axios';
-import { SkillRegistryService } from 'src/mcp/skill-registry.service';
-import { AnthropicService } from 'src/ai/anthropic.service';
+import { McpService } from 'src/mcp/mcp.service';
 import { DisputeCasesService } from '../dispute-cases.service';
 import { DisputeStatus } from '../entities/dispute-case.entity';
 import { MsGraphService } from 'src/common/ms-graph/ms-graph.service';
@@ -29,6 +31,16 @@ interface PrefetchedCase {
   lodgment_reference_number: string | null;
 }
 
+interface AnthropicApiResponse {
+  stop_reason: string;
+  content: { type: string; text?: string; thinking?: string }[];
+  usage?: {
+    input_tokens: number;
+    output_tokens: number;
+    cache_read_input_tokens?: number;
+    cache_creation_input_tokens?: number;
+  };
+}
 
 const ACTIVE_VG_STATUSES = ['submitted_to_vg', 'for_review'];
 
@@ -39,17 +51,18 @@ export class VgEmailAnalysisService implements OnModuleInit {
   private propertyFinderContent = '';
 
   constructor(
-    private readonly anthropic: AnthropicService,
-    private readonly skillRegistry: SkillRegistryService,
+    private readonly config: ConfigService,
+    private readonly http: HttpService,
+    private readonly mcpService: McpService,
     private readonly disputeCasesService: DisputeCasesService,
     private readonly msGraphService: MsGraphService,
     @InjectDataSource() private readonly dataSource: DataSource,
   ) {}
 
   onModuleInit(): void {
-    this.skillContent = this.skillRegistry.getSkillContent('email-analyzer');
+    this.skillContent = this.mcpService.getSkillContent('email-analyzer');
     this.propertyFinderContent =
-      this.skillRegistry.getSkillContent('property-finder');
+      this.mcpService.getSkillContent('property-finder');
     this.logger.log(
       `[VG-ANALYSIS] Skills loaded — email-analyzer(${this.skillContent.length}), property-finder(${this.propertyFinderContent.length})`,
     );
@@ -139,6 +152,12 @@ export class VgEmailAnalysisService implements OnModuleInit {
     body: string | null,
     correlationId?: string,
   ): Promise<VgEmailResult> {
+    const mcpPublicUrl = this.config.get<string>('MCP_PUBLIC_URL');
+    const mcpUrl = mcpPublicUrl ? `${mcpPublicUrl}/api/mcp` : null;
+    const mcpToken = mcpUrl
+      ? this.config.getOrThrow<string>('MCP_SECRET_TOKEN')
+      : null;
+
     const identifiers = this.extractIdentifiers(subject, body);
     const prefetch = await this.prefetchMatchingCase(identifiers);
     this.logger.log(
@@ -153,18 +172,55 @@ export class VgEmailAnalysisService implements OnModuleInit {
     );
     const startMs = Date.now();
 
-    let result: Awaited<ReturnType<AnthropicService['call']>>;
+    let response: { data: AnthropicApiResponse };
     try {
-      result = await this.anthropic.call({
-        systemBlocks: [
-          { text: this.skillContent },
-          { text: this.propertyFinderContent },
-        ],
-        userMessage: userPrompt,
-        maxTokens: 6000,
-        thinkingBudgetTokens: 4000,
-        mcpServers: true,
-      });
+      response = await firstValueFrom(
+        this.http.post<AnthropicApiResponse>(
+          this.config.getOrThrow<string>('ANTHROPIC_API_URL'),
+          {
+            model: 'claude-sonnet-4-6',
+            max_tokens: 6000,
+            thinking: {
+              type: 'enabled',
+              budget_tokens: 4000,
+            },
+            system: [
+              {
+                type: 'text',
+                text: this.skillContent,
+                cache_control: { type: 'ephemeral' },
+              },
+              {
+                type: 'text',
+                text: this.propertyFinderContent,
+                cache_control: { type: 'ephemeral' },
+              },
+            ],
+            ...(mcpUrl && mcpToken
+              ? {
+                  mcp_servers: [
+                    {
+                      type: 'url',
+                      url: mcpUrl,
+                      name: 'postgres',
+                      authorization_token: mcpToken,
+                    },
+                  ],
+                }
+              : {}),
+            messages: [{ role: 'user', content: userPrompt }],
+          },
+          {
+            headers: {
+              'x-api-key': this.config.get<string>('ANTHROPIC_API_KEY'),
+              'anthropic-version': '2023-06-01',
+              'anthropic-beta':
+                'mcp-client-2025-04-04,prompt-caching-2024-07-31,interleaved-thinking-2025-05-14',
+              'Content-Type': 'application/json',
+            },
+          },
+        ),
+      );
     } catch (err: unknown) {
       if (isAxiosError(err)) {
         const status = err.response?.status;
@@ -179,20 +235,23 @@ export class VgEmailAnalysisService implements OnModuleInit {
       throw err;
     }
 
+    const { stop_reason, content, usage } = response.data;
+    const thinkingBlock = content?.find((b) => b.type === 'thinking');
     this.logger.log(
       JSON.stringify({
         context: 'VG-ANALYSIS.token_usage',
         correlationId,
-        input_tokens: result.usage.inputTokens,
-        output_tokens: result.usage.outputTokens,
-        cache_read_input_tokens: result.usage.cacheReadInputTokens,
-        cache_creation_input_tokens: result.usage.cacheCreationInputTokens,
+        input_tokens: usage?.input_tokens ?? 0,
+        output_tokens: usage?.output_tokens ?? 0,
+        cache_read_input_tokens: usage?.cache_read_input_tokens ?? 0,
+        cache_creation_input_tokens: usage?.cache_creation_input_tokens ?? 0,
+        thinking_length: thinkingBlock?.thinking?.length ?? 0,
         durationMs: Date.now() - startMs,
-        stop_reason: result.stopReason,
+        stop_reason,
       }),
     );
 
-    if (result.stopReason === 'max_tokens') {
+    if (stop_reason === 'max_tokens') {
       this.logger.warn(
         '[VG-ANALYSIS] Response truncated — defaulting to needs_review',
       );
@@ -202,7 +261,8 @@ export class VgEmailAnalysisService implements OnModuleInit {
       );
     }
 
-    return this.parseResponse(result.text);
+    const textBlock = content?.findLast((b) => b.type === 'text');
+    return this.parseResponse(textBlock?.text ?? '');
   }
 
   private extractIdentifiers(
@@ -449,14 +509,33 @@ Fields: pid, address, outcome ("approved"|"declined"|"needs_review"), confidence
   }
 
   private parseResponse(raw: string): VgEmailResult {
+    // Prefer extracting from a markdown code fence to avoid greedy-regex grabbing prose before the JSON block.
+    const fenceMatch = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
+    const objectMatch = fenceMatch
+      ? fenceMatch[1].match(/\{[\s\S]*\}/)
+      : raw.match(/\{[\s\S]*\}/);
+    const arrayMatch = fenceMatch
+      ? fenceMatch[1].match(/\[[\s\S]*\]/)
+      : raw.match(/\[[\s\S]*\]/);
+
     let item: unknown;
     try {
-      item = this.anthropic.parseJsonObject<Record<string, unknown>>(raw);
+      if (objectMatch) {
+        item = JSON.parse(objectMatch[0]);
+      } else if (arrayMatch) {
+        const arr = JSON.parse(arrayMatch[0]) as unknown[];
+        item = arr[0];
+      } else {
+        this.logger.warn(
+          '[VG-ANALYSIS] No JSON found in response — defaulting to needs_review',
+        );
+        return this.fallback('needs_review', 'Could not parse AI response');
+      }
     } catch {
       this.logger.warn(
         '[VG-ANALYSIS] JSON parse failed — defaulting to needs_review',
       );
-      return this.fallback('needs_review', 'Could not parse AI response');
+      return this.fallback('needs_review', 'JSON parse error in AI response');
     }
 
     const p = item as Record<string, unknown>;

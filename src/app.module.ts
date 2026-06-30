@@ -7,7 +7,6 @@ import { TypeOrmConfigService } from './config/typeorm.config';
 import { APIModule } from './api/api.module';
 import { McpModule } from './mcp/mcp.module';
 import { QueueModule } from './queue/queue.module';
-import { RedisModule } from './common/redis/redis.module';
 import { CorrelationIdMiddleware } from './common/middleware/correlation-id.middleware';
 
 @Module({
@@ -26,7 +25,6 @@ import { CorrelationIdMiddleware } from './common/middleware/correlation-id.midd
 
     ScheduleModule.forRoot(),
     QueueModule,
-    RedisModule,
 
     APIModule,
     McpModule,

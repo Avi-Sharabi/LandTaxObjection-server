@@ -367,13 +367,14 @@ async function seedDisputeCasesForNotifications(
     if (!existingDoc) {
       await dataSource.query(`
         INSERT INTO assessment_documents
-            (id, client_id, file_path, document_name)
-        VALUES ($1, $2, $3, $4)
+            (id, client_id, file_path, notice_date, valuation_year)
+        VALUES ($1, $2, $3, $4, $5)
       `, [
         c.assessmentDocumentId,
         c.clientId,
         `dispute-cases/${c.assessmentDocumentId}/valuation-notice.pdf`,
-        'Land Tax Assessment Notice',
+        '2025-01-20',
+        '2025',
       ]);
       logger.log(`  Seeded assessment doc:   ${c.assessmentDocumentId}`);
     } else {

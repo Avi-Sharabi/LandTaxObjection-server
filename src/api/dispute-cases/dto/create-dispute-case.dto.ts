@@ -58,11 +58,7 @@ export class CreateDisputeCaseDto {
   @IsBoolean()
   flag_zoning?: boolean;
 
-  @IsOptional()
-  @IsNumber()
-  evidence_strength_score?: number;
-
-  @IsOptional()
+@IsOptional()
   @IsEnum(OutcomeResult)
   outcome?: OutcomeResult;
 

@@ -1,4 +1,4 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, DeleteDateColumn, ManyToOne, OneToMany, JoinColumn, Index } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, ManyToOne, OneToMany, JoinColumn, Index } from 'typeorm';
 import { Client } from '../../clients/entities/client.entity';
 import { Property } from '../../properties/entities/property.entity';
 import { ValuationNotice } from '../../valuation-notices/entities/valuation-notice.entity';
@@ -111,13 +111,7 @@ export class DisputeCase {
   @Column({ type: 'boolean', nullable: false, default: false })
   flag_zoning: boolean;
 
-  @Column({ type: 'boolean', nullable: false, default: false })
-  is_valuated: boolean;
-
-  @Column({ type: 'smallint', nullable: true })
-  evidence_strength_score: number | null;
-
-  @Column({ type: 'enum', enum: OutcomeResult, nullable: true })
+@Column({ type: 'enum', enum: OutcomeResult, nullable: true })
   outcome: OutcomeResult | null;
 
   @Column({ type: 'numeric', precision: 15, scale: 2, nullable: true })
@@ -163,10 +157,10 @@ export class DisputeCase {
   closed_at: Date | null;
 
   @Column({ type: 'text', nullable: true })
-  analysis_report_blob_path: string | null;
+  vg_response_notes: string | null;
 
   @Column({ type: 'text', nullable: true })
-  vg_response_notes: string | null;
+  analysis_report_blob_path: string | null;
 
   @Column({ type: 'uuid', nullable: true })
   advisory_view_token: string | null;
@@ -179,12 +173,6 @@ export class DisputeCase {
 
   @UpdateDateColumn({ type: 'timestamptz' })
   updated_at: Date;
-
-  @DeleteDateColumn({ name: 'deleted_at', type: 'timestamptz', nullable: true })
-  deleted_at: Date | null;
-
-  @Column({ name: 'deleted_by', type: 'uuid', nullable: true })
-  deleted_by: string | null;
 
   // Relations
   @ManyToOne(() => Client, (client) => client.dispute_cases, { nullable: false })

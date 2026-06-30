@@ -3,12 +3,6 @@ import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
 import { EplanningApiData, ReportMeta } from '../supporting-evidence.types';
 import { PDFParse } from 'pdf-parse';
-import {
-  EplanningAddressNotFoundException,
-  EplanningCadastreException,
-  EplanningLotNotFoundException,
-  EplanningReportUrlException,
-} from '../exceptions/supporting-evidence.exceptions';
 
 const BASE = 'https://api.apps1.nsw.gov.au/planning/viewersf/V1/ePlanningApi';
 const HEADERS = {
@@ -18,9 +12,6 @@ const HEADERS = {
 
 @Injectable()
 export class EplanningApiService {
-  private static readonly QUERY_TIMEOUT_MS = 15_000;
-  private static readonly DOWNLOAD_TIMEOUT_MS = 30_000;
-
   private readonly logger = new Logger(EplanningApiService.name);
 
   constructor(private readonly http: HttpService) {}
@@ -29,12 +20,12 @@ export class EplanningApiService {
     const res = await firstValueFrom(
       this.http.get<Array<{ propId: string; address: string }>>(
         `${BASE}/address?a=${encodeURIComponent(address)}&noOfRecords=5`,
-        { headers: HEADERS, timeout: EplanningApiService.QUERY_TIMEOUT_MS },
+        { headers: HEADERS, timeout: 15000 },
       ),
     );
     const results = res.data;
     if (!Array.isArray(results) || results.length === 0) {
-      throw new EplanningAddressNotFoundException(address);
+      throw new Error('Address not found in ePlanning API');
     }
     const best = results[0];
     this.logger.log(`Resolved: "${best.address}" → propId: ${best.propId}`);
@@ -45,17 +36,17 @@ export class EplanningApiService {
     const reportRes = await firstValueFrom(
       this.http.get<{ reportUrl?: string }>(
         `${BASE}/report?type=property&id=${propId}`,
-        { headers: HEADERS, timeout: EplanningApiService.QUERY_TIMEOUT_MS },
+        { headers: HEADERS, timeout: 15000 },
       ),
     );
     const pdfUrl = reportRes.data?.reportUrl;
-    if (!pdfUrl) throw new EplanningReportUrlException(propId);
+    if (!pdfUrl) throw new Error('No reportUrl in API response');
 
     const pdfRes = await firstValueFrom(
       this.http.get<ArrayBuffer>(pdfUrl, {
         responseType: 'arraybuffer',
         headers: { 'User-Agent': 'Mozilla/5.0' },
-        timeout: EplanningApiService.DOWNLOAD_TIMEOUT_MS,
+        timeout: 30000,
       }),
     );
     const buf = Buffer.from(pdfRes.data as unknown as ArrayBuffer);
@@ -67,21 +58,21 @@ export class EplanningApiService {
   async queryLayers(propId: string): Promise<EplanningApiData> {
     this.logger.log(`Querying ePlanning layers for propId: ${propId}`);
     const [layers, sepp, warn, council] = await Promise.all([
-      firstValueFrom(this.http.get<unknown[]>(`${BASE}/layerintersect?id=${propId}&type=property`, { headers: HEADERS, timeout: EplanningApiService.QUERY_TIMEOUT_MS }))
+      firstValueFrom(this.http.get<unknown[]>(`${BASE}/layerintersect?id=${propId}&type=property`, { headers: HEADERS, timeout: 15000 }))
         .then(r => (Array.isArray(r.data) ? r.data : []))
-        .catch(e => { this.logger.error(`layerintersect failed for propId ${propId}: ${e.message}`); return []; }),
+        .catch(e => { this.logger.warn(`layerintersect: ${e.message}`); return []; }),
 
-      firstValueFrom(this.http.get<unknown[]>(`${BASE}/sepp?type=property&id=${propId}&layers=sepp`, { headers: HEADERS, timeout: EplanningApiService.QUERY_TIMEOUT_MS }))
+      firstValueFrom(this.http.get<unknown[]>(`${BASE}/sepp?type=property&id=${propId}&layers=sepp`, { headers: HEADERS, timeout: 15000 }))
         .then(r => (Array.isArray(r.data) ? r.data : []))
-        .catch(e => { this.logger.error(`sepp failed for propId ${propId}: ${e.message}`); return []; }),
+        .catch(e => { this.logger.warn(`sepp: ${e.message}`); return []; }),
 
-      firstValueFrom(this.http.get<unknown[]>(`${BASE}/warn?id=${propId}&type=property`, { headers: HEADERS, timeout: EplanningApiService.QUERY_TIMEOUT_MS }))
+      firstValueFrom(this.http.get<unknown[]>(`${BASE}/warn?id=${propId}&type=property`, { headers: HEADERS, timeout: 15000 }))
         .then(r => (Array.isArray(r.data) ? r.data : []))
-        .catch(e => { this.logger.error(`warn failed for propId ${propId}: ${e.message}`); return []; }),
+        .catch(e => { this.logger.warn(`warn: ${e.message}`); return []; }),
 
-      firstValueFrom(this.http.get<string[]>(`${BASE}/council?propId=${propId}`, { headers: HEADERS, timeout: EplanningApiService.QUERY_TIMEOUT_MS }))
+      firstValueFrom(this.http.get<string[]>(`${BASE}/council?propId=${propId}`, { headers: HEADERS, timeout: 15000 }))
         .then(r => (Array.isArray(r.data) ? r.data : []))
-        .catch(e => { this.logger.error(`council failed for propId ${propId}: ${e.message}`); return []; }),
+        .catch(e => { this.logger.warn(`council: ${e.message}`); return []; }),
     ]);
 
     return { layers: layers as EplanningApiData['layers'], sepp: sepp as EplanningApiData['sepp'], warn: warn as EplanningApiData['warn'], council: council as string[] };
@@ -90,23 +81,23 @@ export class EplanningApiService {
   async getLotArea(lot: string, plan: string, planType = 'DP'): Promise<number> {
     const query = `${lot} ${planType} ${plan}`;
     const lotRes = await firstValueFrom(
-      this.http.get<Array<{ cadId: string }>>(`${BASE}/lot?l=${encodeURIComponent(query)}`, { headers: HEADERS, timeout: EplanningApiService.QUERY_TIMEOUT_MS }),
+      this.http.get<Array<{ cadId: string }>>(`${BASE}/lot?l=${encodeURIComponent(query)}`, { headers: HEADERS, timeout: 15000 }),
     );
     const lotData = lotRes.data;
-    if (!Array.isArray(lotData) || lotData.length === 0) throw new EplanningLotNotFoundException(query);
+    if (!Array.isArray(lotData) || lotData.length === 0) throw new Error(`Lot not found: ${query}`);
     const cadId = lotData[0]?.cadId;
-    if (!cadId) throw new EplanningCadastreException('No cadId in lot response');
+    if (!cadId) throw new Error('No cadId in lot response');
 
     const cadRes = await firstValueFrom(
       this.http.get<{ features: Array<{ attributes: { shape_Area: number } }> }>(
         'https://maps.six.nsw.gov.au/arcgis/rest/services/public/NSW_Cadastre/MapServer/9/query',
-        { params: { where: `cadid=${cadId}`, outFields: 'shape_Area', f: 'json' }, timeout: EplanningApiService.QUERY_TIMEOUT_MS },
+        { params: { where: `cadid=${cadId}`, outFields: 'shape_Area', f: 'json' }, timeout: 15000 },
       ),
     );
     const feats = cadRes.data?.features;
-    if (!feats?.length) throw new EplanningCadastreException('No cadastre feature found');
+    if (!feats?.length) throw new Error('No cadastre feature found');
     const rawArea = feats[0].attributes?.shape_Area;
-    if (!rawArea) throw new EplanningCadastreException('shape_Area is null');
+    if (!rawArea) throw new Error('shape_Area is null');
     return Math.round(rawArea);
   }
 
@@ -206,8 +197,6 @@ export class EplanningApiService {
       assessed_land_value: lvMatch ? parseInt(lvMatch[1].replace(/,/g, '')) : null,
       revenue_nsw_notice_date: dateMatch ? dateMatch[1].trim() : null,
       fsr_from_pdf: fsrMatch ? parseFloat(fsrMatch[1]) : null,
-      land_area_sqm: null,
-      height_limit_m: null,
       concession_mentions: [...new Set(concessionMentions)],
       heritage_mentions: [...new Set(heritageMentions)],
       multiple_lots_in_report: [...new Set(multipleLots)],

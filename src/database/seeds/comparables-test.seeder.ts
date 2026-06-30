@@ -171,10 +171,10 @@ async function seedCase(dataSource: DataSource, c: CaseSeed, accountantId: strin
   const [existingDoc] = await dataSource.query(`SELECT id FROM assessment_documents WHERE id = $1`, [c.ids.assessmentDocument]);
   if (!existingDoc) {
     await dataSource.query(
-      `INSERT INTO assessment_documents (id, client_id, file_path, document_name)
-       VALUES ($1,$2,$3,$4)`,
+      `INSERT INTO assessment_documents (id, client_id, file_path, notice_date, valuation_year)
+       VALUES ($1,$2,$3,$4,$5)`,
       [c.ids.assessmentDocument, c.ids.client,
-        `dispute-cases/${c.ids.assessmentDocument}/valuation-notice.pdf`, 'Land Tax Assessment Notice'],
+        `dispute-cases/${c.ids.assessmentDocument}/valuation-notice.pdf`, '2025-01-20', '2025'],
     );
   }
 

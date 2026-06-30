@@ -51,13 +51,7 @@ export class DisputeCaseResponseDto {
   @ApiProperty()
   flag_zoning: boolean;
 
-  @ApiProperty()
-  is_valuated: boolean;
-
-  @ApiPropertyOptional()
-  evidence_strength_score: number | null;
-
-  @ApiPropertyOptional()
+@ApiPropertyOptional()
   original_assessed_value: number | null;
 
   @ApiPropertyOptional()

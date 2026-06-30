@@ -1,8 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
+import { EplanningApiService } from './shared/eplanning-api.service';
+import { GeocodingService } from './shared/geocoding.service';
 import { PuppeteerService } from './shared/puppeteer.service';
-import { PropertyContextService } from './property-context.service';
+import { PdfExtractorService } from './shared/pdf-extractor.service';
 import { AccessConstraintsService } from './issues/access-constraints.service';
 import { PlanningIssuesService } from './issues/planning-issues.service';
 import { EnvironmentalImpactsService } from './issues/environmental-impacts.service';
@@ -17,7 +19,10 @@ import {
   SupportingEvidenceContext,
   SupportingEvidenceResult,
   EvidenceRawData,
+  ReportMeta,
   InputComparable,
+  BenchmarkReport,
+  LandTaxNotice,
   IssueResult,
   GroupingIssueResult,
 } from './supporting-evidence.types';
@@ -28,7 +33,6 @@ import { AssessmentDocumentsService } from '../assessment-documents/assessment-d
 import { ComparablesService } from '../comparables/comparables.service';
 import { AzureBlobService } from 'src/common/azure-blob/azure-blob.service';
 import { Browser } from 'puppeteer';
-import { EvidenceDisputeCaseNotFoundException } from './exceptions/supporting-evidence.exceptions';
 
 const SYSTEM_ACTOR_ID = '00000000-0000-0000-0000-000000000000';
 const FOLDER = 'supporting-evidence';
@@ -38,8 +42,10 @@ export class SupportingEvidenceService {
   private readonly logger = new Logger(SupportingEvidenceService.name);
 
   constructor(
-    private readonly propertyContextService: PropertyContextService,
+    private readonly eplanning: EplanningApiService,
+    private readonly geocoding: GeocodingService,
     private readonly puppeteerSvc: PuppeteerService,
+    private readonly pdfExtractor: PdfExtractorService,
     private readonly accessConstraints: AccessConstraintsService,
     private readonly planningIssues: PlanningIssuesService,
     private readonly environmentalImpacts: EnvironmentalImpactsService,
@@ -62,108 +68,183 @@ export class SupportingEvidenceService {
 
   async analyze(disputeCaseId: string, address: string): Promise<SupportingEvidenceResult> {
     this.logger.log(`[SE] Starting analysis for case ${disputeCaseId} — ${address}`);
-    const { ctx, artifactDocIds } = await this.propertyContextService.gather(disputeCaseId, address);
-    const dbComparables = await this.ensureComparables(disputeCaseId);
-    ctx.inputComparables = [...dbComparables, ...ctx.inputComparables];
-    return this.analyzeWithCtx(disputeCaseId, ctx, artifactDocIds);
-  }
-
-  async analyzeWithCtx(
-    disputeCaseId: string,
-    ctx: SupportingEvidenceContext,
-    preloadedArtifacts: Map<string, string>,
-  ): Promise<SupportingEvidenceResult> {
-    this.logger.log(`[SE] Running issue analysis for case ${disputeCaseId}`);
     const runId = Date.now();
-    const disputeCase = await this.disputeCasesRepository.findOne({ where: { id: disputeCaseId } });
-    if (!disputeCase) {
-      this.logger.error(`[SE] Dispute case ${disputeCaseId} not found — aborting artifact and issue saves`);
-      throw new EvidenceDisputeCaseNotFoundException(disputeCaseId);
-    }
-
-    // Run all 10 issues sequentially (to avoid API rate limits)
-    const issue1Result = await this.accessConstraints.run(ctx);
-    const issue2Result = await this.planningIssues.run(ctx);
-    const issue3Result = await this.environmentalImpacts.run(ctx);
-    const issue4Result = await this.easements.run(ctx);
-    const issue5Result = await this.heritage.run(ctx);
-    const issue6Result = await this.apportionment.run(ctx);
-    const issue78Result = await this.grouping.run(ctx);
-    const issue9Result = await this.concession.run(ctx, {
-      issue1: { flood_data: issue1Result.flood_data, contaminated_land: issue1Result.contaminated_land },
-      issue3: { environmental_impacts: issue3Result.environmental_impacts },
-    });
-
-    const priorResultsSummary = {
-      access_constraints: issue1Result.access_constraints,
-      planning: issue2Result.planning_issues,
-      environmental: issue3Result.environmental_impacts,
-      easements: issue4Result.easements,
-      heritage: issue5Result.heritage,
-      apportionment: issue6Result.apportionment,
-      grouping: issue78Result.grouping,
-      concession: issue9Result,
-    };
-    const issue10Result = await this.other.run(ctx, priorResultsSummary);
-
-    const issueResults: SupportingEvidenceResult['issues'] = {
-      access_constraints: issue1Result.access_constraints,
-      planning: issue2Result.planning_issues,
-      environmental: issue3Result.environmental_impacts,
-      easements: issue4Result.easements,
-      heritage: issue5Result.heritage,
-      apportionment: issue6Result.apportionment,
-      grouping: issue78Result.grouping,
-      concession: issue9Result,
-      other: issue10Result,
-      inspection_access: null,
-      inspection_easement: null,
-      inspection_environmental: null,
-      inspection_views: null,
-    };
-
-    const inspectionResults = await this.inspection.run(ctx, issueResults);
-    issueResults.inspection_access = inspectionResults.inspection_access;
-    issueResults.inspection_easement = inspectionResults.inspection_easement;
-    issueResults.inspection_environmental = inspectionResults.inspection_environmental;
-    issueResults.inspection_views = inspectionResults.inspection_views;
-
-    const evidenceRawData: EvidenceRawData = {
-      flood_data: issue1Result.flood_data,
-      contaminated_land: issue1Result.contaminated_land,
-      ols_data: issue4Result.rawData.ols_data,
-      pdf_encumbrances: issue4Result.rawData.pdf_encumbrances,
-      heritage_arcgis_items: issue5Result.rawData.heritage_arcgis_items,
-      heritage_layers: issue5Result.rawData.heritage_layers,
-      vg_comparables: issue6Result.rawData.vg_comparables,
-      adjacent_lots: issue78Result.rawData.adjacent_lots,
-    };
-
     let browser: Browser | null = null;
+
     try {
       browser = await this.puppeteerSvc.launch();
-      const artifactMap = await this.uploadAllArtifacts(
-        disputeCaseId, disputeCase.client_id, ctx, browser, evidenceRawData, issueResults, preloadedArtifacts,
+
+      const disputeCase = await this.disputeCasesRepository.findOne({ where: { id: disputeCaseId } });
+
+      const [comparables, inputDocs] = await Promise.all([
+        this.ensureComparables(disputeCaseId),
+        this.fetchInputDocuments(disputeCase),
+      ]);
+
+      const inputComparables = [...comparables, ...inputDocs.salesComparables];
+
+      const ctx = await this.gatherSharedContext(
+        address,
+        browser,
+        inputComparables,
+        inputDocs.inputBenchmarkReport,
+        inputDocs.landTaxNotice,
+        inputDocs.rawTexts,
       );
-      await this.saveIssueResults(disputeCaseId, runId, issueResults, artifactMap);
+
+      // Run all 10 issues sequentially (to avoid API rate limits)
+      const issue1Result = await this.accessConstraints.run(ctx);
+      const issue2Result = await this.planningIssues.run(ctx);
+      const issue3Result = await this.environmentalImpacts.run(ctx);
+      const issue4Result = await this.easements.run(ctx);
+      const issue5Result = await this.heritage.run(ctx);
+      const issue6Result = await this.apportionment.run(ctx);
+      const issue78Result = await this.grouping.run(ctx);
+      const issue9Result = await this.concession.run(ctx, {
+        issue1: { flood_data: issue1Result.flood_data, contaminated_land: issue1Result.contaminated_land },
+        issue3: { environmental_impacts: issue3Result.environmental_impacts },
+      });
+
+      const priorResultsSummary = {
+        access_constraints: issue1Result.access_constraints,
+        planning: issue2Result.planning_issues,
+        environmental: issue3Result.environmental_impacts,
+        easements: issue4Result.easements,
+        heritage: issue5Result.heritage,
+        apportionment: issue6Result.apportionment,
+        grouping: issue78Result.grouping,
+        concession: issue9Result,
+      };
+      const issue10Result = await this.other.run(ctx, priorResultsSummary);
+
+      const issueResults: SupportingEvidenceResult['issues'] = {
+        access_constraints: issue1Result.access_constraints,
+        planning: issue2Result.planning_issues,
+        environmental: issue3Result.environmental_impacts,
+        easements: issue4Result.easements,
+        heritage: issue5Result.heritage,
+        apportionment: issue6Result.apportionment,
+        grouping: issue78Result.grouping,
+        concession: issue9Result,
+        other: issue10Result,
+        inspection_access: null,
+        inspection_easement: null,
+        inspection_environmental: null,
+        inspection_views: null,
+      };
+
+      const inspectionResults = await this.inspection.run(ctx, issueResults);
+      issueResults.inspection_access = inspectionResults.inspection_access;
+      issueResults.inspection_easement = inspectionResults.inspection_easement;
+      issueResults.inspection_environmental = inspectionResults.inspection_environmental;
+      issueResults.inspection_views = inspectionResults.inspection_views;
+
+      const evidenceRawData: EvidenceRawData = {
+        flood_data: issue1Result.flood_data,
+        contaminated_land: issue1Result.contaminated_land,
+        ols_data: issue4Result.rawData.ols_data,
+        pdf_encumbrances: issue4Result.rawData.pdf_encumbrances,
+        heritage_arcgis_items: issue5Result.rawData.heritage_arcgis_items,
+        heritage_layers: issue5Result.rawData.heritage_layers,
+        vg_comparables: issue6Result.rawData.vg_comparables,
+        adjacent_lots: issue78Result.rawData.adjacent_lots,
+      };
+
+      if (disputeCase) {
+        const artifactMap = await this.uploadAllArtifacts(disputeCaseId, disputeCase.client_id, ctx, browser, evidenceRawData, issueResults);
+        await this.saveIssueResults(disputeCaseId, runId, issueResults, artifactMap);
+      }
+
+      const meta = ctx.meta;
+      const lotPlan = meta.lot ? `Lot ${meta.lot} ${meta.planType} ${meta.plan}` : '';
+
+      return {
+        property_address: ctx.confirmedAddress,
+        property_id: ctx.propId,
+        lot_plan: lotPlan,
+        assessed_land_value: meta.assessed_land_value,
+        run_date: new Date().toISOString(),
+        run_id: runId,
+        issues: issueResults,
+      };
     } finally {
       if (browser) await browser.close().catch(() => {});
     }
+  }
 
-    const meta = ctx.meta;
-    const lotPlan = meta.lot ? `Lot ${meta.lot} ${meta.planType} ${meta.plan}` : '';
+  private async gatherSharedContext(
+    address: string,
+    browser: Browser,
+    inputComparables: InputComparable[],
+    inputBenchmarkReport: BenchmarkReport | null,
+    landTaxNotice: LandTaxNotice | null,
+    inputDocumentsText: string[],
+  ): Promise<SupportingEvidenceContext> {
+    this.logger.log(`[SE] Gathering shared context for: ${address}`);
+
+    const { propId, confirmedAddress } = await this.eplanning.lookupProperty(address);
+    const { reportText, reportBuffer } = await this.eplanning.downloadPropertyReport(propId);
+    const apiData = await this.eplanning.queryLayers(propId);
+    const { lat, lng } = await this.geocoding.geocode(confirmedAddress);
+
+    const rawMeta = await this.pdfExtractor.parseReportMetaAI(reportText);
+    const meta: ReportMeta = {
+      lot: rawMeta['lot'] as string | null,
+      plan: rawMeta['plan'] as string | null,
+      planType: (rawMeta['planType'] as string) || 'DP',
+      assessed_land_value: rawMeta['assessed_land_value'] as number | null,
+      revenue_nsw_notice_date: rawMeta['revenue_nsw_notice_date'] as string | null,
+      fsr_from_pdf: rawMeta['fsr_from_pdf'] as number | null,
+      concession_mentions: (rawMeta['concession_mentions'] as string[]) || [],
+      heritage_mentions: (rawMeta['heritage_mentions'] as string[]) || [],
+      multiple_lots_in_report: (rawMeta['multiple_lots_in_report'] as string[]) || [],
+    };
+
+    let lotAreaM2: number | null = null;
+    if (meta.lot && meta.plan) {
+      lotAreaM2 = await this.eplanning.getLotArea(meta.lot, meta.plan, meta.planType).catch(e => {
+        this.logger.warn(`getLotArea failed: ${e.message}`);
+        return null;
+      });
+    }
+    if (!lotAreaM2) {
+      const cadInfo = await this.geocoding.getLotInfoFromCadastre(lat, lng).catch(e => {
+        this.logger.warn(`Cadastre fallback failed: ${e.message}`);
+        return null;
+      });
+      if (cadInfo?.areaM2) lotAreaM2 = cadInfo.areaM2;
+    }
+
+    const [spatialBase64, contextBase64, closeupBase64] = await Promise.all([
+      this.puppeteerSvc.capturePortalScreenshot(confirmedAddress, propId, browser)
+        .catch(e => { this.logger.warn(`Portal screenshot: ${e.message}`); return null; }),
+      this.puppeteerSvc.captureContextSatellite(lat, lng, browser)
+        .catch(e => { this.logger.warn(`Context satellite: ${e.message}`); return null; }),
+      this.puppeteerSvc.captureCloseupSatellite(lat, lng, browser)
+        .catch(e => { this.logger.warn(`Closeup satellite: ${e.message}`); return null; }),
+    ]);
 
     return {
-      property_address: ctx.confirmedAddress,
-      property_id: ctx.propId,
-      lot_plan: lotPlan,
-      assessed_land_value: meta.assessed_land_value,
-      run_date: new Date().toISOString(),
-      run_id: runId,
-      issues: issueResults,
+      propId,
+      confirmedAddress,
+      reportText,
+      reportBuffer,
+      apiData,
+      lat,
+      lng,
+      lotAreaM2,
+      meta,
+      spatialBase64,
+      contextBase64,
+      closeupBase64,
+      inputComparables,
+      inputBenchmarkReport,
+      landTaxNotice,
+      inputDocumentsText,
     };
   }
 
+  // Fetch comparables from DB; generate inline if none exist yet
   private async ensureComparables(disputeCaseId: string): Promise<InputComparable[]> {
     let sales = await this.comparablesService.findRawByDisputeCaseId(disputeCaseId);
 
@@ -194,6 +275,55 @@ export class SupportingEvidenceService {
       }));
   }
 
+  // Classify uploaded PDFs for typed structs AND extract raw text for all docs
+  private async fetchInputDocuments(disputeCase: DisputeCase | null): Promise<{
+    landTaxNotice: LandTaxNotice | null;
+    inputBenchmarkReport: BenchmarkReport | null;
+    salesComparables: InputComparable[];
+    rawTexts: string[];
+  }> {
+    if (!disputeCase) return { landTaxNotice: null, inputBenchmarkReport: null, salesComparables: [], rawTexts: [] };
+
+    const docs = await this.assessmentDocumentsService.findByClientId(disputeCase.client_id);
+
+    let landTaxNotice: LandTaxNotice | null = null;
+    let inputBenchmarkReport: BenchmarkReport | null = null;
+    const salesComparables: InputComparable[] = [];
+    const rawTexts: string[] = [];
+
+    const processed = await Promise.all(
+      docs.map(async (doc) => {
+        if (!doc.file_path) return null;
+        try {
+          const buffer = await this.azureBlobService.getFileContent(doc.file_path);
+          const rawText = await this.pdfExtractor.parseBuffer(buffer);
+          const result = await this.pdfExtractor.classifyAndExtractDocument(buffer, doc.document_name);
+          return { rawText, result };
+        } catch (e) {
+          this.logger.warn(`Failed to process assessment doc ${doc.id}: ${(e as Error).message}`);
+          return null;
+        }
+      }),
+    );
+
+    for (const item of processed) {
+      if (!item) continue;
+      if (item.rawText?.trim()) rawTexts.push(item.rawText);
+      if (!item.result) continue;
+      if (item.result.document_type === 'land_tax_notice') {
+        landTaxNotice = item.result as unknown as LandTaxNotice;
+      } else if (item.result.document_type === 'benchmark_report') {
+        inputBenchmarkReport = item.result as unknown as BenchmarkReport;
+        if (inputBenchmarkReport.sales?.length) salesComparables.push(...inputBenchmarkReport.sales);
+      } else if (item.result.document_type === 'sales_report') {
+        const salesData = item.result as { sales?: InputComparable[] };
+        if (salesData.sales?.length) salesComparables.push(...salesData.sales);
+      }
+    }
+
+    return { landTaxNotice, inputBenchmarkReport, salesComparables, rawTexts };
+  }
+
   private async uploadAllArtifacts(
     disputeCaseId: string,
     clientId: string,
@@ -201,9 +331,8 @@ export class SupportingEvidenceService {
     browser: Browser | null,
     rawData: EvidenceRawData,
     issueResults: SupportingEvidenceResult['issues'],
-    initialArtifacts: Map<string, string> = new Map(),
   ): Promise<Map<string, string>> {
-    const artifactMap = new Map(initialArtifacts);
+    const artifactMap = new Map<string, string>();
     const meta: PropMeta = {
       address: ctx.confirmedAddress,
       propId: ctx.propId,
@@ -222,7 +351,6 @@ export class SupportingEvidenceService {
       { key: 'spatial_viewer', base64: ctx.spatialBase64 },
       { key: 'satellite_closeup', base64: ctx.closeupBase64 },
     ]) {
-      if (artifactMap.has(key)) continue;
       if (!base64) continue;
       try {
         await uploadBlob(`${FOLDER}/${disputeCaseId}/${key}.png`, base64, key, key);
@@ -232,7 +360,7 @@ export class SupportingEvidenceService {
     }
 
     // 2 — Property report PDF
-    if (ctx.reportBuffer && browser && !artifactMap.has('property_report')) {
+    if (ctx.reportBuffer && browser) {
       try {
         await uploadBlob(
           `${FOLDER}/${disputeCaseId}/property_report.pdf`,

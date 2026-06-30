@@ -6,7 +6,7 @@ export class CreateDisputeEvidenceIssues1778300000000 implements MigrationInterf
   public async up(queryRunner: QueryRunner): Promise<void> {
     await queryRunner.query(`
       CREATE TABLE "dispute_evidence_issues" (
-        "id" uuid NOT NULL DEFAULT gen_random_uuid(),
+        "id" uuid NOT NULL DEFAULT uuid_generate_v4(),
         "dispute_case_id" uuid NOT NULL,
         "issue_type" text NOT NULL,
         "is_tick" boolean NOT NULL DEFAULT false,

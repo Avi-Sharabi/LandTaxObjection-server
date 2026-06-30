@@ -20,7 +20,6 @@ const TEMPLATE_NAMES = [
     'vg-submission-confirmation',
     'vg-follow-up-enquiry',
     'vg-response-notification',
-    'password-reset',
 ] as const;
 
 type TemplateName = (typeof TEMPLATE_NAMES)[number];
@@ -79,20 +78,8 @@ export class AzureEmailService implements OnModuleInit {
         }
     }
 
-    async sendDisputeApplication(
-        caseReferences: string[],
-        sendTo: string,
-        details?: { clientName?: string; assessorName?: string; propertyAddresses?: string[] },
-    ): Promise<void> {
-        const contactEmail = this.config.get<string>('CONTACT_EMAIL') ?? '';
-
-        const html = this.loadTemplate('dispute-application-submitted', {
-            caseReference:   caseReferences.join(', '),
-            propertyAddress: (details?.propertyAddresses ?? []).join(', '),
-            clientName:      details?.clientName ?? '',
-            assessorName:    details?.assessorName ?? 'Assessment Team',
-            contactEmail,
-        });
+    async sendDisputeApplication(caseReferences: string[], sendTo: string): Promise<void> {
+        const html = this.loadTemplate('dispute-application-submitted', { caseReferences });
 
         const subjectLabel = caseReferences.length === 1
             ? `[${caseReferences[0]}]`
@@ -127,15 +114,14 @@ export class AzureEmailService implements OnModuleInit {
         const contactEmail = this.config.getOrThrow<string>('CONTACT_EMAIL');
 
         const html = this.loadTemplate('advisory-letter-notification', {
-            clientName:           data.clientName,
-            caseReference:        data.caseReference,
-            propertyAddress:      data.propertyAddress,
-            vgAssessedValue:      data.vgAssessedValue,
+            caseReference: data.caseReference,
+            propertyAddress: data.propertyAddress,
+            vgAssessedValue: data.vgAssessedValue,
             internalAssessedValue: data.internalAssessedValue,
-            assessorName:         data.assessorFullName,
-            closedAt:             data.closedAt,
+            assessorFullName: data.assessorFullName,
+            closedAt: data.closedAt,
             contactEmail,
-            viewReportUrl:        data.viewReportUrl ?? '',
+            viewReportUrl: data.viewReportUrl ?? '',
         });
 
         const message = {
@@ -161,19 +147,15 @@ export class AzureEmailService implements OnModuleInit {
         approvalLink: string;
         firmName: string;
         contactEmail: string;
-        caseReference?: string;
-        assessorName?: string;
         attachments?: EmailAttachment[];
     }): Promise<void> {
         const html = this.loadTemplate('objection-package-approval', {
-            clientName:      params.clientName,
-            propertyAddress: params.propertyAddress,
-            taxYear:         params.taxYear,
-            approvalLink:    params.approvalLink,
-            firmName:        params.firmName,
-            contactEmail:    params.contactEmail,
-            caseReference:   params.caseReference ?? '',
-            assessorName:    params.assessorName ?? '',
+            client_name: params.clientName,
+            property_address: params.propertyAddress,
+            tax_year: params.taxYear,
+            approval_link: params.approvalLink,
+            firm_name: params.firmName,
+            contact_email: params.contactEmail,
         });
 
         const message = {
@@ -182,7 +164,7 @@ export class AzureEmailService implements OnModuleInit {
                 to: [{ address: params.sendTo, displayName: params.clientName }],
             },
             content: {
-                subject: `Objection Package Update \u2013 ${params.propertyAddress}`,
+                subject: 'Action Required \u2013 Please Review and Approve Your Objection Package',
                 html,
             },
             ...(params.attachments?.length && { attachments: params.attachments }),
@@ -286,32 +268,6 @@ export class AzureEmailService implements OnModuleInit {
             },
             content: {
                 subject: `[${params.caseReference}] Follow-Up Enquiry #${params.followUpCount} — Awaiting VG Response`,
-                html,
-            },
-        };
-
-        await this.send(message);
-    }
-
-    async sendPasswordResetEmail(params: {
-        sendTo: string;
-        fullName: string;
-        resetLink: string;
-        expiryMinutes: number;
-    }): Promise<void> {
-        const html = this.loadTemplate('password-reset', {
-            fullName:      params.fullName,
-            resetLink:     params.resetLink,
-            expiryMinutes: String(params.expiryMinutes),
-        });
-
-        const message = {
-            senderAddress: this.sender,
-            recipients: {
-                to: [{ address: params.sendTo, displayName: params.fullName }],
-            },
-            content: {
-                subject: 'Reset Your Land Tax Dispute Password',
                 html,
             },
         };

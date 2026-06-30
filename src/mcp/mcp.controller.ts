@@ -5,7 +5,7 @@ import { McpService } from './mcp.service';
 import { McpAuthGuard } from './mcp-auth.guard';
 
 @ApiExcludeController()
-@Controller({ path: 'mcp', version: '1' })
+@Controller('mcp')
 @UseGuards(McpAuthGuard)
 export class McpController {
   constructor(private mcpService: McpService) {}
