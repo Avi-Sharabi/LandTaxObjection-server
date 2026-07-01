@@ -121,7 +121,15 @@ const SCENARIOS = [
 
   // ── CRX — Cross-Reason ───────────────────────────────────────────────────────
   { seq: 41, id: 'CRX-001', groundAnalysis: { '1': 'positive', '3': 'positive' } },
-  { seq: 42, id: 'CRX-002', groundAnalysis: { '7': 'positive', '8': 'positive' } },
+  {
+    seq: 42, id: 'CRX-002',
+    groundAnalysis: { '7': 'positive', '8': 'positive' },
+    contentChecks: [
+      { groundNum: '7', label: 'R5 — ground label explicitly stated', contains: 'R5' },
+      { groundNum: '8', label: 'R6 — correct entitlement 1.5% (12 / 800) stated', contains: '800' },
+      { groundNum: '8', label: 'R6 — entitlement percentage 1.5% stated', contains: '1.5' },
+    ],
+  },
   { seq: 43, id: 'CRX-003', groundAnalysis: { '1': 'positive', '4': 'positive' } },
 
   // ── MIS — Missing Data ───────────────────────────────────────────────────────
@@ -261,6 +269,20 @@ function checkScenario(scenario, reasons) {
       ? `Ground ${groundNum} must NOT tick — is_tick = ${actualTick}`
       : `Ground ${groundNum} should tick — is_tick = ${actualTick}`;
     checks.push({ label, pass });
+  }
+
+  // Content checks: verify that reason.analysis contains required strings
+  if (scenario.contentChecks) {
+    for (const cc of scenario.contentChecks) {
+      const reason = groundMap[cc.groundNum];
+      if (!reason) {
+        checks.push({ label: `Ground ${cc.groundNum} — ${cc.label} (ground not found)`, pass: false });
+        continue;
+      }
+      const analysis = reason.analysis ?? '';
+      const pass = analysis.includes(cc.contains);
+      checks.push({ label: `Check: ${cc.label}`, pass });
+    }
   }
 
   return checks;
