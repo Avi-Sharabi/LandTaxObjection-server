@@ -4,6 +4,9 @@ import { IsArray, IsUUID, ArrayMinSize } from 'class-validator';
 export class AnalyzeAiEnqueueResponseDto {
   @ApiProperty()
   jobId: string;
+
+  @ApiProperty({ example: 'queued' })
+  status: string;
 }
 
 export class AnalyzeAiStatusResponseDto {
@@ -58,7 +61,10 @@ export class AnalyzeAiQueueResponseDto {
 }
 
 export class BatchAnalyzeAiRequestDto {
-  @ApiProperty({ type: [String], description: 'List of dispute case UUIDs to analyse sequentially' })
+  @ApiProperty({
+    type: [String],
+    description: 'List of dispute case UUIDs to analyse sequentially',
+  })
   @IsArray()
   @IsUUID('4', { each: true })
   @ArrayMinSize(1)

@@ -570,6 +570,19 @@ export class DisputeCasesService {
     return found.case_reference;
   }
 
+  async getCaseReferenceMap(ids: string[]): Promise<Record<string, string>> {
+    if (ids.length === 0) return {};
+    const rows = await this.disputeCasesRepository.find({
+      where: { id: In(ids) },
+      select: { id: true, case_reference: true },
+    });
+    return Object.fromEntries(rows.map(r => [r.id, r.case_reference]));
+  }
+
+  async markValuated(id: string): Promise<void> {
+    await this.disputeCasesRepository.update(id, { is_valuated: true });
+  }
+
   private buildPropertyAddress(
     property: {
       address: string | null;
