@@ -8,8 +8,7 @@ import {
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { DashboardService } from './dashboard.service';
-import { StatusCountersQueryDto } from './dto/status-counters-query.dto';
-import { StatusCountersResponseDto } from './dto/status-counters-response.dto';
+import { DashboardResponseDto } from './dto/dashboard-response.dto';
 
 @ApiTags('dashboard')
 @ApiBearerAuth()
@@ -19,17 +18,17 @@ import { StatusCountersResponseDto } from './dto/status-counters-response.dto';
 export class DashboardController {
   constructor(private readonly dashboardService: DashboardService) {}
 
-  @Get('status-counters')
+  @Get()
   @ApiOperation({
-    summary: 'Dashboard status counters',
+    summary: 'Unified dashboard data',
     description:
-      'Returns active_cases_count, due_this_week_count, and overdue_count. ' +
-      'Results are cached in Redis for 60 seconds.',
+      'Returns status_counters, deadline_risk (top 10 active cases by soonest deadline), ' +
+      'and recent_activities (placeholder). Cached in Redis for 5 minutes. ' +
+      'Pass ?force=true to bypass the cache.',
   })
-  @ApiResponse({ status: 200, description: 'Status counters returned successfully', type: StatusCountersResponseDto })
-  @ApiResponse({ status: 400, description: 'Invalid query parameter' })
+  @ApiResponse({ status: 200, description: 'Dashboard data returned successfully', type: DashboardResponseDto })
   @ApiResponse({ status: 401, description: 'Unauthenticated — missing or expired JWT' })
-  getStatusCounters(@Query() query: StatusCountersQueryDto): Promise<StatusCountersResponseDto> {
-    return this.dashboardService.getStatusCounters(query);
+  getDashboard(@Query('force') force?: string): Promise<DashboardResponseDto> {
+    return this.dashboardService.getDashboard(force === 'true');
   }
 }

@@ -2,7 +2,9 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import type { Redis } from 'ioredis';
 import { DataSource } from 'typeorm';
+import { REDIS_CLIENT } from '../../common/redis/redis.constant';
 import { DisputeStatus } from '../dispute-cases/entities/dispute-case.entity';
+import { DashboardResponseDto, DeadlineRiskCaseDto } from './dto/dashboard-response.dto';
 
 const TERMINAL_STATUSES: DisputeStatus[] = [
   DisputeStatus.CLOSED,
@@ -10,12 +12,9 @@ const TERMINAL_STATUSES: DisputeStatus[] = [
   DisputeStatus.VG_APPROVED,
   DisputeStatus.VG_DECLINED,
 ];
-import { REDIS_CLIENT } from '../../common/redis/redis.constant';
-import { StatusCountersQueryDto } from './dto/status-counters-query.dto';
-import { StatusCountersResponseDto } from './dto/status-counters-response.dto';
 
-const CACHE_TTL_S = 300; // 5 minutes — matches frontend polling interval
-const CACHE_KEY_PREFIX = 'dashboard:status-counters';
+const CACHE_KEY = 'dashboard:unified';
+const CACHE_TTL_S = 300;
 
 @Injectable()
 export class DashboardService {
@@ -26,27 +25,22 @@ export class DashboardService {
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
   ) {}
 
-  async getStatusCounters(query: StatusCountersQueryDto): Promise<StatusCountersResponseDto> {
-    const cacheKey = this.buildCacheKey(query);
-
-    if (query.force) {
-      try {
-        await this.redis.del(cacheKey);
-      } catch (err) {
-        this.logger.warn(`[Dashboard] Redis del failed: ${String(err)}`);
-      }
+  async getDashboard(force: boolean): Promise<DashboardResponseDto> {
+    if (force) {
+      await this.redis.del(CACHE_KEY).catch((err) =>
+        this.logger.warn(`[Dashboard] Redis del failed: ${String(err)}`),
+      );
     } else {
-      try {
-        const raw = await this.redis.get(cacheKey);
-        if (raw) return JSON.parse(raw) as StatusCountersResponseDto;
-      } catch (err) {
+      const raw = await this.redis.get(CACHE_KEY).catch((err) => {
         this.logger.warn(`[Dashboard] Redis get failed — falling through to DB: ${String(err)}`);
-      }
+        return null;
+      });
+      if (raw) return JSON.parse(raw) as DashboardResponseDto;
     }
 
     const ph = TERMINAL_STATUSES.map((_, i) => `$${i + 1}`).join(', ');
 
-    const [[activeRow], [deadlineRow]] = await Promise.all([
+    const [[activeRow], [deadlineRow], deadlineRiskCases] = await Promise.all([
       this.dataSource.query<[{ active_cases_count: number }]>(
         `SELECT COUNT(*)::int AS active_cases_count
            FROM dispute_cases
@@ -64,28 +58,38 @@ export class DashboardService {
             AND statutory_deadline IS NOT NULL`,
         TERMINAL_STATUSES,
       ),
+      this.dataSource.query<DeadlineRiskCaseDto[]>(
+        `SELECT dc.id,
+                dc.case_reference,
+                dc.statutory_deadline,
+                p.address  AS property_address,
+                c.name     AS client_name
+           FROM dispute_cases dc
+           JOIN properties p ON dc.property_id = p.id
+           JOIN clients    c ON dc.client_id   = c.id
+          WHERE dc.deleted_at IS NULL
+            AND dc.status NOT IN (${ph})
+            AND dc.statutory_deadline IS NOT NULL
+          ORDER BY dc.statutory_deadline ASC
+          LIMIT 8`,
+        TERMINAL_STATUSES,
+      ),
     ]);
 
-    const result: StatusCountersResponseDto = {
-      active_cases_count: activeRow.active_cases_count,
-      due_this_week_count: deadlineRow.due_this_week_count,
-      overdue_count: deadlineRow.overdue_count,
+    const result: DashboardResponseDto = {
+      status_counters: {
+        active_cases_count: activeRow.active_cases_count,
+        due_this_week_count: deadlineRow.due_this_week_count,
+        overdue_count: deadlineRow.overdue_count,
+      },
+      deadline_risk: deadlineRiskCases,
+      recent_activities: [],
     };
 
-    try {
-      await this.redis.set(cacheKey, JSON.stringify(result), 'EX', CACHE_TTL_S);
-    } catch (err) {
-      this.logger.warn(`[Dashboard] Redis set failed: ${String(err)}`);
-    }
+    await this.redis
+      .set(CACHE_KEY, JSON.stringify(result), 'EX', CACHE_TTL_S)
+      .catch((err) => this.logger.warn(`[Dashboard] Redis set failed: ${String(err)}`));
 
     return result;
-  }
-
-  private buildCacheKey(q: StatusCountersQueryDto): string {
-    return [
-      CACHE_KEY_PREFIX,
-      `dateFrom:${q.dateFrom ?? ''}`,
-      `dateTo:${q.dateTo ?? ''}`,
-    ].join('|');
   }
 }
