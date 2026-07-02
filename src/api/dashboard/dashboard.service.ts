@@ -15,6 +15,7 @@ const TERMINAL_STATUSES: DisputeStatus[] = [
 
 const CACHE_KEY = 'dashboard:unified';
 const CACHE_TTL_S = 300;
+const DEADLINE_RISK_LIMIT = 8;
 
 @Injectable()
 export class DashboardService {
@@ -35,12 +36,18 @@ export class DashboardService {
         this.logger.warn(`[Dashboard] Redis get failed — falling through to DB: ${String(err)}`);
         return null;
       });
-      if (raw) return JSON.parse(raw) as DashboardResponseDto;
+      if (raw) {
+        try {
+          return JSON.parse(raw) as DashboardResponseDto;
+        } catch {
+          this.logger.warn('[Dashboard] Corrupt cache entry — falling through to DB');
+        }
+      }
     }
 
     const ph = TERMINAL_STATUSES.map((_, i) => `$${i + 1}`).join(', ');
 
-    const [[activeRow], [deadlineRow], deadlineRiskCases] = await Promise.all([
+    const [activeResults, deadlineResults, deadlineRiskCases] = await Promise.all([
       this.dataSource.query<[{ active_cases_count: number }]>(
         `SELECT COUNT(*)::int AS active_cases_count
            FROM dispute_cases
@@ -71,16 +78,22 @@ export class DashboardService {
             AND dc.status NOT IN (${ph})
             AND dc.statutory_deadline IS NOT NULL
           ORDER BY dc.statutory_deadline ASC
-          LIMIT 8`,
+          LIMIT ${DEADLINE_RISK_LIMIT}`,
         TERMINAL_STATUSES,
       ),
-    ]);
+    ]).catch((err: Error) => {
+      this.logger.error(`[Dashboard] DB query failed: ${String(err)}`);
+      throw err;
+    });
+
+    const [activeRow] = activeResults;
+    const [deadlineRow] = deadlineResults;
 
     const result: DashboardResponseDto = {
       status_counters: {
-        active_cases_count: activeRow.active_cases_count,
-        due_this_week_count: deadlineRow.due_this_week_count,
-        overdue_count: deadlineRow.overdue_count,
+        active_cases_count: activeRow!.active_cases_count,
+        due_this_week_count: deadlineRow!.due_this_week_count,
+        overdue_count: deadlineRow!.overdue_count,
       },
       deadline_risk: deadlineRiskCases,
       recent_activities: [],
