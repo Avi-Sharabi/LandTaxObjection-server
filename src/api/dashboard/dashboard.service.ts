@@ -26,8 +26,8 @@ export class DashboardService {
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
   ) {}
 
-  async getDashboard(force: boolean): Promise<DashboardResponseDto> {
-    if (force) {
+  async getDashboard(isforce: boolean): Promise<DashboardResponseDto> {
+    if (isforce) {
       await this.redis.del(CACHE_KEY).catch((err) =>
         this.logger.warn(`[Dashboard] Redis del failed: ${String(err)}`),
       );

@@ -1,8 +1,9 @@
-import { Controller, Get, Query, Req, UseGuards } from '@nestjs/common';
+import { Controller, Get, Req, UseGuards } from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiCookieAuth,
   ApiOperation,
+  ApiQuery,
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
@@ -20,20 +21,19 @@ export class DashboardController {
   constructor(private readonly dashboardService: DashboardService) {}
 
   @Get()
+  @ApiQuery({ name: 'isForce', type: Boolean, required: false, nullable: true, description: 'Admin only — pass true to bypass the Redis cache.' })
   @ApiOperation({
     summary: 'Unified dashboard data',
     description:
       'Returns status_counters, deadline_risk (top 8 active cases by soonest deadline), ' +
-      'and recent_activities (placeholder). Cached in Redis for 5 minutes. ' +
-      'Pass ?force=true to bypass the cache (admin only — ignored for other roles).',
+      'and recent_activities (placeholder). Cached in Redis for 5 minutes.',
   })
   @ApiResponse({ status: 200, description: 'Dashboard data returned successfully', type: DashboardResponseDto })
   @ApiResponse({ status: 401, description: 'Unauthenticated — missing or expired JWT' })
   getDashboard(
-    @Query('force') force?: string,
-    @Req() req?: { user: { role: UserRole } },
+    @Req() req: { user: { role: UserRole }; query: { isForce?: string } },
   ): Promise<DashboardResponseDto> {
-    const isAdmin = req?.user?.role === UserRole.ADMIN;
-    return this.dashboardService.getDashboard(force === 'true' && isAdmin);
+    const isAdmin = req.user?.role === UserRole.ADMIN;
+    return this.dashboardService.getDashboard(req.query.isForce === 'true' && isAdmin);
   }
 }
