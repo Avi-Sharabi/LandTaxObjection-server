@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Between, IsNull, LessThan, Not, In, Repository, SelectQueryBuilder } from 'typeorm';
+import { Between, IsNull, LessThan, MoreThanOrEqual, Not, In, Repository } from 'typeorm';
 import { DisputeCase, DisputeStatus } from '../dispute-cases/entities/dispute-case.entity';
 import { DeadlineRiskCaseDto } from './dto/dashboard-response.dto';
 
@@ -25,12 +25,6 @@ export class DashboardRepository {
     private readonly repo: Repository<DisputeCase>,
   ) {}
 
-  private applyActiveCaseConditions(qb: SelectQueryBuilder<DisputeCase>) {
-    return qb
-      .andWhere('dc.deleted_at IS NULL')
-      .andWhere('dc.status NOT IN (:...statuses)', { statuses: TERMINAL_STATUSES });
-  }
-
   getActiveCasesCount(): Promise<number> {
     return this.repo.count({ where: ACTIVE_CASE_WHERE });
   }
@@ -51,21 +45,20 @@ export class DashboardRepository {
     return { due_this_week_count, overdue_count };
   }
 
-  getDeadlineRiskCases(): Promise<DeadlineRiskCaseDto[]> {
-    const qb = this.repo
-      .createQueryBuilder('dc')
-      .select('dc.id', 'id')
-      .addSelect('dc.case_reference', 'case_reference')
-      .addSelect('dc.statutory_deadline', 'statutory_deadline')
-      .addSelect('p.address', 'property_address')
-      .addSelect('c.name', 'client_name')
-      .innerJoin('dc.property', 'p')
-      .innerJoin('dc.client', 'c')
-      .andWhere('dc.statutory_deadline IS NOT NULL')
-      .andWhere('dc.statutory_deadline >= :today', { today: new Date() })
-      .orderBy('dc.statutory_deadline', 'ASC')
-      .limit(DEADLINE_RISK_LIMIT);
+  async getDeadlineRiskCases(): Promise<DeadlineRiskCaseDto[]> {
+    const cases = await this.repo.find({
+      where: { ...ACTIVE_CASE_WHERE, statutory_deadline: MoreThanOrEqual(new Date()) },
+      relations: { property: true, client: true },
+      order: { statutory_deadline: 'ASC' },
+      take: DEADLINE_RISK_LIMIT,
+    });
 
-    return this.applyActiveCaseConditions(qb).getRawMany<DeadlineRiskCaseDto>();
+    return cases.map((dc) => ({
+      id: dc.id,
+      case_reference: dc.case_reference,
+      statutory_deadline: dc.statutory_deadline ? new Date(dc.statutory_deadline).toISOString() : null,
+      property_address: dc.property.address,
+      client_name: dc.client.name,
+    }));
   }
 }

@@ -8,7 +8,6 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { UserRole } from '../users/entities/user.entity';
 import { DashboardService } from './dashboard.service';
 import { DashboardResponseDto } from './dto/dashboard-response.dto';
 
@@ -31,9 +30,8 @@ export class DashboardController {
   @ApiResponse({ status: 200, description: 'Dashboard data returned successfully', type: DashboardResponseDto })
   @ApiResponse({ status: 401, description: 'Unauthenticated — missing or expired JWT' })
   getDashboard(
-    @Req() req: { user: { role: UserRole }; query: { isForce?: string } },
+    @Req() req: { query: { isForce?: string } },
   ): Promise<DashboardResponseDto> {
-    const isAdmin = req.user?.role === UserRole.ADMIN;
-    return this.dashboardService.getDashboard(req.query.isForce === 'true' && isAdmin);
+    return this.dashboardService.getDashboard(req.query.isForce === 'true');
   }
 }
