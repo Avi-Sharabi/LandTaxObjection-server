@@ -32,6 +32,6 @@ export class DashboardController {
   getDashboard(
     @Req() req: { query: { isForce?: string } },
   ): Promise<DashboardResponseDto> {
-    return this.dashboardService.getDashboard(req.query.isForce === 'true');
+    return this.dashboardService.getDashboard(!!req.query.isForce);
   }
 }
