@@ -25,10 +25,10 @@ export class DashboardRepository {
     private readonly repo: Repository<DisputeCase>,
   ) {}
 
-  private applyActiveCaseConditions(qb: SelectQueryBuilder<DisputeCase>, alias = 'dc') {
+  private applyActiveCaseConditions(qb: SelectQueryBuilder<DisputeCase>) {
     return qb
-      .andWhere(`${alias}.deleted_at IS NULL`)
-      .andWhere(`${alias}.status NOT IN (:...statuses)`, { statuses: TERMINAL_STATUSES });
+      .andWhere('dc.deleted_at IS NULL')
+      .andWhere('dc.status NOT IN (:...statuses)', { statuses: TERMINAL_STATUSES });
   }
 
   getActiveCasesCount(): Promise<number> {
