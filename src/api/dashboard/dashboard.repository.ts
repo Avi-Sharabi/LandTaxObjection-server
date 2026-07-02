@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { Between, IsNull, LessThan, Not, In, Repository, SelectQueryBuilder } from 'typeorm';
 import { DisputeCase, DisputeStatus } from '../dispute-cases/entities/dispute-case.entity';
 import { DeadlineRiskCaseDto } from './dto/dashboard-response.dto';
 
@@ -13,6 +13,11 @@ const TERMINAL_STATUSES: DisputeStatus[] = [
 
 const DEADLINE_RISK_LIMIT = 8;
 
+const ACTIVE_CASE_WHERE = {
+  deleted_at: IsNull(),
+  status: Not(In(TERMINAL_STATUSES)),
+};
+
 @Injectable()
 export class DashboardRepository {
   constructor(
@@ -20,45 +25,47 @@ export class DashboardRepository {
     private readonly repo: Repository<DisputeCase>,
   ) {}
 
-  getActiveCasesCount(): Promise<number> {
-    return this.repo
-      .createQueryBuilder('dc')
-      .where('dc.deleted_at IS NULL')
-      .andWhere('dc.status NOT IN (:...statuses)', { statuses: TERMINAL_STATUSES })
-      .getCount();
+  private applyActiveCaseConditions(qb: SelectQueryBuilder<DisputeCase>, alias = 'dc') {
+    return qb
+      .andWhere(`${alias}.deleted_at IS NULL`)
+      .andWhere(`${alias}.status NOT IN (:...statuses)`, { statuses: TERMINAL_STATUSES });
   }
 
-  getDeadlineCounts(): Promise<{ due_this_week_count: number; overdue_count: number }> {
-    return this.repo
-      .createQueryBuilder('dc')
-      .select(
-        `COUNT(*) FILTER (WHERE (dc.statutory_deadline::date - CURRENT_DATE) BETWEEN 0 AND 7)::int`,
-        'due_this_week_count',
-      )
-      .addSelect(
-        `COUNT(*) FILTER (WHERE (dc.statutory_deadline::date - CURRENT_DATE) < 0)::int`,
-        'overdue_count',
-      )
-      .where('dc.deleted_at IS NULL')
-      .andWhere('dc.status NOT IN (:...statuses)', { statuses: TERMINAL_STATUSES })
-      .andWhere('dc.statutory_deadline IS NOT NULL')
-      .getRawOne<{ due_this_week_count: number; overdue_count: number }>()
-      .then((row) => row ?? { due_this_week_count: 0, overdue_count: 0 });
+  getActiveCasesCount(): Promise<number> {
+    return this.repo.count({ where: ACTIVE_CASE_WHERE });
+  }
+
+  async getDeadlineCounts(): Promise<{ due_this_week_count: number; overdue_count: number }> {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const weekEnd = new Date(today);
+    weekEnd.setDate(weekEnd.getDate() + 7);
+    weekEnd.setHours(23, 59, 59, 999);
+
+    const [due_this_week_count, overdue_count] = await Promise.all([
+      this.repo.count({ where: { ...ACTIVE_CASE_WHERE, statutory_deadline: Between(today, weekEnd) } }),
+      this.repo.count({ where: { ...ACTIVE_CASE_WHERE, statutory_deadline: LessThan(today) } }),
+    ]);
+
+    return { due_this_week_count, overdue_count };
   }
 
   getDeadlineRiskCases(): Promise<DeadlineRiskCaseDto[]> {
-    return this.repo
+    const qb = this.repo
       .createQueryBuilder('dc')
-      .select(['dc.id', 'dc.case_reference', 'dc.statutory_deadline'])
+      .select('dc.id', 'id')
+      .addSelect('dc.case_reference', 'case_reference')
+      .addSelect('dc.statutory_deadline', 'statutory_deadline')
       .addSelect('p.address', 'property_address')
       .addSelect('c.name', 'client_name')
       .innerJoin('dc.property', 'p')
       .innerJoin('dc.client', 'c')
-      .where('dc.deleted_at IS NULL')
-      .andWhere('dc.status NOT IN (:...statuses)', { statuses: TERMINAL_STATUSES })
       .andWhere('dc.statutory_deadline IS NOT NULL')
+      .andWhere('dc.statutory_deadline >= :today', { today: new Date() })
       .orderBy('dc.statutory_deadline', 'ASC')
-      .limit(DEADLINE_RISK_LIMIT)
-      .getRawMany();
+      .limit(DEADLINE_RISK_LIMIT);
+
+    return this.applyActiveCaseConditions(qb).getRawMany<DeadlineRiskCaseDto>();
   }
 }
