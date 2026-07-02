@@ -1,14 +1,14 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { AzureBlobService } from 'src/common/azure-blob/azure-blob.service';
 import { XpmService } from 'src/common/xpm/xpm.service';
-import { FindOptionsWhere, ILike, Repository } from 'typeorm';
+import { DataSource, FindOptionsWhere, ILike, IsNull, Repository } from 'typeorm';
 import { DisputeCase } from '../dispute-cases/entities/dispute-case.entity';
 import { User } from '../users/entities/user.entity';
 import { AcceptTCDto } from './dto/accept-tc.dto';
 import { AcceptTcResponseDto } from './dto/accept-tc-response.dto';
 import { CreateClientDto } from './dto/create-client.dto';
-import { UpdateClientDto } from './dto/update-client.dto';
+import { UpdateClientInfoDto } from './dto/update-client-info.dto';
 import { GetClientsQueryDto } from '../../common/dto/paginated-query.dto';
 import { PaginatedClientsResponseDto } from '../../common/dto/paginated-response.dto';
 import { Client, ClientStatus } from './entities/client.entity';
@@ -19,7 +19,9 @@ import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class ClientsService {
+
   constructor(
+    private readonly dataSource: DataSource,
     @InjectRepository(Client)
     private clientsRepository: Repository<Client>,
     @InjectRepository(DisputeCase)
@@ -96,7 +98,7 @@ export class ClientsService {
     return client;
   }
 
-  async update(id: string, updateClientDto: UpdateClientDto): Promise<Client> {
+  async update(id: string, updateClientDto: UpdateClientInfoDto): Promise<Client> {
     const client = await this.findOne(id);
     Object.assign(client, updateClientDto);
     return this.clientsRepository.save(client);
@@ -161,9 +163,30 @@ export class ClientsService {
     };
   }
 
-  async remove(id: string): Promise<{ message: string }> {
-    const client = await this.findOne(id);
-    await this.clientsRepository.remove(client);
-    return { message: `Client #${id} removed` };
+  async remove(id: string, deletedById: string): Promise<{ message: string }> {
+    const exists = await this.clientsRepository.findOne({ where: { id }, select: { id: true } });
+    if (!exists) throw new NotFoundException(`Client #${id} not found`);
+
+    const now = new Date();
+
+    await this.dataSource.transaction(async (manager) => {
+      await manager.update(
+        DisputeCase,
+        { client_id: id, deleted_at: IsNull() },
+        { deleted_at: now, deleted_by: deletedById },
+      );
+
+      const clientResult = await manager.update(
+        Client,
+        { id, deleted_at: IsNull() },
+        { deleted_at: now, deleted_by: deletedById },
+      );
+
+      if (!clientResult.affected) {
+        throw new ConflictException(`Client #${id} is already deleted`);
+      }
+    });
+
+    return { message: `Client #${id} has been deleted` };
   }
 }

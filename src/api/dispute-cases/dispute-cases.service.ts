@@ -13,6 +13,7 @@ import {
   FindOptionsWhere,
   ILike,
   In,
+  IsNull,
   LessThan,
   Not,
   Repository,
@@ -569,6 +570,19 @@ export class DisputeCasesService {
     return found.case_reference;
   }
 
+  async getCaseReferenceMap(ids: string[]): Promise<Record<string, string>> {
+    if (ids.length === 0) return {};
+    const rows = await this.disputeCasesRepository.find({
+      where: { id: In(ids) },
+      select: { id: true, case_reference: true },
+    });
+    return Object.fromEntries(rows.map(r => [r.id, r.case_reference]));
+  }
+
+  async markValuated(id: string): Promise<void> {
+    await this.disputeCasesRepository.update(id, { is_valuated: true });
+  }
+
   private buildPropertyAddress(
     property: {
       address: string | null;
@@ -899,14 +913,21 @@ export class DisputeCasesService {
     }
   }
 
-  async remove(id: string): Promise<{ message: string }> {
-    const disputeCase = await this.disputeCasesRepository.findOne({
-      where: { id },
-    });
-    if (!disputeCase)
+  async remove(id: string, deletedById: string): Promise<{ message: string }> {
+    const exists = await this.disputeCasesRepository.findOne({ where: { id }, select: { id: true } });
+    if (!exists)
       throw new NotFoundException(`Dispute case #${id} not found`);
-    await this.disputeCasesRepository.remove(disputeCase);
-    return { message: `Dispute case #${id} removed` };
+
+    const result = await this.disputeCasesRepository.update(
+      { id, deleted_at: IsNull() },
+      { deleted_at: new Date(), deleted_by: deletedById },
+    );
+
+    if (!result.affected) {
+      throw new ConflictException(`Dispute case #${id} is already deleted`);
+    }
+
+    return { message: `Dispute case #${id} has been deleted` };
   }
 
 
