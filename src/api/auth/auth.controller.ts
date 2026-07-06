@@ -22,16 +22,22 @@ import { JwtAuthGuard } from './guards/jwt-auth.guard';
 export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post('login')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Login with email and password' })
   @ApiResponse({ status: 200, description: 'Login successful — sets httpOnly access_token cookie', type: AuthResponseDto })
   @ApiResponse({ status: 401, description: 'Invalid credentials' })
+  @ApiResponse({
+    status: 429,
+    description: 'Too many requests, or account temporarily locked',
+  })
   async login(
     @Body() dto: LoginDto,
     @Res({ passthrough: true }) response: Response,
+    @Req() request: Request,
   ): Promise<AuthResponseDto> {
-    return this.authService.login(dto, response);
+    return this.authService.login(dto, response, request.ip ?? 'unknown');
   }
 
   @Get('me')
@@ -61,8 +67,11 @@ export class AuthController {
   @ApiOperation({ summary: 'Request a password reset link via email' })
   @ApiResponse({ status: 200, type: MessageResponseDto, description: 'Reset link sent if the email exists' })
   @ApiResponse({ status: 400, description: 'Validation error (invalid email format)' })
-  forgotPassword(@Body() dto: ForgotPasswordDto): Promise<MessageResponseDto> {
-    return this.authService.forgotPassword(dto);
+  forgotPassword(
+    @Body() dto: ForgotPasswordDto,
+    @Req() request: Request,
+  ): Promise<MessageResponseDto> {
+    return this.authService.forgotPassword(dto, request.ip ?? 'unknown');
   }
 
   // Public endpoint — token-gated by the signed reset link delivered via email.

@@ -11,10 +11,19 @@ import { AuthResponseDto } from './dto/auth-response.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { BCRYPT_SALT_ROUNDS, PASSWORD_RESET_EXPIRY_MINUTES } from './constants/password-reset.constants';
+import {
+  FORGOT_PASSWORD_MAX_EMAILS,
+  FORGOT_PASSWORD_WINDOW_SECONDS,
+  FORGOT_PASSWORD_MAX_IP_ATTEMPTS,
+  FORGOT_PASSWORD_IP_WINDOW_SECONDS,
+} from './constants/forgot-password-throttle.constants';
 import { InvalidCredentialsException } from './exceptions/invalid-credentials.exception';
 import { InvalidResetTokenException } from './exceptions/invalid-reset-token.exception';
 import { ResetTokenExpiredException } from './exceptions/reset-token-expired.exception';
 import { ResetTokenAlreadyUsedException } from './exceptions/reset-token-already-used.exception';
+import { AccountLockedException } from './exceptions/account-locked.exception';
+import { LoginLockoutService } from './login-lockout.service';
+import { ForgotPasswordThrottleService } from './forgot-password-throttle.service';
 import { JwtPayload } from './strategies/jwt.strategy';
 import { User } from '../users/entities/user.entity';
 
@@ -25,23 +34,38 @@ export class AuthService {
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
     private readonly azureEmailService: AzureEmailService,
+    private readonly loginLockoutService: LoginLockoutService,
+    private readonly forgotPasswordThrottleService: ForgotPasswordThrottleService,
   ) {}
 
-  async login(dto: LoginDto, response: Response): Promise<AuthResponseDto> {
+  async login(
+    dto: LoginDto,
+    response: Response,
+    ip: string,
+  ): Promise<AuthResponseDto> {
+    if (await this.loginLockoutService.isLocked(ip)) {
+      throw new AccountLockedException();
+    }
+
     const user = await this.usersService.findByEmailWithPassword(dto.email);
 
     if (!user || !user.password) {
+      await this.loginLockoutService.recordFailedAttempt(ip);
       throw new InvalidCredentialsException();
     }
 
     const passwordMatch = await bcrypt.compare(dto.password, user.password);
     if (!passwordMatch) {
+      await this.loginLockoutService.recordFailedAttempt(ip);
       throw new InvalidCredentialsException();
     }
 
     if (!user.isActive) {
+      await this.loginLockoutService.recordFailedAttempt(ip);
       throw new InvalidCredentialsException();
     }
+
+    await this.loginLockoutService.resetAttempts(ip);
 
     const payload: JwtPayload = {
       sub: user.id,
@@ -87,25 +111,45 @@ export class AuthService {
     });
   }
 
-  async forgotPassword(dto: ForgotPasswordDto): Promise<{ message: string }> {
-    const user = await this.usersService.findByEmail(dto.email);
+  async forgotPassword(
+    dto: ForgotPasswordDto,
+    ip: string,
+  ): Promise<{ message: string }> {
+    const withinIpLimit = await this.forgotPasswordThrottleService.recordAttemptAndCheck(
+      `ip:${ip}`,
+      FORGOT_PASSWORD_MAX_IP_ATTEMPTS,
+      FORGOT_PASSWORD_IP_WINDOW_SECONDS,
+    );
 
-    if (user) {
-      const plainToken = crypto.randomBytes(32).toString('hex');
-      const hashedToken = crypto.createHash('sha256').update(plainToken).digest('hex');
-      const expires = new Date(Date.now() + PASSWORD_RESET_EXPIRY_MINUTES * 60 * 1000);
+    if (withinIpLimit) {
+      const user = await this.usersService.findByEmail(dto.email);
 
-      await this.usersService.savePasswordResetToken(user.id, hashedToken, expires);
+      if (user) {
+        const withinEmailLimit = await this.forgotPasswordThrottleService.recordAttemptAndCheck(
+          `email:${dto.email}`,
+          FORGOT_PASSWORD_MAX_EMAILS,
+          FORGOT_PASSWORD_WINDOW_SECONDS,
+        );
 
-      const frontendUrl = this.configService.getOrThrow<string>('FRONTEND_URL');
-      const resetLink = `${frontendUrl}/reset-password?token=${plainToken}`;
+        if (withinEmailLimit) {
+          const plainToken = crypto.randomBytes(32).toString('hex');
+          const hashedToken = crypto.createHash('sha256').update(plainToken).digest('hex');
+          const expires = new Date(Date.now() + PASSWORD_RESET_EXPIRY_MINUTES * 60 * 1000);
 
-      await this.azureEmailService.sendPasswordResetEmail({
-        sendTo: user.email,
-        fullName: user.fullName,
-        resetLink,
-        expiryMinutes: PASSWORD_RESET_EXPIRY_MINUTES,
-      });
+          await this.usersService.savePasswordResetToken(user.id, hashedToken, expires);
+
+          const frontendUrl =
+            this.configService.getOrThrow<string>('FRONTEND_URL');
+          const resetLink = `${frontendUrl}/reset-password?token=${plainToken}`;
+
+          await this.azureEmailService.sendPasswordResetEmail({
+            sendTo: user.email,
+            fullName: user.fullName,
+            resetLink,
+            expiryMinutes: PASSWORD_RESET_EXPIRY_MINUTES,
+          });
+        }
+      }
     }
 
     return { message: 'If that email exists, a reset link has been sent.' };

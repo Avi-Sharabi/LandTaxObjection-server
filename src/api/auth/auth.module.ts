@@ -7,6 +7,8 @@ import { AzureEmailModule } from '../../common/azure-email/azure-email.module';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
+import { LoginLockoutService } from './login-lockout.service';
+import { ForgotPasswordThrottleService } from './forgot-password-throttle.service';
 
 @Module({
   imports: [
@@ -25,6 +27,11 @@ import { JwtStrategy } from './strategies/jwt.strategy';
     }),
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy],
+  providers: [
+    AuthService,
+    JwtStrategy,
+    LoginLockoutService,
+    ForgotPasswordThrottleService,
+  ],
 })
 export class AuthModule {}
