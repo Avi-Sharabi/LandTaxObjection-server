@@ -1,7 +1,9 @@
 import { MiddlewareConsumer, Module, NestModule } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ScheduleModule } from '@nestjs/schedule';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 
 import { TypeOrmConfigService } from './config/typeorm.config';
 import { APIModule } from './api/api.module';
@@ -24,12 +26,17 @@ import { CorrelationIdMiddleware } from './common/middleware/correlation-id.midd
       useClass: TypeOrmConfigService,
     }),
 
+    ThrottlerModule.forRoot([{ name: 'default', ttl: 60_000, limit: 100 }]),
+
     ScheduleModule.forRoot(),
     QueueModule,
     RedisModule,
 
     APIModule,
     McpModule,
+  ],
+  providers: [
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
   ],
 })
 export class AppModule implements NestModule {

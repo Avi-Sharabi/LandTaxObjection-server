@@ -13,7 +13,10 @@ import { ResetPasswordDto } from './dto/reset-password.dto';
 import { BCRYPT_SALT_ROUNDS, PASSWORD_RESET_EXPIRY_MINUTES } from './constants/password-reset.constants';
 import { InvalidCredentialsException } from './exceptions/invalid-credentials.exception';
 import { InvalidResetTokenException } from './exceptions/invalid-reset-token.exception';
+import { ResetTokenExpiredException } from './exceptions/reset-token-expired.exception';
+import { ResetTokenAlreadyUsedException } from './exceptions/reset-token-already-used.exception';
 import { JwtPayload } from './strategies/jwt.strategy';
+import { User } from '../users/entities/user.entity';
 
 @Injectable()
 export class AuthService {
@@ -108,16 +111,32 @@ export class AuthService {
     return { message: 'If that email exists, a reset link has been sent.' };
   }
 
-  async resetPassword(dto: ResetPasswordDto): Promise<{ message: string }> {
-    const hashedToken = crypto.createHash('sha256').update(dto.token).digest('hex');
-    const user = await this.usersService.findByResetToken(hashedToken);
+  private async getUserByValidResetToken(plainToken: string): Promise<User> {
+    const hashedToken = crypto.createHash('sha256').update(plainToken).digest('hex');
+    const user = await this.usersService.findByResetTokenHash(hashedToken);
 
     if (!user) {
       throw new InvalidResetTokenException();
     }
+    if (user.passwordResetUsedAt) {
+      throw new ResetTokenAlreadyUsedException();
+    }
+    if (!user.passwordResetExpires || user.passwordResetExpires.getTime() <= Date.now()) {
+      throw new ResetTokenExpiredException();
+    }
 
+    return user;
+  }
+
+  async validateResetToken(token: string): Promise<{ valid: true }> {
+    await this.getUserByValidResetToken(token);
+    return { valid: true };
+  }
+
+  async resetPassword(dto: ResetPasswordDto): Promise<{ message: string }> {
+    const user = await this.getUserByValidResetToken(dto.token);
     const hashedPassword = await bcrypt.hash(dto.newPassword, BCRYPT_SALT_ROUNDS);
-    await this.usersService.resetPasswordAndClearToken(user.id, hashedPassword);
+    await this.usersService.resetPasswordAndMarkUsed(user.id, hashedPassword);
 
     return { message: 'Password has been reset successfully.' };
   }

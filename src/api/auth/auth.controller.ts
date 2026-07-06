@@ -1,4 +1,5 @@
-import { Body, Controller, Get, HttpCode, HttpStatus, Post, Req, Res, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, HttpStatus, Post, Query, Req, Res, UseGuards } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import {
   ApiTags,
   ApiOperation,
@@ -10,6 +11,8 @@ import { AuthService } from './auth.service';
 import { LoginDto } from './dto/login.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { ValidateResetTokenQueryDto } from './dto/validate-reset-token-query.dto';
+import { ValidateResetTokenResponseDto } from './dto/validate-reset-token-response.dto';
 import { AuthResponseDto } from './dto/auth-response.dto';
 import { MessageResponseDto } from './dto/message-response.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
@@ -52,6 +55,7 @@ export class AuthController {
   }
 
   // Public endpoint — unauthenticated. Intentionally reveals nothing about whether the email exists.
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @Post('forgot-password')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Request a password reset link via email' })
@@ -62,12 +66,24 @@ export class AuthController {
   }
 
   // Public endpoint — token-gated by the signed reset link delivered via email.
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post('reset-password')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Reset password using the token from the reset email' })
   @ApiResponse({ status: 200, type: MessageResponseDto, description: 'Password reset successfully' })
-  @ApiResponse({ status: 400, description: 'Invalid or expired reset token' })
+  @ApiResponse({ status: 400, description: 'Invalid, expired, or already-used reset token' })
   resetPassword(@Body() dto: ResetPasswordDto): Promise<MessageResponseDto> {
     return this.authService.resetPassword(dto);
+  }
+
+  // Public endpoint — read-only check; does not consume/mark the token.
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Get('reset-password/validate')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Validate a password reset token without consuming it' })
+  @ApiResponse({ status: 200, type: ValidateResetTokenResponseDto, description: 'Token is valid and unused' })
+  @ApiResponse({ status: 400, description: 'Token not found, expired, or already used' })
+  validateResetToken(@Query() query: ValidateResetTokenQueryDto): Promise<ValidateResetTokenResponseDto> {
+    return this.authService.validateResetToken(query.token);
   }
 }
