@@ -18,7 +18,7 @@ const TERMINAL_STATUSES: DisputeStatus[] = [
 ];
 
 const DEADLINE_RISK_LIMIT = 8;
-const RECENT_ACTIVITIES_LIMIT = 10;
+const RECENT_ACTIVITIES_LIMIT = 15;
 
 const ACTIVE_CASE_WHERE = {
   deleted_at: IsNull(),
@@ -83,8 +83,10 @@ export class DashboardRepository {
     }));
   }
 
-  async getRecentActivities(): Promise<RecentActivityDto[]> {
-    const rows = await this.auditLogRepo
+  async getRecentActivities(
+    { cursor, limit = RECENT_ACTIVITIES_LIMIT }: { cursor?: string; limit?: number } = {},
+  ): Promise<{ data: RecentActivityDto[]; hasMore: boolean }> {
+    const query = this.auditLogRepo
       .createQueryBuilder('al')
       .leftJoin('dispute_cases', 'dc', 'dc.id = al.case_id')
       .leftJoin('users', 'u', 'u.id = al.performed_by')
@@ -100,10 +102,16 @@ export class DashboardRepository {
         'u.full_name AS performed_by_name',
       ])
       .orderBy('al.created_at', 'DESC')
-      .limit(RECENT_ACTIVITIES_LIMIT)
-      .getRawMany<RecentActivityRow>();
+      .limit(limit + 1);
 
-    return rows.map((row) => {
+    if (cursor) {
+      query.andWhere('al.created_at < :cursor', { cursor: new Date(cursor) });
+    }
+
+    const rows = await query.getRawMany<RecentActivityRow>();
+    const hasMore = rows.length > limit;
+
+    const data = rows.slice(0, limit).map((row) => {
       const caseReference = row.case_reference ?? 'Unknown case';
       const description = buildActivityDescription(row.action, {
         performedByName: row.performed_by_name,
@@ -119,10 +127,12 @@ export class DashboardRepository {
         category: getActivityCategory(row.action),
         color_hint: getActivityColorHint(row.action),
         case_id: row.case_id,
-        case_reference: row.case_reference,
+        case_reference: caseReference,
         performed_by_name: row.performed_by_name,
         created_at: new Date(row.created_at).toISOString(),
       };
     });
+
+    return { data, hasMore };
   }
 }

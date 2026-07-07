@@ -22,9 +22,15 @@ export class RecentActivityDto {
   @ApiProperty() category: string;
   @ApiProperty() color_hint: string;
   @ApiProperty() case_id: string;
-  @ApiProperty({ nullable: true }) case_reference: string | null;
+  @ApiProperty() case_reference: string;
   @ApiProperty({ nullable: true }) performed_by_name: string | null;
   @ApiProperty() created_at: string;
+}
+
+export class RecentActivitiesPageDto {
+  @ApiProperty({ type: [RecentActivityDto] }) data: RecentActivityDto[];
+  @ApiProperty({ nullable: true }) nextCursor: string | null;
+  @ApiProperty() hasMore: boolean;
 }
 
 export class DashboardResponseDto {
@@ -34,6 +40,6 @@ export class DashboardResponseDto {
   @ApiProperty({ type: [DeadlineRiskCaseDto] })
   deadline_risk: DeadlineRiskCaseDto[];
 
-  @ApiProperty({ type: [RecentActivityDto] })
-  recent_activities: RecentActivityDto[];
+  @ApiProperty({ type: RecentActivitiesPageDto })
+  recent_activities: RecentActivitiesPageDto;
 }

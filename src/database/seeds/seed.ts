@@ -10,6 +10,7 @@ import { seedVgMonitorTest } from './vg-monitor-test.seeder';
 import { seedVgFollowUpTest } from './vg-follow-up-test.seeder';
 import { seedSubmitToVG } from './submit-to-vg.seeder';
 import { seedCasesPagination } from './cases-pagination.seeder';
+import { seedDashboardActivityTest } from './dashboard-activity-test.seeder';
 import { seedComparablesTest } from './comparables-test.seeder';
 import { seedObjectionReasonsTest } from './objection-reasons-test.seeder';
 import { seedAccuracyTests } from './accuracy-test.seeder';
@@ -31,6 +32,7 @@ async function runSeeders(dataSource: DataSource): Promise<void> {
     await seedVgMonitorTest(dataSource);
     await seedSubmitToVG(dataSource);
     await seedCasesPagination(dataSource);
+    await seedDashboardActivityTest(dataSource);
     await seedComparablesTest(dataSource);
     await seedObjectionReasonsTest(dataSource);
     await seedAccuracyTests(dataSource);

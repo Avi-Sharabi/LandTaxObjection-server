@@ -2,7 +2,8 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { Redis } from 'ioredis';
 import { REDIS_CLIENT } from '../../common/redis/redis.constant';
 import { DashboardRepository } from './dashboard.repository';
-import { DashboardResponseDto } from './dto/dashboard-response.dto';
+import { DashboardResponseDto, RecentActivitiesPageDto } from './dto/dashboard-response.dto';
+import { GetRecentActivitiesQueryDto } from './dto/get-recent-activities-query.dto';
 
 const CACHE_KEY = 'dashboard:unified';
 const CACHE_TTL_S = 300;
@@ -54,7 +55,7 @@ private async fetchDataFromDB(): Promise<DashboardResponseDto> {
       overdue_count: deadlineCounts.overdue_count,
     },
     deadline_risk: deadlineRiskCases,
-    recent_activities: recentActivities,
+    recent_activities: this.toRecentActivitiesPage(recentActivities),
   };
 
   await this.redis
@@ -63,5 +64,24 @@ private async fetchDataFromDB(): Promise<DashboardResponseDto> {
 
   return result;
 }
-  
+
+  async getRecentActivitiesPage(query: GetRecentActivitiesQueryDto): Promise<RecentActivitiesPageDto> {
+    const recentActivities = await this.dashboardRepository.getRecentActivities({
+      cursor: query.cursor,
+      limit: query.limit,
+    });
+
+    return this.toRecentActivitiesPage(recentActivities);
+  }
+
+  private toRecentActivitiesPage({
+    data,
+    hasMore,
+  }: {
+    data: RecentActivitiesPageDto['data'];
+    hasMore: boolean;
+  }): RecentActivitiesPageDto {
+    const nextCursor = hasMore ? data[data.length - 1].created_at : null;
+    return { data, nextCursor, hasMore };
+  }
 }
