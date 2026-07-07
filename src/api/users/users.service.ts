@@ -80,24 +80,23 @@ export class UsersService {
     await this.usersRepository.update(userId, {
       passwordResetToken: hashedToken,
       passwordResetExpires: expires,
+      passwordResetUsedAt: null,
     });
   }
 
-  async findByResetToken(hashedToken: string): Promise<User | null> {
+  async findByResetTokenHash(hashedToken: string): Promise<User | null> {
     return this.usersRepository
       .createQueryBuilder('user')
-      .addSelect('user.passwordResetToken')
       .addSelect('user.passwordResetExpires')
+      .addSelect('user.passwordResetUsedAt')
       .where('user.passwordResetToken = :hashedToken', { hashedToken })
-      .andWhere('user.passwordResetExpires > NOW()')
       .getOne();
   }
 
-  async resetPasswordAndClearToken(userId: string, hashedPassword: string): Promise<void> {
+  async resetPasswordAndMarkUsed(userId: string, hashedPassword: string): Promise<void> {
     await this.usersRepository.update(userId, {
       password: hashedPassword,
-      passwordResetToken: null,
-      passwordResetExpires: null,
+      passwordResetUsedAt: new Date(),
     });
   }
 }
