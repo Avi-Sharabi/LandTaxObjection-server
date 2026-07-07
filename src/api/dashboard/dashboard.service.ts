@@ -37,10 +37,11 @@ export class DashboardService {
 }
 
 private async fetchDataFromDB(): Promise<DashboardResponseDto> {
-  const [activeCasesCount, deadlineCounts, deadlineRiskCases] = await Promise.all([
+  const [activeCasesCount, deadlineCounts, deadlineRiskCases, recentActivities] = await Promise.all([
     this.dashboardRepository.getActiveCasesCount(),
     this.dashboardRepository.getDeadlineCounts(),
     this.dashboardRepository.getDeadlineRiskCases(),
+    this.dashboardRepository.getRecentActivities(),
   ]).catch((err: unknown) => {
     this.logger.error(`[Dashboard] DB query failed: ${String(err)}`);
     throw err;
@@ -53,7 +54,7 @@ private async fetchDataFromDB(): Promise<DashboardResponseDto> {
       overdue_count: deadlineCounts.overdue_count,
     },
     deadline_risk: deadlineRiskCases,
-    recent_activities: [],
+    recent_activities: recentActivities,
   };
 
   await this.redis

@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AssessmentDocumentsService } from './assessment-documents.service';
@@ -17,15 +17,21 @@ export class AssessmentDocumentsController {
   @Post('batch')
   @ApiOperation({ summary: 'Create multiple assessment documents in one request' })
   @ApiResponse({ status: 201, type: [AssessmentDocumentResponseDto] })
-  createBatch(@Body() dto: CreateAssessmentDocumentsBatchDto): Promise<AssessmentDocumentResponseDto[]> {
-    return this.assessmentDocumentsService.createBatch(dto.documents);
+  createBatch(
+    @Body() dto: CreateAssessmentDocumentsBatchDto,
+    @Req() req: { user: { id: string } },
+  ): Promise<AssessmentDocumentResponseDto[]> {
+    return this.assessmentDocumentsService.createBatch(dto.documents, req.user.id);
   }
 
   @Post()
   @ApiOperation({ summary: 'Create a new assessment document' })
   @ApiResponse({ status: 201, type: AssessmentDocumentResponseDto })
-  create(@Body() dto: CreateAssessmentDocumentDto): Promise<AssessmentDocumentResponseDto> {
-    return this.assessmentDocumentsService.create(dto);
+  create(
+    @Body() dto: CreateAssessmentDocumentDto,
+    @Req() req: { user: { id: string } },
+  ): Promise<AssessmentDocumentResponseDto> {
+    return this.assessmentDocumentsService.create(dto, req.user.id);
   }
 
   @Get()

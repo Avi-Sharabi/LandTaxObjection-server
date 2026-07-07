@@ -311,8 +311,11 @@ export class DisputeCasesController {
     status: 422,
     description: 'Fewer than 3 comparable sales exist',
   })
-  advanceToAppraisal(@Param('id') id: string): Promise<DisputeCaseResponseDto> {
-    return this.disputeCasesService.advanceToAppraisal(id);
+  advanceToAppraisal(
+    @Param('id') id: string,
+    @Req() req: { user: { id: string } },
+  ): Promise<DisputeCaseResponseDto> {
+    return this.disputeCasesService.advanceToAppraisal(id, req.user.id);
   }
 
   @UseGuards(JwtAuthGuard)
@@ -344,8 +347,9 @@ export class DisputeCasesController {
   closeNoObjection(
     @Param('id') id: string,
     @Body() dto: CloseNoObjectionDto,
+    @Req() req: { user: { id: string } },
   ): Promise<DisputeCaseResponseDto> {
-    return this.disputeCasesService.closeNoObjection(id, dto);
+    return this.disputeCasesService.closeNoObjection(id, dto, req.user.id);
   }
 
   @UseGuards(JwtAuthGuard)
@@ -373,8 +377,9 @@ export class DisputeCasesController {
   })
   sendObjectionPackage(
     @Param('id') id: string,
+    @Req() req: { user: { id: string } },
   ): Promise<DisputeCaseResponseDto> {
-    return this.disputeCasesService.sendObjectionPackage(id);
+    return this.disputeCasesService.sendObjectionPackage(id, req.user.id);
   }
 
   @UseGuards(JwtAuthGuard)

@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { AuditAction } from '../../audit-log/entities/audit-log.entity';
 
 export class StatusCountersDto {
   @ApiProperty({ example: 131 }) active_cases_count: number;
@@ -14,6 +15,18 @@ export class DeadlineRiskCaseDto {
   @ApiProperty({ nullable: true }) statutory_deadline: string | null;
 }
 
+export class RecentActivityDto {
+  @ApiProperty() id: string;
+  @ApiProperty({ enum: AuditAction }) action: AuditAction;
+  @ApiProperty() description: string;
+  @ApiProperty() category: string;
+  @ApiProperty() color_hint: string;
+  @ApiProperty() case_id: string;
+  @ApiProperty({ nullable: true }) case_reference: string | null;
+  @ApiProperty({ nullable: true }) performed_by_name: string | null;
+  @ApiProperty() created_at: string;
+}
+
 export class DashboardResponseDto {
   @ApiProperty({ type: StatusCountersDto })
   status_counters: StatusCountersDto;
@@ -21,6 +34,6 @@ export class DashboardResponseDto {
   @ApiProperty({ type: [DeadlineRiskCaseDto] })
   deadline_risk: DeadlineRiskCaseDto[];
 
-  @ApiProperty({ type: [Object], description: 'Placeholder — wired in a future task' })
-  recent_activities: object[];
+  @ApiProperty({ type: [RecentActivityDto] })
+  recent_activities: RecentActivityDto[];
 }

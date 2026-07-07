@@ -1,6 +1,7 @@
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, ManyToOne, OneToMany, JoinColumn } from 'typeorm';
 import { Client } from '../../clients/entities/client.entity';
 import { ValuationNotice } from '../../valuation-notices/entities/valuation-notice.entity';
+import { DisputeCase } from '../../dispute-cases/entities/dispute-case.entity';
 
 @Entity('assessment_documents')
 export class AssessmentDocument {
@@ -9,6 +10,9 @@ export class AssessmentDocument {
 
   @Column({ type: 'uuid', nullable: false, name: 'client_id' })
   client_id: string;
+
+  @Column({ type: 'uuid', nullable: true, name: 'case_id' })
+  case_id: string | null;
 
   @Column({ type: 'text', nullable: false })
   document_name: string;
@@ -23,6 +27,10 @@ export class AssessmentDocument {
   @ManyToOne(() => Client, { nullable: false, onDelete: 'CASCADE' })
   @JoinColumn({ name: 'client_id' })
   client: Client;
+
+  @ManyToOne(() => DisputeCase, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'case_id' })
+  case: DisputeCase;
 
   @OneToMany(() => ValuationNotice, (notice) => notice.source_document)
   valuation_notices: ValuationNotice[];

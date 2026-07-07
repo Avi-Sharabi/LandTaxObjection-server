@@ -29,8 +29,8 @@ import { ComparablesService } from '../comparables/comparables.service';
 import { AzureBlobService } from 'src/common/azure-blob/azure-blob.service';
 import { Browser } from 'puppeteer';
 import { EvidenceDisputeCaseNotFoundException } from './exceptions/supporting-evidence.exceptions';
+import { SYSTEM_ACTOR_ID } from 'src/common/constants/system-actor.constant';
 
-const SYSTEM_ACTOR_ID = '00000000-0000-0000-0000-000000000000';
 const FOLDER = 'supporting-evidence';
 
 @Injectable()

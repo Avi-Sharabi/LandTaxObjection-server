@@ -25,7 +25,7 @@ export class DashboardController {
     summary: 'Unified dashboard data',
     description:
       'Returns status_counters, deadline_risk (top 8 active cases by soonest deadline), ' +
-      'and recent_activities (placeholder). Cached in Redis for 5 minutes.',
+      'and recent_activities (last 10 audit-log events, newest first). Cached in Redis for 5 minutes.',
   })
   @ApiResponse({ status: 200, description: 'Dashboard data returned successfully', type: DashboardResponseDto })
   @ApiResponse({ status: 401, description: 'Unauthenticated — missing or expired JWT' })

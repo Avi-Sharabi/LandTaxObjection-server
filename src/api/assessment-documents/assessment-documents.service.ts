@@ -1,11 +1,12 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { AzureBlobService } from 'src/common/azure-blob/azure-blob.service';
 import { AssessmentDocument } from './entities/assessment-document.entity';
 import { CreateAssessmentDocumentDto } from './dto/create-assessment-document.dto';
 import { UpdateAssessmentDocumentDto } from './dto/update-assessment-document.dto';
 import { AssessmentDocumentResponseDto } from './dto/assessment-document-response.dto';
+import { AuditAction, AuditLog } from '../audit-log/entities/audit-log.entity';
 
 const URL_EXPIRY_MINUTES = 30;
 const FOLDER = 'assessment-documents';
@@ -16,12 +17,40 @@ export class AssessmentDocumentsService {
     @InjectRepository(AssessmentDocument)
     private readonly assessmentDocumentsRepository: Repository<AssessmentDocument>,
     private readonly azureBlobService: AzureBlobService,
+    private readonly dataSource: DataSource,
   ) {}
 
-  async create(dto: CreateAssessmentDocumentDto): Promise<AssessmentDocumentResponseDto> {
-    const doc = await this.assessmentDocumentsRepository.save(
-      this.assessmentDocumentsRepository.create({ client_id: dto.client_id, document_name: dto.document_name }),
-    );
+  async create(dto: CreateAssessmentDocumentDto, performedBy: string): Promise<AssessmentDocumentResponseDto> {
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    let doc: AssessmentDocument;
+    try {
+      doc = await queryRunner.manager.save(
+        AssessmentDocument,
+        queryRunner.manager.create(AssessmentDocument, {
+          client_id: dto.client_id,
+          case_id: dto.case_id,
+          document_name: dto.document_name,
+        }),
+      );
+
+      const auditEntry = queryRunner.manager.create(AuditLog, {
+        action: AuditAction.DOCUMENT_UPLOADED,
+        performedBy,
+        caseId: dto.case_id,
+        metadata: { documentId: doc.id, documentName: dto.document_name },
+      });
+      await queryRunner.manager.save(AuditLog, auditEntry);
+
+      await queryRunner.commitTransaction();
+    } catch (err) {
+      await queryRunner.rollbackTransaction();
+      throw err;
+    } finally {
+      await queryRunner.release();
+    }
 
     if (dto.file) {
       const ext = this.extractExtension(dto.file);
@@ -40,8 +69,11 @@ export class AssessmentDocumentsService {
     return this.toResponseDto(doc);
   }
 
-  async createBatch(dtos: CreateAssessmentDocumentDto[]): Promise<AssessmentDocumentResponseDto[]> {
-    return Promise.all(dtos.map((dto) => this.create(dto)));
+  async createBatch(
+    dtos: CreateAssessmentDocumentDto[],
+    performedBy: string,
+  ): Promise<AssessmentDocumentResponseDto[]> {
+    return Promise.all(dtos.map((dto) => this.create(dto, performedBy)));
   }
 
   async findAll(clientId?: string): Promise<AssessmentDocumentResponseDto[]> {

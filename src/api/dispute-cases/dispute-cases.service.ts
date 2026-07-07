@@ -51,6 +51,7 @@ import { ClientEmailMissingException } from './exceptions/client-email-missing.e
 import { NotificationsService } from '../notifications/notifications.service';
 import { NotificationType } from '../notifications/entities/notification.entity';
 import { AuditAction, AuditLog } from '../audit-log/entities/audit-log.entity';
+import { SYSTEM_ACTOR_ID } from 'src/common/constants/system-actor.constant';
 
 const MAX_VG_FOLLOW_UPS = 3;
 
@@ -195,20 +196,46 @@ export class DisputeCasesService {
     return await this.disputeCasesRepository.save(disputeCase);
   }
 
-  async advanceToAppraisal(id: string): Promise<DisputeCaseResponseDto> {
+  async advanceToAppraisal(
+    id: string,
+    performedBy: string,
+  ): Promise<DisputeCaseResponseDto> {
     const disputeCase = await this.disputeCasesRepository.findOne({
       where: { id },
     });
     if (!disputeCase)
       throw new NotFoundException(`Dispute case #${id} not found`);
     await this.comparablesService.assertMinimumComparables(id);
-    disputeCase.status = DisputeStatus.APPRAISAL;
-    return await this.disputeCasesRepository.save(disputeCase);
+
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      disputeCase.status = DisputeStatus.APPRAISAL;
+      const saved = await queryRunner.manager.save(DisputeCase, disputeCase);
+
+      const auditEntry = queryRunner.manager.create(AuditLog, {
+        action: AuditAction.CASE_ADVANCED_TO_APPRAISAL,
+        performedBy,
+        caseId: id,
+      });
+      await queryRunner.manager.save(AuditLog, auditEntry);
+
+      await queryRunner.commitTransaction();
+      return saved;
+    } catch (err) {
+      await queryRunner.rollbackTransaction();
+      throw err;
+    } finally {
+      await queryRunner.release();
+    }
   }
 
   async closeNoObjection(
     caseId: string,
     dto: CloseNoObjectionDto,
+    performedBy: string,
   ): Promise<DisputeCaseResponseDto> {
     const disputeCase = await this.disputeCasesRepository.findOne({
       where: { id: caseId },
@@ -265,7 +292,28 @@ export class DisputeCasesService {
       disputeCase.notes = dto.assessorNotes;
     }
 
-    const saved = await this.disputeCasesRepository.save(disputeCase);
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    let saved: DisputeCase;
+    try {
+      saved = await queryRunner.manager.save(DisputeCase, disputeCase);
+
+      const auditEntry = queryRunner.manager.create(AuditLog, {
+        action: AuditAction.CASE_CLOSED_NO_OBJECTION,
+        performedBy,
+        caseId,
+      });
+      await queryRunner.manager.save(AuditLog, auditEntry);
+
+      await queryRunner.commitTransaction();
+    } catch (err) {
+      await queryRunner.rollbackTransaction();
+      throw err;
+    } finally {
+      await queryRunner.release();
+    }
 
     this.azureEmailService
       .sendAdvisoryLetterNotification(
@@ -286,7 +334,10 @@ export class DisputeCasesService {
     return saved;
   }
 
-  async sendObjectionPackage(caseId: string): Promise<DisputeCaseResponseDto> {
+  async sendObjectionPackage(
+    caseId: string,
+    performedBy: string,
+  ): Promise<DisputeCaseResponseDto> {
     const disputeCase = await this.disputeCasesRepository.findOne({
       where: { id: caseId },
       relations: ['client', 'property', 'valuation_notice'],
@@ -330,7 +381,28 @@ export class DisputeCasesService {
     disputeCase.status = DisputeStatus.AWAITING_CLIENT_APPROVAL;
     disputeCase.client_approval_requested_at = new Date();
 
-    return await this.disputeCasesRepository.save(disputeCase);
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      const saved = await queryRunner.manager.save(DisputeCase, disputeCase);
+
+      const auditEntry = queryRunner.manager.create(AuditLog, {
+        action: AuditAction.OBJECTION_PACKAGE_SENT,
+        performedBy,
+        caseId,
+      });
+      await queryRunner.manager.save(AuditLog, auditEntry);
+
+      await queryRunner.commitTransaction();
+      return saved;
+    } catch (err) {
+      await queryRunner.rollbackTransaction();
+      throw err;
+    } finally {
+      await queryRunner.release();
+    }
   }
 
   async approveObjectionPackage(
@@ -375,6 +447,14 @@ export class DisputeCasesService {
       disputeCase.status = DisputeStatus.CLIENT_APPROVED;
 
       await queryRunner.manager.save(disputeCase);
+
+      const auditEntry = queryRunner.manager.create(AuditLog, {
+        action: AuditAction.OBJECTION_PACKAGE_APPROVED,
+        performedBy: disputeCase.client_id,
+        caseId: disputeCase.id,
+      });
+      await queryRunner.manager.save(AuditLog, auditEntry);
+
       await queryRunner.commitTransaction();
 
       // Fetch property address after commit — outside the locked transaction,
@@ -816,6 +896,22 @@ export class DisputeCasesService {
         resolvedCase.vg_response_notes = reasoning;
       }
       await queryRunner.manager.save(DisputeCase, resolvedCase);
+
+      const vgOutcomeActions: Partial<Record<DisputeStatus, AuditAction>> = {
+        [DisputeStatus.VG_APPROVED]: AuditAction.VG_OUTCOME_APPROVED,
+        [DisputeStatus.VG_DECLINED]: AuditAction.VG_OUTCOME_DECLINED,
+        [DisputeStatus.FOR_REVIEW]: AuditAction.VG_OUTCOME_NEEDS_REVIEW,
+      };
+      const auditAction = vgOutcomeActions[newStatus];
+      if (auditAction) {
+        const auditEntry = queryRunner.manager.create(AuditLog, {
+          action: auditAction,
+          performedBy: SYSTEM_ACTOR_ID,
+          caseId,
+          metadata: { reasoning: reasoning ?? null },
+        });
+        await queryRunner.manager.save(AuditLog, auditEntry);
+      }
 
       await queryRunner.commitTransaction();
     } catch (err) {
