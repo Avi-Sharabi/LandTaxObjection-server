@@ -4,6 +4,7 @@ import { AssessmentDocumentsModule } from './assessment-documents/assessment-doc
 import { ClientsModule } from './clients/clients.module';
 import { CleanupModule } from './cleanup/cleanup.module';
 import { ComparablesModule } from './comparables/comparables.module';
+import { DashboardModule } from './dashboard/dashboard.module';
 import { DisputeCasesModule } from './dispute-cases/dispute-cases.module';
 import { DisputeConstraintsModule } from './dispute-constraints/dispute-constraints.module';
 import { DisputeLegalGroundsModule } from './dispute-legal-grounds/dispute-legal-grounds.module';
@@ -26,6 +27,7 @@ import { NotificationsModule } from './notifications/notifications.module';
     ClientsModule,
     CleanupModule,
     ComparablesModule,
+    DashboardModule,
     FyiAiModule,
     FyiUploadModule,
     LocationModule,

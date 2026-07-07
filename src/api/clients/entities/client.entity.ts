@@ -20,22 +20,6 @@ export enum ClientStatus {
   REJECTED = 'rejected',
 }
 
-export enum ClientTitle {
-  MR = 'Mr.',
-  MRS = 'Mrs.',
-  MS = 'Ms.',
-  MISS = 'Miss',
-  DR = 'Dr.',
-  PROF = 'Prof.',
-}
-
-export enum ClientGender {
-  MALE = 'Male',
-  FEMALE = 'Female',
-  PREFER_NOT_TO_SAY = 'Prefer not to say',
-}
-
-
 @Entity('clients')
 export class Client {
   // ─── Core ────────────────────────────────────────────────────────────────────
@@ -51,11 +35,11 @@ export class Client {
   @Column({ type: 'varchar', length: 100, nullable: false })
   name: string;                             // XPM: name
 
-  @Column({ type: 'enum', enum: ClientTitle, nullable: true })
-  title: ClientTitle | null;                // XPM: title
+  @Column({ type: 'text', nullable: true })
+  title: string | null;                     // XPM: title
 
-  @Column({ type: 'enum', enum: ClientGender, nullable: true })
-  gender: ClientGender | null;              // XPM: gender
+  @Column({ type: 'text', nullable: true })
+  gender: string | null;                    // XPM: gender
 
   @Column({ type: 'text', nullable: true })
   first_name: string | null;               // XPM: firstName
