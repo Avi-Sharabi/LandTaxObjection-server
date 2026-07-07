@@ -1,7 +1,7 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import { IsString, IsOptional, IsEnum, IsEmail, IsUUID, IsDateString, Matches, MinLength, MaxLength } from 'class-validator';
-import { ClientStatus, ClientTitle, ClientGender } from '../entities/client.entity';
+import { ClientStatus } from '../entities/client.entity';
 
 const AU_PHONE_REGEX = /^\+61\s[23478]\s[\d\s]{6,15}$/;
 const AU_MOBILE_REGEX = /^\+61\s4\s[\d\s]{7,10}$/;
@@ -16,17 +16,19 @@ export class CreateClientDto {
   @MaxLength(100, { message: 'Max 100 characters' })
   name: string;
 
-  @ApiPropertyOptional({ example: 'Mr.', enum: ClientTitle })
+  @ApiPropertyOptional({ example: 'MR', description: 'Client title, as supplied by XPM (free text, not a fixed set)' })
   @Transform(({ value }) => value || undefined)
   @IsOptional()
-  @IsEnum(ClientTitle, { message: 'Invalid title' })
-  title?: ClientTitle;
+  @IsString()
+  @MaxLength(20, { message: 'Max 20 characters' })
+  title?: string;
 
-  @ApiPropertyOptional({ example: 'Male', enum: ClientGender })
+  @ApiPropertyOptional({ example: 'M', description: 'Client gender, as supplied by XPM (free text, not a fixed set)' })
   @Transform(({ value }) => value || undefined)
   @IsOptional()
-  @IsEnum(ClientGender, { message: 'Invalid gender' })
-  gender?: ClientGender;
+  @IsString()
+  @MaxLength(20, { message: 'Max 20 characters' })
+  gender?: string;
 
 @ApiPropertyOptional({ example: '1985-06-15', description: 'ISO date string (YYYY-MM-DD)' })
   @Transform(({ value }) => value || undefined)
