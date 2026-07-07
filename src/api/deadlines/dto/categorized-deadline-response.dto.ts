@@ -20,9 +20,6 @@ export class CategorizedDeadlineResponseDto {
   @ApiProperty({ description: 'Total urgent cases' })
   urgentTotal: number;
 
-  @ApiProperty({ description: 'Grand total across all categories' })
-  total: number;
-
   @ApiProperty({ description: 'True if the safe category has more pages' })
   safeHasMore: boolean;
 

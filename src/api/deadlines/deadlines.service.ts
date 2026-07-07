@@ -3,7 +3,7 @@ import { Between, DataSource, EntityManager, FindOptionsWhere, In, LessThan, Mor
 import { DisputeCase, DisputeStatus } from '../dispute-cases/entities/dispute-case.entity';
 import { DeadlineCaseResponseDto } from './dto/deadline-case-response.dto';
 import { CategorizedDeadlineResponseDto } from './dto/categorized-deadline-response.dto';
-import { GetDeadlinesQueryDto, UrgencyCategory } from './dto/get-deadlines-query.dto';
+import { GetDeadlinesQueryDto } from './dto/get-deadlines-query.dto';
 
 const TERMINAL_STATUSES: DisputeStatus[] = [
   DisputeStatus.SUBMITTED_TO_VG,
@@ -14,7 +14,6 @@ const TERMINAL_STATUSES: DisputeStatus[] = [
   DisputeStatus.CLOSED_NO_OBJECTION,
 ];
 
-const DEADLINE_WINDOW_DAYS = 60;
 const SAFE_THRESHOLD_DAYS = 14;
 const APPROACHING_THRESHOLD_DAYS = 7;
 const MS_PER_DAY = 86_400_000;
@@ -72,7 +71,6 @@ export class DeadlinesService {
       safeTotal,
       approachingTotal,
       urgentTotal,
-      total:              safeTotal + approachingTotal + urgentTotal,
       safeHasMore:        skip + limit < safeTotal,
       approachingHasMore: skip + limit < approachingTotal,
       urgentHasMore:      skip + limit < urgentTotal,
@@ -88,7 +86,7 @@ export class DeadlinesService {
   ): Promise<DisputeCase[]> {
     return manager.find(DisputeCase, {
       where,
-      relations: ['client', 'property', 'assigned_accountant'],
+      relations: ['client', 'property'],
       order: { statutory_deadline: order },
       take: limit,
       skip,
@@ -131,40 +129,25 @@ export class DeadlinesService {
         const deadline = new Date(c.statutory_deadline);
         deadline.setUTCHours(0, 0, 0, 0);
 
-        const days_remaining   = Math.ceil((deadline.getTime() - today.getTime()) / MS_PER_DAY);
-        const days_elapsed     = Math.min(Math.max(DEADLINE_WINDOW_DAYS - days_remaining, 0), DEADLINE_WINDOW_DAYS);
-        const urgency_category = DeadlinesService.resolveUrgency(days_remaining);
+        const days_remaining = Math.ceil((deadline.getTime() - today.getTime()) / MS_PER_DAY);
 
         return {
           id:                 c.id,
           case_reference:     c.case_reference,
           status:             c.status,
-          jurisdiction:       c.jurisdiction,
           statutory_deadline: c.statutory_deadline,
           days_remaining,
-          days_elapsed,
-          total_window_days:  DEADLINE_WINDOW_DAYS,
-          urgency_category,
           client: {
-            id:   c.client.id,
             name: c.client.name,
           },
           property: {
-            id:       c.property.id,
             address:  c.property.address,
             suburb:   c.property.suburb,
             state:    c.property.state,
             postcode: c.property.postcode,
           },
-          assigned_accountant: c.assigned_accountant?.fullName ?? null,
         };
       })
       .filter((c): c is DeadlineCaseResponseDto => c !== null);
-  }
-
-  private static resolveUrgency(daysRemaining: number): UrgencyCategory {
-    if (daysRemaining > SAFE_THRESHOLD_DAYS) return 'safe';
-    if (daysRemaining >= APPROACHING_THRESHOLD_DAYS) return 'approaching';
-    return 'urgent';
   }
 }
