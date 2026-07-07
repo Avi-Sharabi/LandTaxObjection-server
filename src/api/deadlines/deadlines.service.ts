@@ -38,7 +38,7 @@ export class DeadlinesService {
 
   async getDeadlineCases(query: GetDeadlinesQueryDto): Promise<CategorizedDeadlineResponseDto> {
     const page  = query.page  ?? 1;
-    const limit = query.limit ?? 8;
+    const limit = query.limit ?? 4;
     const skip  = (page - 1) * limit;
 
     const today = new Date();
