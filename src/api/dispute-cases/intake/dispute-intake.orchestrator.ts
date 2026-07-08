@@ -19,6 +19,7 @@ import { PdfStorageHandler } from './pdf-storage.handler';
 import { AzureEmailService } from 'src/common/azure-email/azure-email.service';
 import { AccountantNotFoundException } from '../exceptions/accountant-not-found.exception';
 import { Client, ClientStatus } from '../../clients/entities/client.entity';
+import { parseNswAddressComponents } from 'src/common/utils/address-parser.util';
 
 interface PropertyFlags {
   flag_heritage: boolean;
@@ -126,7 +127,10 @@ export class DisputeIntakeOrchestrator {
     const property = this.propertiesRepository.create({
       client_id: clientId,
       address: prop.address,
-      suburb: prop.address.split(',')[1]?.trim() || '',
+      suburb:
+        parseNswAddressComponents(prop.address).suburb ??
+        prop.address.split(',')[1]?.trim().toUpperCase() ??
+        '',
       state: prop.state,
       postcode: '',
       pid: prop.pid,

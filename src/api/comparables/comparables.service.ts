@@ -344,8 +344,8 @@ export class ComparablesService implements OnModuleInit {
     if (!valuationDate) throw new MissingValuationDateException(disputeCase.id);
     return {
       pid: dto.pid ?? disputeCase.property?.pid ?? 'unknown',
-      suburb: (dto.suburb ?? disputeCase.property?.suburb ?? '').trim().toUpperCase(),
-      postcode: dto.postcode ?? disputeCase.property?.postcode ?? null,
+      suburb: (dto.suburb || disputeCase.property?.suburb || '').trim().toUpperCase(),
+      postcode: dto.postcode || disputeCase.property?.postcode || null,
       landAreaSqm:
         dto.land_area_sqm
         ?? (Number(vn?.land_area_vg_sqm) || null)
