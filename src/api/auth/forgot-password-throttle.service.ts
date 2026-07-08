@@ -1,0 +1,30 @@
+import { Inject, Injectable, Logger } from '@nestjs/common';
+import type { Redis } from 'ioredis';
+import { REDIS_CLIENT } from '../../common/redis/redis.constant';
+
+@Injectable()
+export class ForgotPasswordThrottleService {
+  private readonly logger = new Logger(ForgotPasswordThrottleService.name);
+
+  constructor(@Inject(REDIS_CLIENT) private readonly redis: Redis) {}
+
+  async recordAttemptAndCheck(
+    key: string,
+    maxAttempts: number,
+    windowSeconds: number,
+  ): Promise<boolean> {
+    try {
+      const redisKey = `forgot_password_attempts:${key}`;
+      const attempts = await this.redis.incr(redisKey);
+
+      if (attempts === 1) {
+        await this.redis.expire(redisKey, windowSeconds);
+      }
+
+      return attempts <= maxAttempts;
+    } catch (err) {
+      this.logger.warn(`Redis unavailable, failing open on throttle check: ${err.message}`);
+      return true;
+    }
+  }
+}

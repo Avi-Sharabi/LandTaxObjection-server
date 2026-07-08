@@ -1,0 +1,5 @@
+export const FORGOT_PASSWORD_MAX_EMAILS = 3;
+export const FORGOT_PASSWORD_WINDOW_SECONDS = 60 * 60; // 1 hour
+
+export const FORGOT_PASSWORD_MAX_IP_ATTEMPTS = 20;
+export const FORGOT_PASSWORD_IP_WINDOW_SECONDS = 60 * 60; // 1 hour
