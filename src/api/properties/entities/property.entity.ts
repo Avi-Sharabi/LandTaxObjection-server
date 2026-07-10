@@ -8,6 +8,10 @@ export enum Jurisdiction {
   VIC = 'VIC',
   QLD = 'QLD',
   WA = 'WA',
+  SA = 'SA',
+  TAS = 'TAS',
+  ACT = 'ACT',
+  NT = 'NT',
 }
 
 @Entity('properties')
