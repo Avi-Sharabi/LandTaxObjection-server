@@ -6,6 +6,10 @@ export class CreateAssessmentDocumentDto {
   @IsUUID()
   client_id: string;
 
+  @ApiProperty({ description: 'Dispute case UUID this document belongs to' })
+  @IsUUID()
+  dispute_case_id: string;
+
   @ApiProperty({ description: 'Display name for the document. Forward slashes (/) are not allowed.' })
   @IsString()
   @IsNotEmpty()

@@ -10,6 +10,7 @@ import { DisputeEvidenceIssue } from './entities/dispute-evidence-issue.entity';
 import { SupportingEvidenceProcessor, SUPPORTING_EVIDENCE_QUEUE } from './supporting-evidence.processor';
 import { SupportingEvidenceQueueService } from './supporting-evidence-queue.service';
 import { SupportingEvidenceService } from './supporting-evidence.service';
+import { PropertyContextService } from './property-context.service';
 import { EplanningApiService } from './shared/eplanning-api.service';
 import { ArcgisService } from './shared/arcgis.service';
 import { GeocodingService } from './shared/geocoding.service';
@@ -41,6 +42,7 @@ import { InspectionService } from './issues/inspection.service';
     SupportingEvidenceProcessor,
     SupportingEvidenceQueueService,
     SupportingEvidenceService,
+    PropertyContextService,
     EplanningApiService,
     ArcgisService,
     GeocodingService,
@@ -58,6 +60,6 @@ import { InspectionService } from './issues/inspection.service';
     OtherService,
     InspectionService,
   ],
-  exports: [SupportingEvidenceQueueService],
+  exports: [SupportingEvidenceQueueService, SupportingEvidenceService, PropertyContextService, PuppeteerService],
 })
 export class SupportingEvidenceModule {}

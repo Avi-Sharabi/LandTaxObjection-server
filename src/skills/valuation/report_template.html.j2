@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{{ meta.headline_address | default("NSW Statutory Land Valuation Report") }}</title>
+<style>
+/* ============================================================
+   NSW STATUTORY LAND VALUATION — OBJECTION ASSESSMENT REPORT
+   Design system (reproduces the canonical YML report look).
+   Palette sampled from the reference document:
+     navy   #1F3864   steel blue #2E75B6
+     green  fill #E2EFDA  text #375623  border #70AD47
+     red    fill #FCE4D6  text #9C0006
+     amber  fill #FFF3CD  text #7B4F00
+     blue   fill #D6E4F0  text #1F3864
+     border #CCCCCC    body text #222222
+   ============================================================ */
+
+@page {
+  size: Letter;            /* 612 x 792 pt, matches the original */
+  margin: 25mm 19mm 22mm 19mm;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  font-family: Arial, "Liberation Sans", "Helvetica Neue", Helvetica, sans-serif;
+  font-size: 10.5pt;
+  line-height: 1.34;
+  color: #222222;
+}
+
+p { margin: 0 0 9pt 0; }
+strong, b { font-weight: 700; }
+
+/* ---------- COVER ---------- */
+.cover { page-break-after: always; }
+.cover-spacer { height: 5mm; }
+
+.title-banner {
+  background: #1F3864;
+  color: #ffffff;
+  text-align: center;
+  padding: 11pt 14pt 13pt 14pt;
+}
+.title-banner .t1 { font-size: 25pt; font-weight: 700; letter-spacing: .5pt; line-height: 1.12; }
+.title-banner .t2 { font-size: 16pt; font-weight: 700; line-height: 1.18; margin-top: 2pt; }
+.title-banner .t3 { font-size: 11.5pt; font-weight: 700; line-height: 1.2; margin-top: 2pt; }
+
+.cover-address {
+  color: #1F3864;
+  font-size: 17pt;
+  font-weight: 700;
+  text-align: center;
+  margin: 16pt 6pt 0 6pt;
+  line-height: 1.2;
+}
+.cover-sub {
+  color: #555555;
+  font-size: 11pt;
+  text-align: center;
+  margin-top: 9pt;
+}
+
+/* ---------- CALLOUT BOXES ---------- */
+.callout {
+  margin: 14pt 0;
+  padding: 8pt 11pt;
+  font-size: 10pt;
+  line-height: 1.32;
+}
+.callout.green { background: #E2EFDA; color: #375623; border: 1px solid #70AD47; font-weight: 700; }
+.callout.red   { background: #FCE4D6; color: #9C0006; font-weight: 700; }
+.callout.blue  { background: #D6E4F0; color: #1F3864; }
+.callout.amber { background: #FFF3CD; color: #7B4F00; font-weight: 700; }
+.callout .lead { font-weight: 700; }
+
+/* ---------- FOOTER CONFIDENTIALITY BANNER ---------- */
+.conf-banner {
+  background: #D6E4F0;
+  color: #1F3864;
+  font-weight: 700;
+  font-size: 9.5pt;
+  text-align: center;
+  padding: 6pt 8pt;
+  margin-top: 16pt;
+}
+
+/* ---------- SECTION & SUBSECTION HEADERS ---------- */
+h2.section {
+  color: #1F3864;
+  font-size: 15pt;
+  font-weight: 700;
+  margin: 18pt 0 7pt 0;
+  padding-bottom: 4pt;
+  border-bottom: 1.4pt solid #1F3864;
+  page-break-after: avoid;
+}
+h3.subsection {
+  color: #2E75B6;
+  font-size: 12.5pt;
+  font-weight: 700;
+  margin: 16pt 0 6pt 0;
+  page-break-after: avoid;
+}
+
+/* ---------- TABLES ---------- */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 4pt 0 8pt 0;
+  font-size: 9.7pt;
+}
+th, td {
+  border: 0.75pt solid #CCCCCC;
+  padding: 4.5pt 6.5pt;
+  text-align: left;
+  vertical-align: top;
+}
+thead th {
+  background: #1F3864;
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 9.7pt;
+}
+/* repeat header row on each page for long tables */
+thead { display: table-header-group; }
+
+/* label / first-column cells (two-column fact tables) */
+td.lbl, th.lbl {
+  background: #F2F2F2;
+  font-weight: 700;
+  color: #222222;
+  width: 33%;
+}
+.fact-table td:first-child { background: #F2F2F2; font-weight: 700; width: 33%; }
+
+/* numeric emphasis (bold black, no fill) */
+.num   { font-weight: 700; color: #222222; }
+
+/* semantic conditional formatting */
+.v-strong { background: #FCE4D6; color: #9C0006; font-weight: 700; }   /* large variance */
+.v-mod    { background: #FFF3CD; color: #7B4F00; font-weight: 700; }   /* moderate variance */
+.v-pos    { background: #E2EFDA; color: #375623; font-weight: 700; }   /* positive / adopted */
+.txt-green { color: #375623; font-weight: 700; }                       /* green text, no fill */
+.txt-red   { color: #9C0006; font-weight: 700; }
+.txt-amber { color: #7B4F00; font-weight: 700; }                       /* amber text, no fill */
+
+/* navy emphasis cell / row */
+.emph-cell { background: #1F3864; color: #ffffff; font-weight: 700; }
+tr.emph-row td { background: #1F3864; color: #ffffff; font-weight: 700; }
+
+/* status pills (plain text, used in checklists) */
+.st-ok      { color: #375623; font-weight: 700; }
+.st-pending { color: #7B4F00; font-weight: 700; }
+.st-urgent  { color: #9C0006; font-weight: 700; }
+
+ul.tight { margin: 4pt 0 9pt 0; padding-left: 18pt; }
+ul.tight li { margin-bottom: 3pt; }
+
+.note-strong { font-weight: 700; }
+</style>
+</head>
+<body>
+
+{# =========================== MACROS =========================== #}
+{% macro fact_table(rows) -%}
+<table class="fact-table">
+  {% for r in rows %}
+  <tr>
+    <td>{{ r.label }}</td>
+    <td>{{ r.value | safe }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{%- endmacro %}
+
+{% macro callout(text, kind) -%}
+<div class="callout {{ kind }}">{{ text | safe }}</div>
+{%- endmacro %}
+
+{# =========================== COVER =========================== #}
+<div class="cover">
+  <div class="cover-spacer"></div>
+  <div class="title-banner">
+    <div class="t1">{{ meta.title_line1 | default("NSW STATUTORY LAND VALUATION") }}</div>
+    <div class="t2">{{ meta.title_line2 | default("APPRAISAL & OBJECTION ASSESSMENT REPORT") }}</div>
+    {% if meta.title_line3 %}<div class="t3">{{ meta.title_line3 }}</div>{% endif %}
+  </div>
+
+  <div class="cover-address">{{ meta.headline_address }}</div>
+  {% if property.estate_name or property.lots_dps_short %}
+  <div class="cover-sub">{{ [property.estate_name, property.lots_dps_short] | select | join(" | ") }}</div>
+  {% endif %}
+  <div class="cover-sub">Relevant Statutory Valuation Date: {{ meta.valuation_date }} | Land Tax Year: {{ meta.land_tax_year }}</div>
+
+  {% if key_finding %}{{ callout("KEY FINDING: " + key_finding, "green") }}{% endif %}
+
+  {{ fact_table(cover_facts) }}
+
+  {% if meta.confidentiality %}<div class="conf-banner">{{ meta.confidentiality }}</div>{% endif %}
+</div>
+
+{# =========================== 1. EXECUTIVE SUMMARY =========================== #}
+<h2 class="section">1. EXECUTIVE SUMMARY</h2>
+{% if exec_summary.intro %}<p>{{ exec_summary.intro | safe }}</p>{% endif %}
+{% if exec_summary.rows %}
+<table>
+  <thead><tr><th style="width:26%">Item</th><th>Summary Finding</th></tr></thead>
+  <tbody>
+  {% for r in exec_summary.rows %}
+    <tr><td class="lbl">{{ r.item | safe }}</td><td>{{ r.finding | safe }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+{# =========================== 2. STATUTORY FRAMEWORK =========================== #}
+<h2 class="section">2. STATUTORY FRAMEWORK AND ASSESSMENT DETAILS</h2>
+
+<h3 class="subsection">2.1 Statutory Basis and Key Dates</h3>
+{{ fact_table(statutory.basis) }}
+
+<h3 class="subsection">2.2 Land Tax Assessment Breakdown</h3>
+{{ fact_table(statutory.assessment) }}
+
+{# =========================== 3. SUBJECT PROPERTY =========================== #}
+<h2 class="section">3. SUBJECT PROPERTY — CONFIRMED DATA</h2>
+
+<h3 class="subsection">3.1 Property Identification</h3>
+{{ fact_table(subject.identification) }}
+
+<h3 class="subsection">3.2 Physical and Planning Attributes — Confirmed</h3>
+{{ fact_table(subject.attributes) }}
+
+{% if subject.development %}
+<h3 class="subsection">3.3 Development Approval Status — Confirmed</h3>
+{{ fact_table(subject.development) }}
+{% endif %}
+
+{% if planning_proposal %}
+<h3 class="subsection">3.4 Planning Proposal — {{ planning_proposal.status_word | default("REFUSED") }}</h3>
+{% if planning_proposal.critical_note %}{{ callout(planning_proposal.critical_note, "red") }}{% endif %}
+{{ fact_table(planning_proposal.rows) }}
+{% endif %}
+
+{# =========================== 4. HBU & CONSTRAINTS =========================== #}
+<h2 class="section">4. HIGHEST AND BEST USE AND CONSTRAINT REGISTER</h2>
+
+<h3 class="subsection">4.1 Highest and Best Use — As at {{ meta.valuation_date }}</h3>
+{% if hbu.statement %}<p>{{ hbu.statement | safe }}</p>{% endif %}
+
+<h3 class="subsection">4.2 Constraint Register</h3>
+{% if constraints %}
+<table>
+  <thead><tr>
+    <th style="width:22%">Constraint</th><th style="width:19%">Status</th>
+    <th style="width:16%">Source</th><th>Valuation Impact</th>
+  </tr></thead>
+  <tbody>
+  {% for c in constraints %}
+    <tr>
+      <td class="lbl">{{ c.constraint }}</td>
+      <td>{{ c.status | safe }}</td>
+      <td>{{ c.source }}</td>
+      <td>{{ c.impact | safe }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+{# =========================== 5. CPV REPORT ANALYSIS =========================== #}
+<h2 class="section">5. {{ cpv.section_title | default("INDEPENDENT VALUATION (CPV) REPORT — DETAILED ANALYSIS") }}</h2>
+{% if cpv.intro %}<p>{{ cpv.intro | safe }}</p>{% endif %}
+
+<h3 class="subsection">5.1 Valuation Results</h3>
+<table>
+  <thead><tr><th style="width:32%">Method</th><th style="width:26%">CPV Result</th><th>vs VG ({{ meta.valuation_date }} — {{ valuation.vg_recorded_short | default(valuation.vg_recorded_display) }})</th></tr></thead>
+  <tbody>
+  {% for m in cpv.method_rows %}
+    <tr{% if m.adopted %} {% endif %}>
+      <td class="{{ 'emph-cell' if m.adopted else 'lbl' }}">{{ m.name }}</td>
+      <td class="{{ 'v-pos' if m.adopted else '' }}">{{ m.value_display }}</td>
+      <td class="{{ m.var_class }}">{{ m.var_display | safe }}</td>
+    </tr>
+  {% endfor %}
+  {% for r in cpv.extra_rows %}
+    <tr><td class="lbl">{{ r.label }}</td><td>{{ r.value | safe }}</td><td>{{ r.note | safe }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+<h3 class="subsection">5.2 {{ cpv.comp_title | default("Comparable Sales — All Confirmed") }}</h3>
+{% if cpv.comp_intro %}<p>{{ cpv.comp_intro | safe }}</p>{% endif %}
+{% if comparables %}
+<table>
+  <thead><tr>
+    <th style="width:5%">#</th><th style="width:17%">Address</th><th style="width:9%">Date</th>
+    <th style="width:11%">Price</th><th style="width:9%">Area m²</th><th style="width:10%">Zone</th>
+    <th style="width:8%">$/m²</th><th>CPV Comparison to Subject</th>
+  </tr></thead>
+  <tbody>
+  {% for c in comparables %}
+    <tr>
+      <td class="num">{{ c.ref }}</td>
+      <td>{{ c.address | safe }}</td>
+      <td>{{ c.date }}</td>
+      <td class="{{ c.price_class | default('num') }}">{{ c.price_display }}</td>
+      <td>{{ c.area_display }}</td>
+      <td>{{ c.zone }}</td>
+      <td class="num">{{ c.rate_display }}</td>
+      <td>{{ c.comparison | safe }}</td>
+    </tr>
+  {% endfor %}
+  {% if cpv.comp_summary_row %}
+    <tr class="emph-row">
+      <td colspan="2">{{ cpv.comp_summary_row.ref | default("CPV ADOPTED RANGE") }}</td>
+      <td>{{ cpv.comp_summary_row.date }}</td>
+      <td>{{ cpv.comp_summary_row.price | safe }}</td>
+      <td>{{ cpv.comp_summary_row.area }}</td>
+      <td>{{ cpv.comp_summary_row.zone }}</td>
+      <td>{{ cpv.comp_summary_row.rate | safe }}</td>
+      <td>{{ cpv.comp_summary_row.comparison | safe }}</td>
+    </tr>
+  {% endif %}
+  </tbody>
+</table>
+{% endif %}
+{% if cpv.rate_analysis %}{{ callout(cpv.rate_analysis, "blue") }}{% endif %}
+
+{% if residual %}
+<h3 class="subsection">5.3 Residual Cash Flow — Key Inputs</h3>
+{{ fact_table(residual.rows) }}
+{% endif %}
+
+{# =========================== 6. WEAKNESSES & LEGAL GROUNDS =========================== #}
+<h2 class="section">6. VG ASSESSMENT vs CPV — WEAKNESSES AND LEGAL GROUNDS</h2>
+
+<h3 class="subsection">6.1 Identified Weaknesses in VG Mass Appraisal</h3>
+{% if weaknesses %}
+<table>
+  <thead><tr><th style="width:4%">#</th><th style="width:26%">Weakness</th><th style="width:35%">Evidence</th><th>Objection Argument</th></tr></thead>
+  <tbody>
+  {% for w in weaknesses %}
+    <tr><td class="num">{{ w.n }}</td><td class="note-strong">{{ w.weakness | safe }}</td><td>{{ w.evidence | safe }}</td><td>{{ w.argument | safe }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+<h3 class="subsection">6.2 Legal Grounds — Formal Objection Basis</h3>
+{{ fact_table(legal_grounds) }}
+
+{# =========================== 7. FINANCIAL IMPACT =========================== #}
+<h2 class="section">7. PROJECTED FINANCIAL IMPACT</h2>
+{% if financial_scenarios %}
+<table>
+  <thead><tr><th style="width:30%">Scenario</th><th>Basis</th><th>Taxable Value</th><th>Land Tax ($)</th><th>Annual Saving</th></tr></thead>
+  <tbody>
+  {% for s in financial_scenarios %}
+    <tr class="{{ 'emph-row' if s.emph else '' }}">
+      <td class="{{ '' if s.emph else 'lbl' }}">{{ s.scenario | safe }}</td>
+      <td>{{ s.basis }}</td>
+      <td>{{ s.taxable_display }}</td>
+      <td>{{ s.tax_display }}</td>
+      <td class="{{ s.saving_class | default('') }}">{{ s.saving_display }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+{% for cb in financial_callouts | default([]) %}{{ callout(cb.text, cb.kind | default("blue")) }}{% endfor %}
+
+{# =========================== 8. EVIDENCE CHECKLIST =========================== #}
+<h2 class="section">8. FORMAL OBJECTION PACKAGE — EVIDENCE CHECKLIST</h2>
+{% if evidence_checklist %}
+<table>
+  <thead><tr><th style="width:32%">Document / Evidence Item</th><th style="width:16%">Status</th><th>Action / Notes</th></tr></thead>
+  <tbody>
+  {% for e in evidence_checklist %}
+    <tr><td class="lbl">{{ e.item | safe }}</td><td class="{{ e.status_class | default('') }}">{{ e.status }}</td><td>{{ e.notes | safe }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+{# =========================== 9. OBJECTION NARRATIVE =========================== #}
+<h2 class="section">9. FORMAL OBJECTION NARRATIVE</h2>
+{% if objection_narrative.intro %}<p>{{ objection_narrative.intro | safe }}</p>{% endif %}
+{% for para in objection_narrative.paragraphs | default([]) %}<p>{{ para | safe }}</p>{% endfor %}
+
+{# =========================== 10. ACTION PLAN =========================== #}
+<h2 class="section">10. PRIORITY ACTION PLAN</h2>
+{% if action_plan %}
+<table>
+  <thead><tr><th style="width:4%">Pri.</th><th style="width:24%">Action</th><th>How To Do It</th><th style="width:14%">Deadline</th><th style="width:11%">Status</th></tr></thead>
+  <tbody>
+  {% for a in action_plan %}
+    <tr><td class="num">{{ a.priority }}</td><td class="note-strong">{{ a.action | safe }}</td><td>{{ a.how | safe }}</td><td>{{ a.deadline }}</td><td class="{{ a.status_class | default('') }}">{{ a.status }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+{# =========================== 11. DISCLAIMER =========================== #}
+<h2 class="section">11. PROFESSIONAL DISCLAIMER</h2>
+{% for para in disclaimer_paragraphs | default([]) %}<p>{{ para | safe }}</p>{% endfor %}
+{% if payment_reminder %}{{ callout(payment_reminder, "red") }}{% endif %}
+
+</body>
+</html>

@@ -1,10 +1,16 @@
 import { Module } from '@nestjs/common';
+import { AiUpdateDatabaseModule } from './ai-update-database/update-database.module';
 import { AssessmentDocumentsModule } from './assessment-documents/assessment-documents.module';
 import { ClientsModule } from './clients/clients.module';
+import { CleanupModule } from './cleanup/cleanup.module';
 import { ComparablesModule } from './comparables/comparables.module';
+import { DashboardModule } from './dashboard/dashboard.module';
 import { DisputeCasesModule } from './dispute-cases/dispute-cases.module';
 import { DisputeConstraintsModule } from './dispute-constraints/dispute-constraints.module';
 import { DisputeLegalGroundsModule } from './dispute-legal-grounds/dispute-legal-grounds.module';
+import { FyiAiModule } from './fyi-ai/fyi-ai.module';
+import { FyiUploadModule } from './fyi-upload/fyi-upload.module';
+import { LocationModule } from './location/location.module';
 import { PropertiesModule } from './properties/properties.module';
 import { UsersModule } from './users/users.module';
 import { ValuationNoticesModule } from './valuation-notices/valuation-notices.module';
@@ -15,10 +21,16 @@ import { NotificationsModule } from './notifications/notifications.module';
 
 @Module({
   imports: [
+    AiUpdateDatabaseModule,
     AuthModule,
     AssessmentDocumentsModule,
     ClientsModule,
+    CleanupModule,
     ComparablesModule,
+    DashboardModule,
+    FyiAiModule,
+    FyiUploadModule,
+    LocationModule,
     PropertiesModule,
     DisputeCasesModule,
     DisputeConstraintsModule,

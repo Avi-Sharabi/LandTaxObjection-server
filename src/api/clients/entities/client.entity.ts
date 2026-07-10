@@ -4,6 +4,7 @@ import {
   Column,
   CreateDateColumn,
   UpdateDateColumn,
+  DeleteDateColumn,
   ManyToOne,
   OneToMany,
   JoinColumn,
@@ -19,7 +20,6 @@ export enum ClientStatus {
   REJECTED = 'rejected',
 }
 
-
 @Entity('clients')
 export class Client {
   // ─── Core ────────────────────────────────────────────────────────────────────
@@ -32,7 +32,7 @@ export class Client {
 
   // ─── Identity ────────────────────────────────────────────────────────────────
 
-  @Column({ type: 'text', nullable: false })
+  @Column({ type: 'varchar', length: 100, nullable: false })
   name: string;                             // XPM: name
 
   @Column({ type: 'text', nullable: true })
@@ -50,14 +50,17 @@ export class Client {
   @Column({ type: 'text', nullable: true })
   last_name: string | null;               // XPM: lastName
 
-  @Column({ type: 'text', nullable: true })
+  @Column({ type: 'varchar', length: 255, nullable: true })
   email: string | null;                    // XPM: email
 
   @Column({ type: 'date', nullable: true })
   date_of_birth: Date | null;              // XPM: dateOfBirth
 
-  @Column({ type: 'text', nullable: true })
+  @Column({ type: 'varchar', length: 25, nullable: true })
   phone: string | null;                    // XPM: phone
+
+  @Column({ type: 'varchar', length: 25, nullable: true })
+  mobile: string | null;
 
   @Column({ type: 'text', nullable: true })
   fax: string | null;                      // XPM: fax
@@ -67,36 +70,36 @@ export class Client {
 
   // ─── Address ─────────────────────────────────────────────────────────────────
 
-  @Column({ type: 'text', nullable: true })
+  @Column({ type: 'varchar', length: 255, nullable: true })
   address: string | null;                  // XPM: address
 
-  @Column({ type: 'text', nullable: true })
+  @Column({ type: 'varchar', length: 100, nullable: true })
   city: string | null;                     // XPM: city
 
-  @Column({ type: 'text', nullable: true })
+  @Column({ type: 'varchar', length: 100, nullable: true })
   region: string | null;                   // XPM: region
 
-  @Column({ type: 'text', nullable: true })
+  @Column({ type: 'varchar', length: 10, nullable: true })
   postcode: string | null;                 // XPM: postCode
 
-  @Column({ type: 'text', nullable: true })
+  @Column({ type: 'varchar', length: 100, nullable: true })
   country: string | null;                  // XPM: country
 
   // ─── Postal Address ───────────────────────────────────────────────────────────
 
-  @Column({ type: 'text', nullable: true })
+  @Column({ type: 'varchar', length: 255, nullable: true })
   postal_address: string | null;           // XPM: postalAddress
 
-  @Column({ type: 'text', nullable: true })
+  @Column({ type: 'varchar', length: 100, nullable: true })
   postal_city: string | null;              // XPM: postalCity
 
-  @Column({ type: 'text', nullable: true })
+  @Column({ type: 'varchar', length: 100, nullable: true })
   postal_region: string | null;            // XPM: postalRegion
 
-  @Column({ type: 'text', nullable: true })
+  @Column({ type: 'varchar', length: 10, nullable: true })
   postal_postcode: string | null;          // XPM: postalPostCode
 
-  @Column({ type: 'text', nullable: true })
+  @Column({ type: 'varchar', length: 100, nullable: true })
   postal_country: string | null;           // XPM: postalCountry
 
   // ─── Business / Tax ───────────────────────────────────────────────────────────
@@ -155,6 +158,12 @@ export class Client {
 
   @UpdateDateColumn({ type: 'timestamptz' })
   updated_at: Date;
+
+  @DeleteDateColumn({ name: 'deleted_at', type: 'timestamptz', nullable: true })
+  deleted_at: Date | null;
+
+  @Column({ name: 'deleted_by', type: 'uuid', nullable: true })
+  deleted_by: string | null;
 
   // ─── Relations ───────────────────────────────────────────────────────────────
 

@@ -6,6 +6,7 @@ import { toIssueResult } from '../shared/issue-result.mapper';
 const STUB: IssueResult = {
   tick: false,
   confidence: 'MANUAL_REVIEW_REQUIRED',
+  verification_status: 'AI_DETECTED_UNVERIFIED',
   trigger: null,
   text_box_content: null,
   documents_to_attach: [],

@@ -68,7 +68,7 @@ export class PlanningIssuesService {
       return { planning_issues: toIssueResult(result) };
     } catch (err: unknown) {
       this.logger.error(`[PLANNING] Fatal: ${(err as Error).message}`);
-      return { planning_issues: { tick: false, confidence: 'MANUAL_REVIEW_REQUIRED', trigger: null, text_box_content: null, documents_to_attach: [] } };
+      return { planning_issues: { tick: false, confidence: 'MANUAL_REVIEW_REQUIRED', verification_status: 'AI_DETECTED_UNVERIFIED', trigger: null, text_box_content: null, documents_to_attach: [] } };
     }
   }
 }

@@ -1,5 +1,5 @@
 import { IsOptional, IsInt, Min, Max, IsString, MaxLength, IsEnum, IsIn } from 'class-validator';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 import { ClientStatus } from '../../api/clients/entities/client.entity';
 import { DisputeStatus, Jurisdiction } from '../../api/dispute-cases/entities/dispute-case.entity';
 
@@ -20,6 +20,7 @@ export class PaginatedQueryDto {
   @IsOptional()
   @IsString()
   @MaxLength(100)
+  @Transform(({ value }) => value?.trim())
   search?: string;
 }
 
