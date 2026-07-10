@@ -20,7 +20,11 @@ export class AssessmentDocumentsService {
 
   async create(dto: CreateAssessmentDocumentDto): Promise<AssessmentDocumentResponseDto> {
     const doc = await this.assessmentDocumentsRepository.save(
-      this.assessmentDocumentsRepository.create({ client_id: dto.client_id, document_name: dto.document_name }),
+      this.assessmentDocumentsRepository.create({
+        client_id: dto.client_id,
+        dispute_case_id: dto.dispute_case_id,
+        document_name: dto.document_name,
+      }),
     );
 
     if (dto.file) {
@@ -84,9 +88,18 @@ export class AssessmentDocumentsService {
     return { message: `AssessmentDocument #${id} removed` };
   }
 
-  async createInitialRecord(clientId: string, documentName: string): Promise<AssessmentDocument> {
+  async createInitialRecord(
+    clientId: string,
+    documentName: string,
+    disputeCaseId: string | null = null,
+  ): Promise<AssessmentDocument> {
     return this.assessmentDocumentsRepository.save(
-      this.assessmentDocumentsRepository.create({ client_id: clientId, document_name: documentName, file_path: null }),
+      this.assessmentDocumentsRepository.create({
+        client_id: clientId,
+        dispute_case_id: disputeCaseId,
+        document_name: documentName,
+        file_path: null,
+      }),
     );
   }
 
@@ -98,9 +111,15 @@ export class AssessmentDocumentsService {
     clientId: string,
     documentName: string,
     filePath: string,
+    disputeCaseId: string,
   ): Promise<AssessmentDocument> {
     return this.assessmentDocumentsRepository.save(
-      this.assessmentDocumentsRepository.create({ client_id: clientId, document_name: documentName, file_path: filePath }),
+      this.assessmentDocumentsRepository.create({
+        client_id: clientId,
+        dispute_case_id: disputeCaseId,
+        document_name: documentName,
+        file_path: filePath,
+      }),
     );
   }
 
@@ -109,6 +128,25 @@ export class AssessmentDocumentsService {
       where: { client_id: clientId },
       order: { created_at: 'DESC' },
     });
+  }
+
+  async findForCase(
+    disputeCaseId: string,
+    clientId: string,
+    extraDocumentId?: string | null,
+  ): Promise<AssessmentDocument[]> {
+    const caseScoped = await this.assessmentDocumentsRepository.find({
+      where: { dispute_case_id: disputeCaseId },
+      order: { created_at: 'DESC' },
+    });
+
+    let result = caseScoped;
+    if (extraDocumentId && !caseScoped.some((d) => d.id === extraDocumentId)) {
+      const extraDoc = await this.assessmentDocumentsRepository.findOne({ where: { id: extraDocumentId } });
+      if (extraDoc) result = [...caseScoped, extraDoc];
+    }
+
+    return result.length > 0 ? result : this.findByClientId(clientId);
   }
 
   private toResponseDto(doc: AssessmentDocument): AssessmentDocumentResponseDto {

@@ -256,8 +256,8 @@ ul.tight li { margin-bottom: 3pt; }
 {% if constraints %}
 <table>
   <thead><tr>
-    <th style="width:24%">Constraint</th><th style="width:15%">Status</th>
-    <th style="width:18%">Source</th><th>Valuation Impact</th>
+    <th style="width:22%">Constraint</th><th style="width:19%">Status</th>
+    <th style="width:16%">Source</th><th>Valuation Impact</th>
   </tr></thead>
   <tbody>
   {% for c in constraints %}
@@ -322,7 +322,7 @@ ul.tight li { margin-bottom: 3pt; }
       <td>{{ cpv.comp_summary_row.price | safe }}</td>
       <td>{{ cpv.comp_summary_row.area }}</td>
       <td>{{ cpv.comp_summary_row.zone }}</td>
-      <td>{{ cpv.comp_summary_row.rate }}</td>
+      <td>{{ cpv.comp_summary_row.rate | safe }}</td>
       <td>{{ cpv.comp_summary_row.comparison | safe }}</td>
     </tr>
   {% endif %}

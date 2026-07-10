@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { DisputeCase } from './entities/dispute-case.entity';
@@ -8,6 +8,8 @@ import { DisputeEvidenceIssue } from '../supporting-evidence/entities/dispute-ev
 
 @Injectable()
 export class ValuationReportRepository {
+  private readonly logger = new Logger(ValuationReportRepository.name);
+
   constructor(
     @InjectRepository(DisputeCase)
     private readonly disputeCaseRepo: Repository<DisputeCase>,

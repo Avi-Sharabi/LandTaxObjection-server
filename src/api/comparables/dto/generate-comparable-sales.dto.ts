@@ -83,6 +83,18 @@ export class GenerateComparableSalesDto {
   @IsString()
   postcode?: string;
 
+  @ApiProperty({ example: -33.9173, required: false, nullable: true, description: 'Subject property latitude — used to gate comparable sales by real distance; falls back to a suburb-centroid lookup if omitted' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  lat?: number;
+
+  @ApiProperty({ example: 151.2313, required: false, nullable: true, description: 'Subject property longitude — used to gate comparable sales by real distance; falls back to a suburb-centroid lookup if omitted' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  lng?: number;
+
   // ── Valuation date — loaded from valuation_notice if not provided ─────────
 
   @ApiProperty({ example: '2025-07-01', required: false, nullable: true, description: 'Valuation date (YYYY-MM-DD) — overrides valuation_notice.valuation_date if provided' })

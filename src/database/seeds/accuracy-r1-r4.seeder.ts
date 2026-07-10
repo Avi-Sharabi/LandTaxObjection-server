@@ -123,6 +123,7 @@ export function buildAccContext(p: ScenarioParams): Record<string, unknown> {
         }
       : null,
     evidenceResult: null,
+    caseDocuments: [],
   };
 }
 

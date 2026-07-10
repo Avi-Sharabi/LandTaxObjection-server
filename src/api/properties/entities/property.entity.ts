@@ -39,6 +39,9 @@ export class Property {
   @Column({ type: 'numeric', precision: 12, scale: 2, nullable: true })
   land_area_sqm: number;
 
+  @Column({ type: 'numeric', precision: 12, scale: 2, nullable: true })
+  land_area_eplanning_sqm: number | null;
+
   @Column({ type: 'text', nullable: true })
   zoning: string;
 

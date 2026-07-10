@@ -9,8 +9,8 @@ import { AssessmentDocumentsService } from '../assessment-documents/assessment-d
 import { PuppeteerService } from '../supporting-evidence/shared/puppeteer.service';
 import { ValuationReportRepository } from './valuation-report.repository';
 import { ValuationCtxCacheService } from './valuation-ctx-cache.service';
-import { SupportingEvidenceContext } from '../supporting-evidence/supporting-evidence.types';
-import { DisputeCase } from './entities/dispute-case.entity';
+import { SupportingEvidenceContext, LandTaxNotice, CaseDocumentSummary } from '../supporting-evidence/supporting-evidence.types';
+import { DisputeCase, DisputeStatus } from './entities/dispute-case.entity';
 import { DisputeObjectionReason } from './entities/dispute-objection-reason.entity';
 import { ComparableSale } from '../comparables/entities/comparable-sale.entity';
 import { DisputeEvidenceIssue } from '../supporting-evidence/entities/dispute-evidence-issue.entity';
@@ -34,6 +34,8 @@ export interface SafePlanningCtx {
   plan?: string;
   planType?: string;
   reportText?: string | null;
+  land_tax_notice?: LandTaxNotice | null;
+  case_documents?: CaseDocumentSummary[];
 }
 
 export function buildSafePlanningCtx(ctx: SupportingEvidenceContext): SafePlanningCtx {
@@ -56,6 +58,8 @@ export function buildSafePlanningCtx(ctx: SupportingEvidenceContext): SafePlanni
     plan: ctx.meta.plan ?? undefined,
     planType: ctx.meta.planType ?? undefined,
     reportText: ctx.reportText?.slice(0, 10000),
+    land_tax_notice: ctx.landTaxNotice,
+    case_documents: ctx.caseDocuments,
   };
 }
 
@@ -157,6 +161,12 @@ export class ValuationReportService {
       thinkingBudgetTokens: 4000,
     });
 
+    if (result.stopReason === 'max_tokens') {
+      this.logger.error(JSON.stringify({ context: 'ValuationReport.truncated', disputeCaseId, maxTokens: 32000 }));
+      throw new ValuationReportFailedException(
+        'Valuation report response was truncated at the max_tokens limit (32000) — the report content is too large for the current limit; increase maxTokens or reduce section scope.',
+      );
+    }
     if (!result.text) throw new ValuationReportFailedException('Claude returned empty valuation report');
 
     const raw = this.anthropicService.parseJsonObject<RawReportData>(result.text);
@@ -175,6 +185,7 @@ export class ValuationReportService {
       disputeCase.client_id,
       'valuation-report.pdf',
       storedPath,
+      disputeCaseId,
     );
 
     await this.repository.updateAnalysisReportPath(disputeCaseId, storedPath);
@@ -320,14 +331,26 @@ export class ValuationReportService {
     const prop = disputeCase.property;
     const notice = disputeCase.valuation_notice as ValuationNotice | undefined;
 
+    // land_area_eplanning_sqm is the NSW cadastre/DP-resolved area for ordinary single-lot
+    // properties; land_area_sqm is reserved for the rare AI-web-search multi-lot-amalgamation
+    // override (ai-property-search.service.ts). Prefer the cadastre value when both are present.
+    const siteAreaSqm = prop.land_area_eplanning_sqm ?? prop.land_area_sqm ?? null;
+
     const lines: string[] = [
       '## Case Reference',
       disputeCase.case_reference,
+      `Case status: ${disputeCase.status} — use this, not ticked grounds or selected evidence, as the sole source of truth for whether anything has actually been "lodged" or "submitted" (see controlled-vocabulary rules in the skill).`,
+      '',
+      '## Documents Already On File For This Case',
+      'This is the complete, authoritative list of documents actually obtained for this case — use it, not general knowledge or assumption, to decide Section 8 (Evidence Checklist) statuses: mark an item "Available"/"Confirmed" ONLY if a matching document appears below; otherwise it is "Not obtained"/"Pending", even if you would otherwise expect it to exist.',
+      ...(planningCtx?.case_documents?.length
+        ? planningCtx.case_documents.map(d => `- ${d.document_name} (obtained ${d.created_at.split('T')[0]})`)
+        : ['None — no supporting documents have been obtained yet for this case.']),
       '',
       '## Property Identification',
       `Address: ${prop.address}`,
       `Property ID: ${prop.pid ?? 'unknown'}`,
-      `Site area: ${prop.land_area_sqm ?? 'unknown'} m²`,
+      `Site area: ${siteAreaSqm ?? 'unknown'} m²${siteAreaSqm != null ? ' (resolved from NSW cadastre/DP — treat as confirmed)' : ' (not resolved — recommend verifying against the Deposited Plan before lodgement)'}`,
     ];
 
     if (prop.zoning) lines.push(`Zoning: ${prop.zoning}`);
@@ -373,18 +396,22 @@ export class ValuationReportService {
     }
 
     if (planningCtx?.reportText) {
+      const eplanningDate = new Date().toISOString().split('T')[0];
       lines.push('', '## ePlanning Property Report (extracted text)');
+      lines.push(`Cite this source as "the NSW Planning Portal Property Report dated ${eplanningDate}" — this document has no reference number or ID; do not invent one.`);
       lines.push(planningCtx.reportText);
     }
 
     if (notice) {
       lines.push('', '## Valuation Notice');
-      if (notice.notice_reference) lines.push(`Notice reference: ${notice.notice_reference}`);
+      // notice.notice_reference is an internal intake placeholder (INTAKE-<year>-<timestamp>),
+      // not a real Revenue NSW notice number — deliberately not surfaced to the report generator.
       if (notice.valuation_date) {
         lines.push(`Relevant valuation date: ${new Date(notice.valuation_date).toISOString().split('T')[0]}`);
       }
       if (disputeCase.statutory_deadline) {
         lines.push(`Statutory deadline: ${new Date(disputeCase.statutory_deadline).toISOString().split('T')[0]}`);
+        lines.push(`Report generation date (compare against the statutory deadline above — do not assume it is still open): ${new Date().toISOString().split('T')[0]}`);
       }
       if (notice.assessed_land_value != null) {
         lines.push(`Assessed land value (current year): $${notice.assessed_land_value.toLocaleString()}`);
@@ -402,11 +429,56 @@ export class ValuationReportService {
       }
     }
 
+    const ltn = planningCtx?.land_tax_notice;
+    if (ltn) {
+      lines.push('', '## Land Tax Notice (Extracted)');
+      lines.push(
+        'AI-extracted from the uploaded assessment notice — confirm against the original document before ' +
+        'relying on it, especially the payable/arrears/interest/due-date figures below (an error here has real ' +
+        'financial consequences, e.g. interest accruing on a missed due date).',
+      );
+      if (ltn.owner) lines.push(`Owner: ${ltn.owner}`);
+      if (ltn.issue_date) lines.push(`Issue date: ${ltn.issue_date}`);
+      for (const prop of ltn.properties ?? []) {
+        const allYears = Object.keys(prop.land_values ?? {});
+        const yearEntries = Object.entries(prop.land_values ?? {}).filter((e): e is [string, number] => e[1] != null);
+        const valuesStr = yearEntries.map(([yr, v]) => `${yr}: $${v.toLocaleString()}`).join(', ');
+        lines.push(`Property: ${prop.address}${valuesStr ? ` — ${valuesStr}` : ''}`);
+        if (yearEntries.length >= 3) {
+          const years = yearEntries.slice(0, 3);
+          const avg = years.reduce((sum, [, v]) => sum + v, 0) / 3;
+          lines.push(`  3-year average taxable value (computed from the ${years.map(([yr]) => yr).join(', ')} figures above): $${Math.round(avg).toLocaleString()}`);
+        } else if (allYears.length > 0) {
+          const missing = allYears.filter(yr => !yearEntries.some(([y]) => y === yr));
+          lines.push(`  3-year average taxable value: cannot compute — missing ${missing.join(', ') || 'one or more'} year value(s) from the notice`);
+        }
+      }
+      if (ltn.total_aggregated_value != null) {
+        lines.push(`Total aggregated value: $${ltn.total_aggregated_value.toLocaleString()}`);
+      }
+      if (ltn.land_tax_payable != null) {
+        lines.push(`Land tax payable (AI-extracted — confirm before relying on it): $${ltn.land_tax_payable.toLocaleString()}`);
+      }
+      if (ltn.arrears != null) {
+        lines.push(`Arrears (AI-extracted — confirm before relying on it): $${ltn.arrears.toLocaleString()}`);
+      }
+      if (ltn.interest != null) {
+        lines.push(`Interest (AI-extracted — confirm before relying on it): $${ltn.interest.toLocaleString()}`);
+      }
+      if (ltn.total_amount_payable != null) {
+        lines.push(`Total amount payable (AI-extracted — confirm before relying on it): $${ltn.total_amount_payable.toLocaleString()}`);
+      }
+      if (ltn.payment_due_date) {
+        lines.push(`Payment due date (AI-extracted — confirm before relying on it): ${ltn.payment_due_date}`);
+      }
+    }
+
     const tickedIssues = evidenceIssues.filter(e => e.is_tick);
     if (tickedIssues.length > 0) {
       lines.push('', '## Supporting Evidence Issues (ticked)');
       for (const issue of tickedIssues) {
-        lines.push(`- ${issue.issue_type} (confidence: ${issue.confidence ?? 'unknown'})`);
+        const verification = issue.verification_status ?? 'AI_DETECTED_UNVERIFIED';
+        lines.push(`- ${issue.issue_type} (confidence: ${issue.confidence ?? 'unknown'}, verification: ${verification})`);
       }
     }
 
@@ -424,11 +496,25 @@ export class ValuationReportService {
     }
 
     if (objectionReasons.length > 0) {
+      const lodgedStatuses: DisputeStatus[] = [
+        DisputeStatus.SUBMITTED_TO_VG,
+        DisputeStatus.VG_RESPONSE_RECEIVED,
+        DisputeStatus.VG_APPROVED,
+        DisputeStatus.VG_DECLINED,
+      ];
+      const isLodged = lodgedStatuses.includes(disputeCase.status);
       lines.push('', '## Objection Grounds');
+      lines.push(`These grounds are ${isLodged ? 'LODGED with Revenue NSW' : 'NOT YET LODGED — proposed/selected only'} (see Case status above).`);
       for (const r of objectionReasons) {
-        const status = r.is_tick ? '✓ TICKED' : '✗ not ticked';
-        lines.push(`Ground ${r.ground_number}: ${r.label} [${status}]`);
-        if (r.concession_type) lines.push(`  Concession type: ${r.concession_type}`);
+        const status = r.is_tick ? 'TICKED (AI/automation-detected — no client-tick concept exists in this system)' : 'not ticked';
+        const verification = r.verification_status ?? 'AI_DETECTED_UNVERIFIED';
+        lines.push(`Ground ${r.ground_number}: ${r.label} [${status}, verification: ${verification}]`);
+        if (r.analysis) lines.push(`  Finding: ${r.analysis}`);
+        if (r.concession_classification === 'NO_MATCHING_PORTAL_TYPE') {
+          lines.push(`  Concession: NO MATCHING VG PORTAL TYPE — do not cite a specific portal concession section; state the true basis from the finding above and that manual/Revenue NSW classification is required.`);
+        } else if (r.concession_type) {
+          lines.push(`  Concession type: ${r.concession_type}`);
+        }
         if (r.concession_type_note) lines.push(`  Concession note: ${r.concession_type_note}`);
       }
     }

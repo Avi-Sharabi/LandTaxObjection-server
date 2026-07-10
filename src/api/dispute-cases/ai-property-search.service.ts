@@ -57,6 +57,26 @@ export class AiPropertySearchService {
     return result;
   }
 
+  /**
+   * Persists the ePlanning/cadastre-resolved lot area (property-context.service.ts's ctx.lotAreaM2)
+   * onto a dedicated column, separate from land_area_sqm — which is reserved for the AI-web-search
+   * multi-lot-amalgamation value above and must not be overwritten by the ordinary single-lot area.
+   */
+  async persistEplanningArea(disputeCaseId: string, eplanningAreaM2: number): Promise<void> {
+    const dc = await this.disputeCaseRepo.findOne({
+      where: { id: disputeCaseId },
+      relations: ['property'],
+    });
+    if (!dc?.property) return;
+
+    await this.propertyRepo.update({ id: dc.property.id }, { land_area_eplanning_sqm: eplanningAreaM2 });
+    this.logger.log(JSON.stringify({
+      context: 'AiPropertySearch.eplanning_area_persisted',
+      propertyId: dc.property.id,
+      land_area_eplanning_sqm: eplanningAreaM2,
+    }));
+  }
+
   private async searchLandArea(address: string): Promise<AiPropertySearchResult | null> {
     const safeAddress = address.slice(0, 200).replace(/[\r\n]/g, ' ');
 
