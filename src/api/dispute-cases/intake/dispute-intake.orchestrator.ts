@@ -284,8 +284,10 @@ export class DisputeIntakeOrchestrator {
 
   private async generateCaseReference(): Promise<string> {
     const year = new Date().getFullYear();
-    const count = await this.disputeCasesRepository.count();
-    const sequence = (count + 1).toString().padStart(6, '0');
+    const [{ nextval }] = await this.disputeCasesRepository.query(
+      `SELECT nextval('dispute_case_reference_seq') AS nextval`,
+    );
+    const sequence = nextval.toString().padStart(6, '0');
     return `LTD-${year}-${sequence}`;
   }
 }
