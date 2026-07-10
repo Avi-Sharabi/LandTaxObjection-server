@@ -27,6 +27,9 @@ export class ValuationNotice {
   @Column({ type: 'date', nullable: false })
   valuation_date: Date;
 
+  @Column({ type: 'date', nullable: true })
+  notice_issue_date: Date | null;
+
   @Column({ type: 'numeric', precision: 15, scale: 2, nullable: true, transformer: numericTransformer })
   assessed_land_value: number | null;
 

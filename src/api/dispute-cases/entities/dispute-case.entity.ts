@@ -78,6 +78,9 @@ export class DisputeCase {
   @Column({ type: 'boolean', nullable: false, default: false })
   no_legal_ground_flagged: boolean;
 
+  @Column({ type: 'boolean', nullable: false, default: false })
+  deadline_lapsed_flagged: boolean;
+
   @Column({ type: 'timestamptz', nullable: true })
   client_approval_requested_at: Date | null;
 

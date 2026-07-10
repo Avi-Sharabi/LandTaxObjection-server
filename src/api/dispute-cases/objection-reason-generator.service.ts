@@ -53,6 +53,9 @@ interface ObjectionGround {
   isTick: boolean;
   analysis: string;
   evidenceDocIds: string[];
+  // Human-readable source names, index-paired with evidenceDocIds — shown to the LLM instead of
+  // the raw UUIDs so ground narratives never echo an internal document identifier.
+  evidenceLabels: string[];
 }
 
 interface ObjectionPropertyDetails {
@@ -132,6 +135,7 @@ export class ObjectionReasonGeneratorService {
     );
 
     const groundDocIds: Record<string, string[]> = {};
+    const groundLabels: Record<string, string[]> = {};
     const groundAnalysis: Record<string, string> = {};
     const attemptedNames = new Set<string>();
     const coveredSubGrounds = new Set<string>();
@@ -164,11 +168,17 @@ export class ObjectionReasonGeneratorService {
             const docId = await this.uploadScreenshot(screenshotPath, disputeCaseId, disputeCase.client_id);
             this.logger.log(`[ENTITY] upload → docId=${docId ?? 'null'}`);
             if (docId) {
-              const groundNums = [...new Set(source.grounds.map(g => parseInt(g, 10)).filter(n => !isNaN(n)))];
+              // Only exact numeric ground codes alias onto a real ground — sub-codes like "9A"-"9H"
+              // (used to organise a specific worked example's narrative) must NOT truncate onto
+              // ground 9 via parseInt('9A', 10) === 9, which previously attached unrelated evidence
+              // (e.g. an entity/ABN lookup) to whatever ground shares that leading digit.
+              const groundNums = [...new Set(source.grounds.filter(g => /^\d+$/.test(g)).map(g => parseInt(g, 10)))];
               for (const num of groundNums) {
                 const key = String(num);
                 if (!groundDocIds[key]) groundDocIds[key] = [];
                 groundDocIds[key].push(docId);
+                if (!groundLabels[key]) groundLabels[key] = [];
+                groundLabels[key].push(matchedName);
                 if (result.comment) {
                   groundAnalysis[key] = (groundAnalysis[key] ? groundAnalysis[key] + '\n' : '') + result.comment;
                 }
@@ -191,7 +201,7 @@ export class ObjectionReasonGeneratorService {
       await browser.close();
     }
 
-    ctx.entityEvidence = { groundDocIds, groundAnalysis, clientName };
+    ctx.entityEvidence = { groundDocIds, groundLabels, groundAnalysis, clientName };
     this.logger.log(`[ENTITY] Done — ${Object.keys(groundDocIds).length} grounds with evidence`);
   }
 
@@ -215,8 +225,8 @@ export class ObjectionReasonGeneratorService {
       dp: ctx.meta.plan ?? '',
     };
 
-    const { concessionType, concessionNote } = await this.generateReasonTexts(grounds, propertyDetails, ctx);
-    await this.persistGrounds(disputeCaseId, grounds, runId, concessionType, concessionNote);
+    const { concessionType, concessionClassification, concessionNote } = await this.generateReasonTexts(grounds, propertyDetails, ctx);
+    await this.persistGrounds(disputeCaseId, grounds, runId, concessionType, concessionClassification, concessionNote, ctx);
   }
 
   async getObjectionReasons(disputeCaseId: string): Promise<DisputeObjectionReason[]> {
@@ -241,12 +251,14 @@ export class ObjectionReasonGeneratorService {
       for (const g of grounds) {
         const key = String(g.groundNumber);
         const docIds = ctx.entityEvidence.groundDocIds[key] ?? [];
+        const labels = ctx.entityEvidence.groundLabels?.[key] ?? [];
         const analysisText = ctx.entityEvidence.groundAnalysis[key] ?? '';
         if (docIds.length > 0 || analysisText) {
           if (!this.isNegativeTick(analysisText)) {
             g.isTick = true;
           }
           g.evidenceDocIds = [...docIds];
+          g.evidenceLabels = [...labels];
           g.analysis = analysisText;
         }
       }
@@ -265,7 +277,7 @@ export class ObjectionReasonGeneratorService {
     grounds: ObjectionGround[],
     propertyDetails: ObjectionPropertyDetails,
     ctx: SupportingEvidenceContext,
-  ): Promise<{ concessionType: string | null; concessionNote: string | null }> {
+  ): Promise<{ concessionType: string | null; concessionClassification: string | null; concessionNote: string | null }> {
     const tickedGrounds = grounds.filter(g => g.isTick);
     const tickedGroundNumbers = tickedGrounds.map(g => g.groundNumber);
 
@@ -275,18 +287,21 @@ export class ObjectionReasonGeneratorService {
           groundNumber: g.groundNumber,
           label: g.label,
           evidenceFiles: g.evidenceDocIds,
+          evidenceLabels: g.evidenceLabels,
           analysis: g.analysis,
         });
-        if (synthesis?.bestFile && g.evidenceDocIds.includes(synthesis.bestFile)) {
-          g.evidenceDocIds = [synthesis.bestFile];
-          g.analysis = synthesis.analysis;
+        const idx = synthesis?.bestIndex != null ? synthesis.bestIndex - 1 : -1;
+        if (idx >= 0 && idx < g.evidenceDocIds.length) {
+          g.evidenceDocIds = [g.evidenceDocIds[idx]];
+          g.evidenceLabels = [g.evidenceLabels[idx] ?? g.evidenceLabels[0] ?? ''];
+          g.analysis = synthesis!.analysis;
         }
       }
 
       this.logger.log(`[OBJECTION]   ✍  Generating reason text for Ground ${g.groundNumber}`);
       const generationCtx = this.buildGenerationContext(ctx, g.groundNumber, tickedGroundNumbers);
       const reason = await this.browserService.generateObjectionReason(
-        { groundNumber: g.groundNumber, label: g.label, evidenceFiles: g.evidenceDocIds, analysis: g.analysis },
+        { groundNumber: g.groundNumber, label: g.label, evidenceFiles: g.evidenceDocIds, evidenceLabels: g.evidenceLabels, analysis: g.analysis },
         propertyDetails,
         generationCtx,
       );
@@ -294,14 +309,14 @@ export class ObjectionReasonGeneratorService {
     }
 
     const g9 = grounds.find(g => g.groundNumber === 9);
-    if (!g9?.isTick) return { concessionType: null, concessionNote: null };
+    if (!g9?.isTick) return { concessionType: null, concessionClassification: null, concessionNote: null };
 
     const result = await this.browserService.determineConcessionType(
       g9.analysis,
       ctx,
       PORTAL_CONCESSION_TYPES as unknown as string[],
     );
-    return { concessionType: result.concessionType, concessionNote: result.note };
+    return { concessionType: result.concessionType, concessionClassification: result.classification, concessionNote: result.note };
   }
 
   private async persistGrounds(
@@ -309,19 +324,36 @@ export class ObjectionReasonGeneratorService {
     grounds: ObjectionGround[],
     runId: number,
     concessionType: string | null,
+    concessionClassification: string | null,
     concessionNote: string | null,
+    ctx: SupportingEvidenceContext,
   ): Promise<void> {
-    const rows: Partial<DisputeObjectionReason>[] = grounds.map(g => ({
-      dispute_case_id: disputeCaseId,
-      ground_number: g.groundNumber,
-      label: g.label,
-      is_tick: g.isTick,
-      concession_type: g.groundNumber === 9 ? concessionType : null,
-      concession_type_note: g.groundNumber === 9 ? concessionNote : null,
-      analysis: g.analysis || null,
-      evidence_files: g.evidenceDocIds.length > 0 ? g.evidenceDocIds : null,
-      run_id: runId,
-    }));
+    // Ground 9's real substance is usually a constraint finding (e.g. flood/environmental) owned by
+    // the separate supporting-evidence pipeline, not the incidental entity-lookup evidence that
+    // happens to land on ground 9 via the ABR/ASIC navigation guide. Prefer that finding's own
+    // verification_status so Ground 9 never claims EVIDENCE_OBTAINED for an unrelated screenshot
+    // while the constraint register two sections earlier still says AI-DETECTED — NOT YET VERIFIED.
+    const ground9OwnStatus =
+      ctx.evidenceResult?.issues?.concession?.verification_status ??
+      ctx.evidenceResult?.issues?.environmental?.verification_status ??
+      null;
+
+    const rows: Partial<DisputeObjectionReason>[] = grounds.map(g => {
+      const genericStatus = g.evidenceDocIds.length > 0 ? 'EVIDENCE_OBTAINED' : 'AI_DETECTED_UNVERIFIED';
+      return {
+        dispute_case_id: disputeCaseId,
+        ground_number: g.groundNumber,
+        label: g.label,
+        is_tick: g.isTick,
+        concession_type: g.groundNumber === 9 ? concessionType : null,
+        concession_classification: g.groundNumber === 9 ? concessionClassification : null,
+        concession_type_note: g.groundNumber === 9 ? concessionNote : null,
+        verification_status: g.groundNumber === 9 ? (ground9OwnStatus ?? genericStatus) : genericStatus,
+        analysis: g.analysis || null,
+        evidence_files: g.evidenceDocIds.length > 0 ? g.evidenceDocIds : null,
+        run_id: runId,
+      };
+    });
 
     await this.repo.save(rows);
     this.logger.log(`[OBJECTION] Saved ${rows.length} ground rows for case ${disputeCaseId}`);
@@ -336,6 +368,7 @@ export class ObjectionReasonGeneratorService {
       isTick: false,
       analysis: '',
       evidenceDocIds: [] as string[],
+      evidenceLabels: [] as string[],
     }));
   }
 
@@ -351,7 +384,7 @@ export class ObjectionReasonGeneratorService {
       const blobPath = `objection-reasons/${disputeCaseId}/${filename}`;
       const storedPath = await this.azureBlobService.uploadFile(blobPath, base64);
       if (!storedPath) return null;
-      const doc = await this.assessmentDocumentsService.createArtifactRecord(clientId, filename, storedPath);
+      const doc = await this.assessmentDocumentsService.createArtifactRecord(clientId, filename, storedPath, disputeCaseId);
       return doc.id;
     } catch (err: unknown) {
       this.logger.warn(`[OBJECTION] Failed to upload screenshot ${filePath}: ${(err as Error).message}`);
@@ -391,8 +424,26 @@ export class ObjectionReasonGeneratorService {
         lines.push(`  Total aggregated value: $${ctx.landTaxNotice.total_aggregated_value.toLocaleString()}`);
       }
       for (const prop of (ctx.landTaxNotice.properties ?? []).slice(0, 3)) {
-        const vals = Object.entries(prop.land_values ?? {}).map(([yr, v]) => `${yr}: $${v.toLocaleString()}`).join(', ');
+        const vals = Object.entries(prop.land_values ?? {})
+          .filter((entry): entry is [string, number] => entry[1] != null)
+          .map(([yr, v]) => `${yr}: $${v.toLocaleString()}`)
+          .join(', ');
         lines.push(`  Property: ${prop.address}${vals ? ` — ${vals}` : ''}`);
+      }
+      if (ctx.landTaxNotice.land_tax_payable != null) {
+        lines.push(`  Land tax payable: $${ctx.landTaxNotice.land_tax_payable.toLocaleString()}`);
+      }
+      if (ctx.landTaxNotice.arrears != null) {
+        lines.push(`  Arrears: $${ctx.landTaxNotice.arrears.toLocaleString()}`);
+      }
+      if (ctx.landTaxNotice.interest != null) {
+        lines.push(`  Interest: $${ctx.landTaxNotice.interest.toLocaleString()}`);
+      }
+      if (ctx.landTaxNotice.total_amount_payable != null) {
+        lines.push(`  Total amount payable: $${ctx.landTaxNotice.total_amount_payable.toLocaleString()}`);
+      }
+      if (ctx.landTaxNotice.payment_due_date) {
+        lines.push(`  Payment due date: ${ctx.landTaxNotice.payment_due_date}`);
       }
     }
 
@@ -443,7 +494,8 @@ export class ObjectionReasonGeneratorService {
 
     const comparableLines = ctx.inputComparables.slice(0, 5).map(c => {
       const rate = c.rate_per_m2 != null ? Number(c.rate_per_m2) : null;
-      return `  ${c.address}: area ${c.area_m2} m², adjusted value $${c.analysed_land_value.toLocaleString()}${rate != null && !isNaN(rate) ? `, $${rate.toFixed(0)}/m²` : ''}${c.contract_date ? `, sold ${c.contract_date}` : ''}`;
+      const valueStr = c.analysed_land_value != null ? `$${c.analysed_land_value.toLocaleString()}` : 'value unknown';
+      return `  ${c.address}: area ${c.area_m2} m², adjusted value ${valueStr}${rate != null && !isNaN(rate) ? `, $${rate.toFixed(0)}/m²` : ''}${c.contract_date ? `, sold ${c.contract_date}` : ''}`;
     });
 
     switch (groundNumber) {
@@ -536,7 +588,10 @@ export class ObjectionReasonGeneratorService {
       case 8: {
         if (ctx.meta.assessed_land_value != null) lines.push(`Assessed land value (notice): $${ctx.meta.assessed_land_value.toLocaleString()}`);
         for (const prop of (ctx.landTaxNotice?.properties ?? []).slice(0, 5)) {
-          const vals = Object.entries(prop.land_values ?? {}).map(([yr, v]) => `${yr}: $${v.toLocaleString()}`).join(', ');
+          const vals = Object.entries(prop.land_values ?? {})
+            .filter((entry): entry is [string, number] => entry[1] != null)
+            .map(([yr, v]) => `${yr}: $${v.toLocaleString()}`)
+            .join(', ');
           lines.push(`Notice property: ${prop.address}${vals ? ` — ${vals}` : ''}`);
         }
         if (er) { const fmt = this.formatIssueResult('Apportionment analysis', er.issues.apportionment); if (fmt) lines.push(fmt); }

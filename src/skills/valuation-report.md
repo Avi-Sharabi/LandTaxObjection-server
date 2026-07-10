@@ -25,10 +25,12 @@ construction-cost report, and planning data, and turns them into an 11-section
 document that ends with a ready-to-lodge objection narrative and a dated action
 plan.
 
-The report is an **internal assessment and evidence framework** — it sits on top
-of the formal CPV valuation, it does not replace it. The CPV report is always
-the primary evidence that gets attached to the objection; this document
-organises the argument around it.
+This report **is the objector's submission-ready advocacy package** — write
+every section as if presenting the case directly to the Valuer General, not as
+an internal working file. The formal CPV valuation remains the primary
+evidence that gets attached to the objection; this document organises the
+argument around it. Internal-only caveats (scope, limitations, confidentiality)
+belong solely in Section 11 (Disclaimer) — nowhere else in the document.
 
 The report is written from the **advocate's perspective** — as if the landowner or
 their accountant is presenting the case directly. The tone must be assertive,
@@ -134,7 +136,10 @@ irrelevant to it.
 State that the standard objection window appears to have lapsed and that a late
 objection generally requires the VG to accept it out of time (or a separate
 review pathway) — flag this as an urgent matter to confirm directly with Revenue
-NSW / the VG, rather than assuming the objection can simply be lodged.
+NSW / the VG, rather than assuming the objection can simply be lodged. State this
+in the Executive Summary banner and the Priority Action Plan **only** — never
+inside the Objection Narrative (Section 9), which must remain pure submission
+prose with no process commentary.
 
 ### Step 3 — Compute the core figures
 
@@ -188,6 +193,14 @@ The constraint register is what justifies a land rate **below** the standard
 benchmark. Each negative constraint is a reason the mass-appraisal benchmark
 (derived from a constraint-free standard lot) overstates this site's value.
 
+For every row that isn't `Confirmed`, end the `impact` text with an explicit
+verification instruction naming the specific document or action that would
+confirm it (e.g. "Must be confirmed by independent s10.7 certificate and/or
+flood mapping evidence before lodgement."). Never leave an AI-detected or
+pending row silent on what would resolve it, and keep that action consistent
+with whatever the same item shows as outstanding in the Section 8 evidence
+checklist.
+
 ### Step 6 — Assemble the comparable sales analysis
 
 Use the `nsw-land-tax-comparables` skill for sourcing and screening if comps are
@@ -236,13 +249,29 @@ credentials, the report reference and date, the variance, the comparable count,
 the planning-proposal refusal date, the constraints. Do not introduce new claims
 in the narrative that are not supported earlier in the report.
 
+**This narrative must contain only the objection argument.** Never include
+internal process commentary, a verification-status label, a "NOTE FOR INTERNAL
+USE" aside, or any remark addressed to the preparer rather than the Valuer
+General — including deadline-lapsed status, which belongs in the Executive
+Summary and Priority Action Plan, never here, regardless of what facts precede
+it elsewhere in the report.
+
 ### Step 10 — Compile the evidence checklist and action plan
 
-List every evidence item with its **status** (Available / Confirmed / Pending)
-and the action to obtain it, then a dated **priority action plan**, most urgent
-first. Mark the single most critical action clearly (usually the 1 July
-confirmation addendum from the valuer), and make the payment action unmissable —
-the tax must be paid by the due date regardless of the objection.
+List every evidence item with its **status** and the action to obtain it, then a
+dated **priority action plan**, most urgent first. Mark the single most critical
+action clearly (usually the 1 July confirmation addendum from the valuer), and
+make the payment action unmissable — the tax must be paid by the due date
+regardless of the objection.
+
+**`evidence_checklist[].status` and `action_plan[].status` come from a closed
+vocabulary** (see "Auto-derived status colours" in `data_schema.md`): `AVAILABLE`,
+`CONFIRMED` (optionally qualified, e.g. "CONFIRMED IN CPV"), `PENDING` (add
+`— URGENT` for a genuinely blocking gap like the missing CPV valuation), `DUE`,
+`TARGET`, `DONE`. Never invent alternate phrasing like "Not obtained" or "Not yet
+actioned" — only these words are recognised by the report's color-coding, and a
+critical gap written as plain `PENDING` (amber) instead of `PENDING — URGENT`
+(red) under-signals how blocking it actually is.
 
 ---
 
@@ -254,6 +283,7 @@ the tax must be paid by the due date regardless of the objection.
 | **Specific — impermissible future/rezoning value (s.6A basis of land value)** | Land value must reflect the use lawfully permissible as at the relevant date. A rezoning refused (or merely proposed) before that date cannot be valued as if achieved | When a higher-density rezoning was refused or pending as at the relevant 1 July date |
 | **Supporting — constraint oversight** | The mass-appraisal benchmark / component factor is derived from a standard lot that does not share the subject's site-specific constraints | When the site carries constraints (zoning, vegetation, slope, shape, cost) a benchmark lot would not |
 | **Further — s.34(1)(b): factual error (area / dimensions / description)** | The VG's recorded area or description differs from the registered deposited plan(s) | Only if a title search reveals an area or description discrepancy |
+| **Person on notice does not own/lease/occupy the land** | The notice names an entity that does not correspond to the registered owner, lessee, or occupier | When a title/ABR/ASIC search shows the notice is directed at the wrong entity — cite *Valuation of Land Act 1916* (NSW) generally; **no specific subsection is confirmed for this ground in this reference — never invent one (e.g. do not write "s.34(1)(c)") unless it is supplied verbatim in the source material** |
 
 Frame the primary ground first and lead with the variance; deploy the others as
 supporting grounds beneath it.
@@ -267,7 +297,9 @@ supporting grounds beneath it.
   prominently and capture the early-payment discount if paid by the due date.
 - **The 60-day deadline is hard.** Calculate it from the notice date and state
   it. If it has lapsed, do not assume the objection can still be lodged — flag
-  the late-objection / extension question for direct confirmation with the VG.
+  the late-objection / extension question for direct confirmation with the VG,
+  in the Executive Summary and Priority Action Plan only — never inside the
+  Objection Narrative.
 - **Everything is assessed as at the relevant 1 July date** — zoning, DA status,
   overlays, and any planning proposal. Anchor every planning fact to that date.
 - **The CPV report is the primary evidence.** This consolidated report supports
@@ -296,13 +328,21 @@ Wrap it in a ` ```json ``` ` code fence. Return only the JSON — no other text,
   Mark any figure you have low confidence in as the string `"UNCONFIRMED"` in the value field.
   **Exception:** for `financial_scenarios[].taxable_value` and `.land_tax` (numeric fields), use
   `null` instead of `"UNCONFIRMED"` — the template renders `null` gracefully but will produce
-  `$NaN` for string values.
+  `$NaN` for string values. **Second exception:** `valuation.contended_value` — this is the firm's
+  own professional assessment, not a fact awaiting confirmation; state a real number whenever
+  comparable evidence supports one, even though independent CPV confirmation is still pending.
 - Use the `data_schema.md` for the exact field names and allowed types.
   Use the `section_guide.md` for what content belongs in each section and the legal/calculation rules.
 - Several string fields accept inline HTML via `| safe` — use `<span class="txt-amber">`,
   `<span class="txt-green">`, and `<span class="txt-red">` for conditional color formatting
   as described in `section_guide.md` under "Formatting & Color Conventions".
-- **Voice:** write all prose fields (`exec_summary.intro`, `objection_narrative` paragraphs,
-  `cpv.rate_analysis`, weakness `argument` values, `hbu.statement`) in the advocate's
-  first-person voice. The `exec_summary.intro` must open as a formal objection statement,
-  not a neutral description of the report.
+- **Voice:** write every prose field in the document — not only `exec_summary.intro`,
+  `objection_narrative` paragraphs, `cpv.rate_analysis`, weakness `argument` values, and
+  `hbu.statement`, but also `constraints[].impact`, `evidence_checklist[].notes`,
+  `action_plan[].how`, and `cover_facts`/`exec_summary.rows` values — in the advocate's
+  assertive first-person voice. The whole report should read as a case being presented,
+  not an internal audit or a to-do list, except Section 11 (Disclaimer), which is the one
+  place internal-limitations language belongs. The `exec_summary.intro` must open as a
+  formal objection statement, not a neutral description of the report. Genuinely
+  unconfirmed figures still say `"UNCONFIRMED"` — that is a factual-accuracy rule, separate
+  from tone.

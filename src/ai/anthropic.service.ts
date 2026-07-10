@@ -131,9 +131,28 @@ export class AnthropicService {
   parseJsonObject<T>(text: string): T {
     const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
     const source = fenceMatch ? fenceMatch[1] : text;
-    const jsonMatch = source.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error('No JSON object found in response');
-    return JSON.parse(jsonMatch[0]) as T;
+
+    const objectStart = source.indexOf('{');
+    if (objectStart === -1) throw new Error('No JSON object found in response');
+
+    let objectEnd = -1;
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    for (let i = objectStart; i < source.length; i++) {
+      const ch = source[i];
+      if (escaped) { escaped = false; continue; }
+      if (ch === '\\' && inString) { escaped = true; continue; }
+      if (ch === '"') { inString = !inString; continue; }
+      if (inString) continue;
+      if (ch === '{' || ch === '[') depth++;
+      else if (ch === '}' || ch === ']') { if (--depth === 0) { objectEnd = i; break; } }
+    }
+    if (objectEnd === -1) {
+      throw new Error('JSON object was not properly closed — the response was likely truncated (check stopReason for "max_tokens")');
+    }
+
+    return JSON.parse(source.slice(objectStart, objectEnd + 1)) as T;
   }
 
   parseJsonArray<T>(text: string): T[] {

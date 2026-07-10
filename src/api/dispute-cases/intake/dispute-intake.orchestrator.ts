@@ -19,6 +19,7 @@ import { PdfStorageHandler } from './pdf-storage.handler';
 import { AzureEmailService } from 'src/common/azure-email/azure-email.service';
 import { AccountantNotFoundException } from '../exceptions/accountant-not-found.exception';
 import { Client, ClientStatus } from '../../clients/entities/client.entity';
+import { parseNswAddressComponents } from 'src/common/utils/address-parser.util';
 
 interface PropertyFlags {
   flag_heritage: boolean;
@@ -77,6 +78,13 @@ export class DisputeIntakeOrchestrator {
     const caseReferences: string[] = [];
     const propertyAddresses: string[] = [];
 
+    // noticeDate/statutoryDeadline are intake-level (shared across all properties in this
+    // submission), so the freshness check only needs to run once rather than per-property.
+    const { authoritativeDeadline, deadlineLapsed } = this.resolveStatutoryDeadline(
+      intakeDto.noticeDate,
+      intakeDto.statutoryDeadline,
+    );
+
     for (const prop of intakeDto.properties) {
       const property = await this.createProperty(client.id, prop);
 
@@ -88,8 +96,8 @@ export class DisputeIntakeOrchestrator {
       const caseReference = await this.generateCaseReference();
 
       const flags = this.mapConstraintsToFlags(prop.constraints ?? []);
-      const notice = await this.createValuationNotice(property.id, prop.valuation_notice, intakeDto.valuationYear, assessmentDocument.id);
-      const disputeCase = await this.createDisputeCase(client as Client, property.id, notice.id, caseReference, prop.state, prop.valuation_notice.assessed_land_value, intakeDto, flags);
+      const notice = await this.createValuationNotice(property.id, prop.valuation_notice, intakeDto.valuationYear, assessmentDocument.id, intakeDto.noticeDate);
+      const disputeCase = await this.createDisputeCase(client as Client, property.id, notice.id, caseReference, prop.state, prop.valuation_notice.assessed_land_value, intakeDto, flags, authoritativeDeadline, deadlineLapsed);
 
       await this.createLegalGrounds(disputeCase.id, prop.grounds ?? []);
       caseReferences.push(caseReference);
@@ -97,10 +105,41 @@ export class DisputeIntakeOrchestrator {
     }
 
     if (caseReferences.length > 0) {
-      await this.notifyAssessors(caseReferences, propertyAddresses, intakeDto.fullName, intakeDto.accountantId);
+      await this.notifyAssessors(caseReferences, propertyAddresses, intakeDto.fullName, intakeDto.accountantId, deadlineLapsed, authoritativeDeadline);
     }
 
     return { case_references: caseReferences };
+  }
+
+  /**
+   * The frontend pre-computes statutoryDeadline = noticeDate + 60 days and sends both values in,
+   * but nothing previously checked that arithmetic server-side, or whether the result was already
+   * in the past. Recompute independently and prefer the server value on any material disagreement.
+   */
+  private resolveStatutoryDeadline(
+    noticeDateStr: string,
+    statutoryDeadlineStr: string,
+  ): { authoritativeDeadline: Date; deadlineLapsed: boolean } {
+    const frontendDeadline = new Date(statutoryDeadlineStr);
+    let authoritativeDeadline = frontendDeadline;
+
+    const noticeIssueDate = new Date(noticeDateStr);
+    if (!isNaN(noticeIssueDate.getTime())) {
+      const recomputed = new Date(noticeIssueDate);
+      recomputed.setDate(recomputed.getDate() + 60);
+      const diffDays = Math.abs((recomputed.getTime() - frontendDeadline.getTime()) / 86_400_000);
+      if (diffDays > 1) {
+        this.logger.warn(
+          `[INTAKE] statutoryDeadline mismatch — frontend=${statutoryDeadlineStr}, ` +
+          `server-recomputed=${recomputed.toISOString().split('T')[0]} (noticeDate=${noticeDateStr}). ` +
+          `Using server-recomputed value as authoritative.`,
+        );
+        authoritativeDeadline = recomputed;
+      }
+    }
+
+    const deadlineLapsed = authoritativeDeadline.getTime() < Date.now();
+    return { authoritativeDeadline, deadlineLapsed };
   }
 
   private mapConstraintsToFlags(constraints: string[]): PropertyFlags {
@@ -119,14 +158,20 @@ export class DisputeIntakeOrchestrator {
     _filePath: string | null,
     documentName = 'Land Tax Assessment Notice',
   ): Promise<AssessmentDocument> {
-    return this.assessmentDocumentsService.createInitialRecord(clientId, documentName);
+    // dispute_case_id intentionally null — this document is created before any per-property
+    // DisputeCase exists (the case-creation loop runs later, per property); one intake can spawn
+    // multiple cases sharing this single notice document, so it cannot be scoped to one case here.
+    return this.assessmentDocumentsService.createInitialRecord(clientId, documentName, null);
   }
 
   private async createProperty(clientId: string, prop: IntakePropertyDto): Promise<Property> {
     const property = this.propertiesRepository.create({
       client_id: clientId,
       address: prop.address,
-      suburb: prop.address.split(',')[1]?.trim() || '',
+      suburb:
+        parseNswAddressComponents(prop.address).suburb ??
+        prop.address.split(',')[1]?.trim().toUpperCase() ??
+        '',
       state: prop.state,
       postcode: '',
       pid: prop.pid,
@@ -140,10 +185,12 @@ export class DisputeIntakeOrchestrator {
     valuationNotice: IntakeValuationNoticeDto,
     valuationYear: string,
     sourceDocumentId: string,
+    noticeDate: string,
   ): Promise<ValuationNotice> {
     const notice = this.valuationNoticesRepository.create({
       property_id: propertyId,
       valuation_date: new Date(valuationNotice.valuation_date),
+      notice_issue_date: new Date(noticeDate),
       assessed_land_value: valuationNotice.assessed_land_value ?? null,
       is_exempt: valuationNotice.assessed_land_value === null ? true : false,
       notice_reference: `INTAKE-${valuationYear}-${Date.now()}`,
@@ -161,6 +208,8 @@ export class DisputeIntakeOrchestrator {
     assessedLandValue: number | null,
     intakeDto: CreateDisputeIntakeDto,
     flags: PropertyFlags,
+    statutoryDeadline: Date,
+    deadlineLapsedFlagged: boolean,
   ): Promise<DisputeCase> {
     const disputeCase = this.disputeCasesRepository.create({
       case_reference: caseReference,
@@ -170,7 +219,8 @@ export class DisputeIntakeOrchestrator {
       assigned_accountant_id: intakeDto.accountantId,
       jurisdiction,
       status: client.status === ClientStatus.PROSPECT ? DisputeStatus.PENDING_TNC : DisputeStatus.DRAFT,
-      statutory_deadline: new Date(intakeDto.statutoryDeadline),
+      statutory_deadline: statutoryDeadline,
+      deadline_lapsed_flagged: deadlineLapsedFlagged,
       original_assessed_value: assessedLandValue,
       notes: intakeDto.addNotes || null,
       ...flags,
@@ -192,17 +242,33 @@ export class DisputeIntakeOrchestrator {
     if (!accountant) throw new AccountantNotFoundException(accountantId);
   }
 
-  private async notifyAssessors(caseReferences: string[], propertyAddresses: string[], clientName: string, accountantId?: string): Promise<void> {
+  private async notifyAssessors(
+    caseReferences: string[],
+    propertyAddresses: string[],
+    clientName: string,
+    accountantId?: string,
+    deadlineLapsed = false,
+    statutoryDeadline?: Date,
+  ): Promise<void> {
+    const deadlineLapsedWarning = deadlineLapsed
+      ? `This case's statutory objection deadline (${statutoryDeadline?.toISOString().split('T')[0] ?? 'unknown'}) has already passed. Confirm with Revenue NSW whether a late objection can still be lodged before proceeding.`
+      : undefined;
     if (accountantId) {
-      await this.notifyInternalAssessor(caseReferences, propertyAddresses, clientName, accountantId);
+      await this.notifyInternalAssessor(caseReferences, propertyAddresses, clientName, accountantId, deadlineLapsedWarning);
       return;
     }
     const assessorEmail = this.config.get<string>('ASSESSOR_EMAIL');
     if (!assessorEmail) return;
-    await this.azureEmailService.sendDisputeApplication(caseReferences, assessorEmail, { clientName, propertyAddresses });
+    await this.azureEmailService.sendDisputeApplication(caseReferences, assessorEmail, { clientName, propertyAddresses, deadlineLapsedWarning });
   }
 
-  private async notifyInternalAssessor(caseReferences: string[], propertyAddresses: string[], clientName: string, accountantId: string): Promise<void> {
+  private async notifyInternalAssessor(
+    caseReferences: string[],
+    propertyAddresses: string[],
+    clientName: string,
+    accountantId: string,
+    deadlineLapsedWarning?: string,
+  ): Promise<void> {
     const user = await this.usersRepository.findOne({ where: { id: accountantId } });
     if (!user) {
       this.logger.warn(`Accountant with ID ${accountantId} not found. Skipping email notification.`);
@@ -212,6 +278,7 @@ export class DisputeIntakeOrchestrator {
       clientName,
       propertyAddresses,
       assessorName: user.fullName,
+      deadlineLapsedWarning,
     });
   }
 
