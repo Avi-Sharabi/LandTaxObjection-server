@@ -68,7 +68,7 @@ export class EnvironmentalImpactsService {
       return { environmental_impacts: toIssueResult(result) };
     } catch (err: unknown) {
       this.logger.error(`[ENVIRONMENTAL] Fatal: ${(err as Error).message}`);
-      return { environmental_impacts: { tick: false, confidence: 'MANUAL_REVIEW_REQUIRED', trigger: null, text_box_content: null, documents_to_attach: [] } };
+      return { environmental_impacts: { tick: false, confidence: 'MANUAL_REVIEW_REQUIRED', verification_status: 'AI_DETECTED_UNVERIFIED', trigger: null, text_box_content: null, documents_to_attach: [] } };
     }
   }
 }

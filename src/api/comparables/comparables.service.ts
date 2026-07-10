@@ -5,6 +5,9 @@ import { Repository, DataSource } from 'typeorm';
 import { plainToInstance } from 'class-transformer';
 import { isAxiosError } from 'axios';
 import { ComparableSale } from './entities/comparable-sale.entity';
+import { NswLocalityCentroid } from './entities/nsw-locality-centroid.entity';
+import { GeocodingService } from '../supporting-evidence/shared/geocoding.service';
+import { haversineDistanceKm } from '../../common/utils/geo-distance.util';
 import { AnthropicService, ANTHROPIC_MODEL } from 'src/ai/anthropic.service';
 import { CreateComparableDto } from './dto/create-comparable.dto';
 import { ComparableResponseDto } from './dto/comparable-response.dto';
@@ -27,21 +30,32 @@ import { buildUserPrompt, SubjectContext } from './comparables.prompts';
 
 const MAX_CANDIDATE_SALES = 80;
 
+// Real-distance gate applied after the postcode-prefix SQL pre-filter — NSW postcode
+// prefixes are not geographically contiguous (e.g. "203" spans both the eastern suburbs
+// and the inner west), so the SQL tiers alone are not sufficient to guarantee proximity.
+// Round 2 uses a wider radius since it only runs when Round 1 found too few candidates.
+const ROUND1_MAX_KM = 3;
+const ROUND2_MAX_KM = 8;
+
 
 @Injectable()
 export class ComparablesService implements OnModuleInit {
   private readonly logger = new Logger(ComparablesService.name);
   private skillContent = '';
   private schemaBlock = '';
+  private centroidCache = new Map<string, { lat: number; lng: number }>();
 
   constructor(
     @InjectRepository(ComparableSale)
     private readonly comparablesRepository: Repository<ComparableSale>,
     @InjectRepository(DisputeCase)
     private readonly disputeCasesRepository: Repository<DisputeCase>,
+    @InjectRepository(NswLocalityCentroid)
+    private readonly centroidsRepository: Repository<NswLocalityCentroid>,
     @InjectDataSource() private readonly dataSource: DataSource,
     private readonly skillRegistry: SkillRegistryService,
     private readonly anthropic: AnthropicService,
+    private readonly geocoding: GeocodingService,
   ) { }
 
   private logEvent(context: string, data: Record<string, unknown>): void {
@@ -62,6 +76,99 @@ export class ComparablesService implements OnModuleInit {
       .map((r) => `  ${r.column_name} (${r.data_type}${r.is_nullable === 'YES' ? ', nullable' : ''})`)
       .join('\n');
     this.logger.log(`[INIT] Skill loaded (${this.skillContent.length} chars), schema loaded (${schemaRows.length} columns)`);
+
+    try {
+      const centroids = await this.centroidsRepository.find();
+      for (const c of centroids) {
+        this.centroidCache.set(c.locality, { lat: Number(c.lat), lng: Number(c.lng) });
+      }
+      this.logger.log(`[INIT] Loaded ${centroids.length} NSW locality centroids`);
+    } catch (err) {
+      this.logger.warn(`[INIT] Failed to load locality centroids: ${(err as Error).message}`);
+    }
+  }
+
+  /**
+   * Resolves a lat/lng centroid for a locality name, backed by the nsw_locality_centroids
+   * cache and falling back to a live geocode (persisted for next time) on a cache miss.
+   * Returns null (rather than a guessed value) when the locality cannot be resolved at all —
+   * callers must treat that as "unknown distance", never as "nearby".
+   */
+  private async resolveCentroid(
+    locality: string | null | undefined,
+    correlationId?: string,
+  ): Promise<{ lat: number; lng: number } | null> {
+    const key = (locality ?? '').trim().toUpperCase();
+    if (!key) return null;
+
+    const cached = this.centroidCache.get(key);
+    if (cached) return cached;
+
+    try {
+      const coords = await this.geocoding.geocode(`${key}, NSW, Australia`);
+      this.centroidCache.set(key, coords);
+      this.centroidsRepository
+        .upsert({ locality: key, lat: coords.lat, lng: coords.lng, source: 'arcgis', geocoded_at: new Date() }, ['locality'])
+        .catch((err) => this.logger.warn(`[GENERATE] Failed to persist centroid for "${key}": ${(err as Error).message}`));
+      return coords;
+    } catch (err) {
+      this.logEvent('GENERATE.centroid_unresolved', { correlationId, locality: key, error: (err as Error).message });
+      return null;
+    }
+  }
+
+  private async resolveSubjectCentroid(
+    subject: SubjectContext,
+    correlationId?: string,
+  ): Promise<{ lat: number; lng: number } | null> {
+    if (subject.lat != null && subject.lng != null) {
+      return { lat: subject.lat, lng: subject.lng };
+    }
+    return this.resolveCentroid(subject.suburb, correlationId);
+  }
+
+  /**
+   * Hard geographic gate — drops any candidate whose locality centroid can't be resolved,
+   * or is beyond maxKm from the subject. This runs before candidates ever reach the LLM
+   * prompt, so bad-geography rows are excluded rather than relying on the model to notice.
+   */
+  private async filterByDistance(
+    candidates: Record<string, unknown>[],
+    subjectCentroid: { lat: number; lng: number } | null,
+    maxKm: number,
+    correlationId?: string,
+  ): Promise<Record<string, unknown>[]> {
+    if (!subjectCentroid) {
+      this.logger.warn('[GENERATE] Subject centroid could not be resolved — skipping distance gate for this round');
+      return candidates;
+    }
+
+    const kept: Record<string, unknown>[] = [];
+    let droppedTooFar = 0;
+    let droppedUnresolved = 0;
+    for (const candidate of candidates) {
+      const centroid = await this.resolveCentroid(candidate.property_locality as string, correlationId);
+      if (!centroid) {
+        droppedUnresolved++;
+        continue;
+      }
+      const distanceKm = haversineDistanceKm(subjectCentroid.lat, subjectCentroid.lng, centroid.lat, centroid.lng);
+      if (distanceKm > maxKm) {
+        droppedTooFar++;
+        continue;
+      }
+      kept.push({ ...candidate, _distanceKm: distanceKm });
+    }
+
+    this.logEvent('GENERATE.distance_filter', {
+      correlationId,
+      maxKm,
+      input: candidates.length,
+      kept: kept.length,
+      droppedTooFar,
+      droppedUnresolved,
+    });
+    return kept;
   }
 
   async create(
@@ -158,23 +265,29 @@ export class ComparablesService implements OnModuleInit {
     const subject = this.resolveSubjectContext(dto, disputeCase);
     this.logEvent('GENERATE.subject', { correlationId, subject });
 
+    const subjectCentroid = await this.resolveSubjectCentroid(subject, correlationId);
+
     const vgRate = subject.landAreaSqm && subject.landAreaSqm > 0
       ? Math.round(subject.vgValueCurrent / subject.landAreaSqm)
       : null;
 
-    // Round 1: suburb-scoped candidates
+    // Round 1: suburb-scoped candidates, gated to genuinely nearby sales by real distance —
+    // the SQL tiers (suburb/postcode/postcode-prefix) are a performance pre-filter only.
     const candidates = await this.prefetchCandidateSales(subject, correlationId);
-    const round1 = await this.runComparableRound(candidates, subject, vgRate, correlationId);
+    const geoFilteredCandidates = await this.filterByDistance(candidates, subjectCentroid, ROUND1_MAX_KM, correlationId);
+    const round1 = await this.runComparableRound(geoFilteredCandidates, subject, vgRate, ROUND1_MAX_KM, correlationId);
     let allSupporting = round1.supporting;
 
-    // Round 2: broaden to postcode-prefix zone if fewer than 4 supporting found
+    // Round 2: broaden to postcode-prefix zone if fewer than 4 supporting found — still gated
+    // by distance (a wider radius), since the broadened SQL query drops the suburb constraint entirely.
     const MIN_SUPPORTING = 4;
     if (vgRate !== null && allSupporting.length < MIN_SUPPORTING) {
       this.logEvent('GENERATE.broadening_search', { correlationId, currentCount: allSupporting.length });
       const seenIds = new Set(candidates.map(c => c.id));
       const broadCandidates = await this.prefetchBroadCandidateSales(subject, seenIds, correlationId);
-      if (broadCandidates.length > 0) {
-        const round2 = await this.runComparableRound(broadCandidates, subject, vgRate, correlationId);
+      const geoFilteredBroad = await this.filterByDistance(broadCandidates, subjectCentroid, ROUND2_MAX_KM, correlationId);
+      if (geoFilteredBroad.length > 0) {
+        const round2 = await this.runComparableRound(geoFilteredBroad, subject, vgRate, ROUND2_MAX_KM, correlationId);
         allSupporting = [...allSupporting, ...round2.supporting];
       }
     }
@@ -197,11 +310,12 @@ export class ComparablesService implements OnModuleInit {
     candidates: Record<string, unknown>[],
     subject: SubjectContext,
     vgRate: number | null,
+    maxDistanceKm: number,
     correlationId: string | undefined,
   ): Promise<{ enriched: Record<string, unknown>[]; supporting: Record<string, unknown>[] }> {
     if (candidates.length === 0) return { enriched: [], supporting: [] };
 
-    const userPrompt = buildUserPrompt(subject, candidates);
+    const userPrompt = buildUserPrompt(subject, candidates, maxDistanceKm);
     const systemPrompt = `${this.skillContent}\n\n## property_sales_raw schema (do NOT call list_tables or describe_table — query directly)\n\`\`\`\n${this.schemaBlock}\n\`\`\``;
 
     this.logEvent('GENERATE.anthropic.start', { correlationId, systemPromptLength: systemPrompt.length, candidateCount: candidates.length });
@@ -344,8 +458,8 @@ export class ComparablesService implements OnModuleInit {
     if (!valuationDate) throw new MissingValuationDateException(disputeCase.id);
     return {
       pid: dto.pid ?? disputeCase.property?.pid ?? 'unknown',
-      suburb: (dto.suburb ?? disputeCase.property?.suburb ?? '').trim().toUpperCase(),
-      postcode: dto.postcode ?? disputeCase.property?.postcode ?? null,
+      suburb: (dto.suburb || disputeCase.property?.suburb || '').trim().toUpperCase(),
+      postcode: dto.postcode || disputeCase.property?.postcode || null,
       landAreaSqm:
         dto.land_area_sqm
         ?? (Number(vn?.land_area_vg_sqm) || null)
@@ -359,6 +473,8 @@ export class ComparablesService implements OnModuleInit {
       vgValuePrior: dto.vg_land_value_prior ?? (Number(vn?.prior_land_value) || 0),
       landAreaVgSqm: dto.land_area_vg_sqm ?? (Number(vn?.land_area_vg_sqm) || null),
       valuationDate,
+      lat: dto.lat ?? null,
+      lng: dto.lng ?? null,
     };
   }
 
@@ -512,9 +628,15 @@ export class ComparablesService implements OnModuleInit {
 
     const sameSuburb = subject.suburb &&
       String(candidate.property_locality ?? '').trim().toUpperCase() === subject.suburb.toUpperCase();
+    const distanceKm = typeof candidate._distanceKm === 'number' ? candidate._distanceKm : null;
+    const proximityLabel = sameSuburb
+      ? 'Same suburb'
+      : distanceKm != null
+        ? `Nearby suburb (${distanceKm.toFixed(1)}km away)`
+        : 'Nearby suburb';
     const areaRatioPct = Math.round(Math.abs(area - subject.landAreaSqm) / subject.landAreaSqm * 100);
     const similarityLine = [
-      sameSuburb ? 'Same suburb' : 'Nearby suburb',
+      proximityLabel,
       `same ${candidate.zoning} zoning`,
       `${areaRatioPct}% ${area > subject.landAreaSqm ? 'larger' : 'smaller'} (${area.toLocaleString()}m² vs ${subject.landAreaSqm.toLocaleString()}m² subject)`,
     ].join(' · ');

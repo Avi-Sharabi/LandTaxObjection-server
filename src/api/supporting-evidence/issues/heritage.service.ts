@@ -69,7 +69,7 @@ export class HeritageService {
     } catch (err: unknown) {
       this.logger.error(`[HERITAGE] Fatal: ${(err as Error).message}`);
       return {
-        heritage: { tick: false, trigger: null, confidence: 'MANUAL_REVIEW_REQUIRED', text_box_content: null, documents_to_attach: [], heritage_interpreted: { notes: `Error: ${(err as Error).message}` } },
+        heritage: { tick: false, trigger: null, confidence: 'MANUAL_REVIEW_REQUIRED', verification_status: 'AI_DETECTED_UNVERIFIED', text_box_content: null, documents_to_attach: [], heritage_interpreted: { notes: `Error: ${(err as Error).message}` } },
         rawData: { heritage_arcgis_items: null, heritage_layers: [] },
       };
     }

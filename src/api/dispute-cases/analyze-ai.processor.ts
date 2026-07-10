@@ -20,6 +20,7 @@ import {
 import { ValuationCtxCacheService } from './valuation-ctx-cache.service';
 import { DisputeAiSnapshot } from './entities/dispute-ai-snapshot.entity';
 import { DisputeCasesService } from './dispute-cases.service';
+import { parseNswAddressComponents } from 'src/common/utils/address-parser.util';
 
 export const ANALYZE_AI_QUEUE = 'analyze-ai';
 
@@ -93,6 +94,11 @@ export class AnalyzeAiProcessor extends WorkerHost {
         ));
         // Cache ctx so the regenerate-valuation-report endpoint can restore planning context without re-running the pipeline
         await this.ctxCacheService.save(disputeCaseId, ctx);
+        // Persist the resolved cadastre lot area so the report generator has it — previously this
+        // value was resolved successfully here but discarded before ever reaching the report.
+        if (ctx.lotAreaM2) {
+          await this.aiPropertySearchService.persistEplanningArea(disputeCaseId, ctx.lotAreaM2);
+        }
       }
 
       // Guard B: skip browser run if a snapshot is active (test data) OR entityEvidence already provided.
@@ -158,15 +164,16 @@ export class AnalyzeAiProcessor extends WorkerHost {
             disputeCaseId,
           }),
         );
-        const addrMatch = ctx.confirmedAddress.match(
-          /^.+\s+([A-Z][A-Z\s]+)\s+(\d{4})\s*$/i,
-        );
-        if (!addrMatch)
+        const { suburb: parsedSuburb, postcode: parsedPostcode } =
+          parseNswAddressComponents(ctx.confirmedAddress);
+        if (!parsedSuburb || !parsedPostcode)
           this.logger.warn(
             JSON.stringify({
               context: 'ANALYZE_AI.addr_parse_failed',
               jobId: job.id,
               confirmedAddress: ctx.confirmedAddress,
+              parsedSuburb,
+              parsedPostcode,
             }),
           );
         const zoningLayer = ctx.apiData.layers?.find(
@@ -184,11 +191,13 @@ export class AnalyzeAiProcessor extends WorkerHost {
             dispute_case_id: disputeCaseId,
             land_area_sqm: aiPropertyDetails?.land_area_sqm ?? undefined,
             land_area_eplanning_sqm: ctx.lotAreaM2 ?? undefined,
-            suburb: addrMatch?.[1]?.trim().toUpperCase() ?? undefined,
-            postcode: addrMatch?.[2] ?? undefined,
+            suburb: parsedSuburb,
+            postcode: parsedPostcode,
             zoning: zoningCode ?? undefined,
             lot_dp: lotDp,
             height_limit_m: ctx.meta.height_limit_m ?? undefined,
+            lat: ctx.lat ?? undefined,
+            lng: ctx.lng ?? undefined,
           },
           userId,
         );

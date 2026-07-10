@@ -24,6 +24,18 @@ export class DisputeObjectionReason {
   @Column({ type: 'text', nullable: true, name: 'concession_type_note' })
   concession_type_note: string | null;
 
+  // 'PORTAL_TYPE' when concession_type is a genuine match from the VG portal's fixed radio-button
+  // list; 'NO_MATCHING_PORTAL_TYPE' when the true finding (e.g. a flood/environmental constraint
+  // discount) has no corresponding portal option — concession_type stays null in that case rather
+  // than being force-mapped onto an unrelated section.
+  @Column({ type: 'text', nullable: true, name: 'concession_classification' })
+  concession_classification: string | null;
+
+  // 'AI_DETECTED_UNVERIFIED' | 'EVIDENCE_OBTAINED' | 'CLIENT_CONFIRMED' — distinct from confidence:
+  // this records whether the finding has actually been corroborated, not how confident the model is.
+  @Column({ type: 'text', nullable: true, name: 'verification_status' })
+  verification_status: string | null;
+
   @Column({ type: 'text', nullable: true })
   analysis: string | null;
 

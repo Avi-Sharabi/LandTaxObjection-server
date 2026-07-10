@@ -16,6 +16,7 @@ import {
   InputComparable,
   BenchmarkReport,
   LandTaxNotice,
+  CaseDocumentSummary,
 } from './supporting-evidence.types';
 
 const FOLDER = 'supporting-evidence';
@@ -25,6 +26,7 @@ interface InputDocuments {
   inputBenchmarkReport: BenchmarkReport | null;
   landTaxNotice: LandTaxNotice | null;
   rawTexts: string[];
+  caseDocuments: CaseDocumentSummary[];
 }
 
 @Injectable()
@@ -46,7 +48,10 @@ export class PropertyContextService {
     disputeCaseId: string,
     address: string,
   ): Promise<{ ctx: SupportingEvidenceContext; artifactDocIds: Map<string, string> }> {
-    const disputeCase = await this.disputeCasesRepository.findOne({ where: { id: disputeCaseId } });
+    const disputeCase = await this.disputeCasesRepository.findOne({
+      where: { id: disputeCaseId },
+      relations: ['valuation_notice'],
+    });
     if (!disputeCase) {
       this.logger.error(`[CTX] Dispute case ${disputeCaseId} not found — cannot save artifacts`);
       throw new EvidenceDisputeCaseNotFoundException(disputeCaseId);
@@ -135,18 +140,26 @@ export class PropertyContextService {
       inputDocumentsText: inputDocs.rawTexts,
       entityEvidence: null,
       evidenceResult: null,
+      caseDocuments: inputDocs.caseDocuments,
     };
   }
 
   async fetchInputDocuments(disputeCase: DisputeCase | null): Promise<InputDocuments> {
-    if (!disputeCase) return { salesComparables: [], inputBenchmarkReport: null, landTaxNotice: null, rawTexts: [] };
+    if (!disputeCase) {
+      return { salesComparables: [], inputBenchmarkReport: null, landTaxNotice: null, rawTexts: [], caseDocuments: [] };
+    }
 
-    const docs = await this.assessmentDocumentsService.findByClientId(disputeCase.client_id);
+    const docs = await this.assessmentDocumentsService.findForCase(
+      disputeCase.id,
+      disputeCase.client_id,
+      disputeCase.valuation_notice?.source_document_id ?? null,
+    );
 
     let landTaxNotice: LandTaxNotice | null = null;
     let inputBenchmarkReport: BenchmarkReport | null = null;
     const salesComparables: InputComparable[] = [];
     const rawTexts: string[] = [];
+    const classifiedTypeByDocId = new Map<string, string>();
 
     const processed = await Promise.all(
       docs.map(async (doc) => {
@@ -155,7 +168,7 @@ export class PropertyContextService {
           const buffer = await this.azureBlobService.getFileContent(doc.file_path);
           const rawText = await this.pdfExtractor.parseBuffer(buffer);
           const result = await this.pdfExtractor.classifyAndExtractDocument(buffer, doc.document_name);
-          return { rawText, result };
+          return { docId: doc.id, rawText, result };
         } catch (e) {
           this.logger.warn(`Failed to process assessment doc ${doc.id}: ${(e as Error).message}`);
           return null;
@@ -167,6 +180,7 @@ export class PropertyContextService {
       if (!item) continue;
       if (item.rawText?.trim()) rawTexts.push(item.rawText);
       if (!item.result) continue;
+      classifiedTypeByDocId.set(item.docId, item.result.document_type);
       if (item.result.document_type === 'land_tax_notice') {
         landTaxNotice = item.result as unknown as LandTaxNotice;
       } else if (item.result.document_type === 'benchmark_report') {
@@ -178,7 +192,17 @@ export class PropertyContextService {
       }
     }
 
-    return { salesComparables, inputBenchmarkReport, landTaxNotice, rawTexts };
+    // Existence is recorded for every document regardless of classification outcome — a document
+    // whose content we can't parse (or don't yet recognise) still needs to show as "on file" for
+    // the report's Evidence Checklist, rather than silently vanishing.
+    const caseDocuments: CaseDocumentSummary[] = docs.map((doc) => ({
+      id: doc.id,
+      document_name: doc.document_name,
+      created_at: doc.created_at.toISOString(),
+      document_type: classifiedTypeByDocId.get(doc.id) ?? 'unknown',
+    }));
+
+    return { salesComparables, inputBenchmarkReport, landTaxNotice, rawTexts, caseDocuments };
   }
 
   private async saveInitialArtifacts(
@@ -193,7 +217,7 @@ export class PropertyContextService {
         this.logger.warn(`Azure uploadFile returned null for ${blobPath}`);
         return;
       }
-      const doc = await this.assessmentDocumentsService.createArtifactRecord(clientId, documentName, filePath);
+      const doc = await this.assessmentDocumentsService.createArtifactRecord(clientId, documentName, filePath, disputeCaseId);
       artifactDocIds.set(key, doc.id);
     };
 

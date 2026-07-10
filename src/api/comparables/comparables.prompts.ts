@@ -11,11 +11,14 @@ export interface SubjectContext {
   vgValuePrior: number;
   landAreaVgSqm: number | null;
   valuationDate: string;
+  lat: number | null;
+  lng: number | null;
 }
 
 export function buildUserPrompt(
   subject: SubjectContext,
   candidates: Record<string, unknown>[],
+  maxDistanceKm: number,
 ): string {
   const yoyPct = subject.vgValuePrior > 0
     ? (((subject.vgValueCurrent - subject.vgValuePrior) / subject.vgValuePrior) * 100).toFixed(1)
@@ -73,7 +76,7 @@ Return ONLY a valid JSON array with no markdown or prose. Each element must cont
 id, property_id, district_code, property_house_number, property_street_name, property_locality, property_post_code, area, zoning, nature_of_property, primary_purpose, component_code, sale_code, interest_of_sale_percent, contract_date, purchase_price, dealing_number, owner_type, adjusted_rate_per_sqm, adjusted_land_value, suggested_land_value, explanation.
 
 ${hasCandidates
-    ? `CANDIDATE SALES (${candidates.length} records — pre-filtered to the subject's suburb, postcode, and immediate postcode corridor with same zoning; treat all as geographically relevant):
+    ? `CANDIDATE SALES (${candidates.length} records — pre-filtered to the subject's suburb/postcode corridor with same zoning, AND server-side verified to be within ${maxDistanceKm}km of the subject property by real geocoded distance (see each record's _distanceKm field). Geographic relevance has already been confirmed — you do not need to second-guess proximity, but you should still prefer the closest/most similar records when selecting):
 ${JSON.stringify(candidates)}
 
 If you still have fewer than 5 records with non-null purchase_price and area after reviewing all candidates, use the search_comparable_sales MCP tool to expand the search. Use database tools at most 3 times.`

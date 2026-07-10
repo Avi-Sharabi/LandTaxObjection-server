@@ -111,7 +111,7 @@ Filename: ${filename}
 
 Return JSON matching one of these schemas (no commentary, no markdown). Extract ALL dollar amounts as plain integers.
 
-If LAND TAX ASSESSMENT NOTICE: { "document_type": "land_tax_notice", "owner": "string", "issue_date": "string", "properties": [{ "address": "string", "property_id": "string", "land_values": { "2024": number_or_null, "2025": number_or_null, "2026": number_or_null } }], "total_aggregated_value": number_or_null }
+If LAND TAX ASSESSMENT NOTICE: { "document_type": "land_tax_notice", "owner": "string", "issue_date": "string", "properties": [{ "address": "string", "property_id": "string", "land_values": { "2024": number_or_null, "2025": number_or_null, "2026": number_or_null } }], "total_aggregated_value": number_or_null, "land_tax_payable": number_or_null, "arrears": number_or_null, "interest": number_or_null, "total_amount_payable": number_or_null, "payment_due_date": "string_or_null" }
 If BENCHMARK COMPONENT REPORT: { "document_type": "benchmark_report", "component": "string", "base_date": "string", "component_factor": number_or_null, "benchmarks": [], "sales": [{ "address": "string", "area_m2": number, "zone": "string", "analysed_land_value": number, "rate_per_m2": number, "contract_date": "string" }] }
 If VALUATION SALES REPORT: { "document_type": "sales_report", "base_date": "string", "sales": [{ "address": "string", "area_m2": number, "zone": "string", "analysed_land_value": number, "rate_per_m2": number, "contract_date": "string" }] }
 If none: { "document_type": "unknown" }

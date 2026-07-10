@@ -38,6 +38,9 @@ interface GroundForSynthesis {
   groundNumber: number;
   label: string;
   evidenceFiles: string[];
+  // Human-readable source names, index-paired with evidenceFiles — shown to the LLM in place of
+  // the raw document UUIDs so ground narratives never echo an internal identifier.
+  evidenceLabels: string[];
   analysis: string;
 }
 
@@ -157,20 +160,22 @@ export class ObjectionReasonBrowserService implements OnModuleInit {
     return this.fail(MAX_STEPS, 'Max iterations reached without completing task');
   }
 
-  async synthesiseEvidence(ground: GroundForSynthesis): Promise<{ bestFile: string; analysis: string } | null> {
-    const items = ground.evidenceFiles.map((f, i) => `${i + 1}. ${f}`).join('\n');
+  async synthesiseEvidence(ground: GroundForSynthesis): Promise<{ bestIndex: number; analysis: string } | null> {
+    const items = ground.evidenceFiles
+      .map((_, i) => `${i + 1}. ${ground.evidenceLabels[i] ?? 'Unnamed source'}`)
+      .join('\n');
 
     const prompt = `You are a legal analyst reviewing evidence for an NSW land tax objection.
 
 Ground ${ground.groundNumber}: "${ground.label}"
 
-Evidence files collected:
+Evidence sources collected:
 ${items}
 
 Agent analysis notes:
 ${ground.analysis}
 
-Pick the single most relevant file for the portal submission. Prefer in this order:
+Pick the single most relevant source for the portal submission. Prefer in this order:
 1. ABR/ASIC record showing entity type as "Fixed Unit Trust" or "Unit Trust" — strongest direct evidence
 2. Revenue NSW's own published position or test
 3. NSW legislation (LTMA s3A, s9B)
@@ -178,7 +183,7 @@ Pick the single most relevant file for the portal submission. Prefer in this ord
 5. Case law, comparative jurisdictions, procedural sources
 
 Respond ONLY as JSON (no markdown, no extra text):
-{"bestFile":"<exact filename from the list above>","analysis":"<2-3 sentences stating what the evidence establishes as a fact. Name the data source not the filename. Formal language.>"}`;
+{"bestIndex":<the number (1-based) of the best source from the list above>,"analysis":"<2-3 sentences stating what the evidence establishes as a fact. Name the data source, not a file or document identifier. Formal language.>"}`;
 
     try {
       const response = await this.client.messages.create({
@@ -190,7 +195,7 @@ Respond ONLY as JSON (no markdown, no extra text):
       const text = response.content?.find(b => b.type === 'text')?.text ?? '';
       const match = text.match(/\{[\s\S]*\}/);
       if (!match) return null;
-      return JSON.parse(match[0]) as { bestFile: string; analysis: string };
+      return JSON.parse(match[0]) as { bestIndex: number; analysis: string };
     } catch (err: unknown) {
       this.logger.error(`synthesiseEvidence failed for Ground ${ground.groundNumber}: ${(err as Error).message}`);
       return null;
@@ -212,7 +217,7 @@ ENTITY ON NOTICE: ${property.trustee} ATF ${property.trust}
 GROUND ${ground.groundNumber}: "${ground.label}"
 ${groundCtx}
 
-EVIDENCE FILES ATTACHED: ${ground.evidenceFiles.join(', ') || 'none'}
+EVIDENCE SOURCES ATTACHED: ${ground.evidenceLabels.join(', ') || 'none'}
 
 AGENT OBSERVATION NOTES (raw data found — use this to extract specific values):
 ${ground.analysis || '(none)'}
@@ -220,7 +225,7 @@ ${generationCtx ? `\nADDITIONAL PIPELINE CONTEXT (comparable sales, zoning, noti
 WRITING RULES — the VG portal text box expects:
 1. First person as the objector ("I contend...", "The entity named on my notice...", "The land tax notice incorrectly...")
 2. 5–8 sentences for Ground 9; 3–6 sentences for Grounds 1–8. Include all required figures and legislative references even at the expense of brevity.
-3. Name the official source by its proper title (Australian Business Register, Land Tax Management Act 1956 (NSW), NSW Planning Portal) — never say "the screenshot", "the PNG", "the automation", "the agent"
+3. Name the official source by its proper title (Australian Business Register, Land Tax Management Act 1956 (NSW), NSW Planning Portal) — never say "the screenshot", "the PNG", "the automation", "the agent". Never quote a raw file ID, UUID, or internal reference code, even if one appears anywhere in the supplied context — describe documents by title and date only, and never invent a reference number that wasn't supplied.
 4. Include specific values from the observation notes: ABN, entity type, zone code, area (m²), lot/DP, legislative section numbers, comparable land rates. Write rates as $X/m² with a forward slash (e.g., "$2,000/m²") — never as "per m²" or "per square metre".
 5. End by stating clearly how the evidence supports the objection ground
 6. Formal, professional tone appropriate for a statutory objection to a government body
@@ -257,7 +262,7 @@ Return ONLY the text to paste into the portal text box — no preamble, no label
     analysis: string,
     ctx: import('../supporting-evidence/supporting-evidence.types').SupportingEvidenceContext,
     portalTypes: string[],
-  ): Promise<{ concessionType: string | null; note: string | null }> {
+  ): Promise<{ concessionType: string | null; classification: 'PORTAL_TYPE' | 'NO_MATCHING_PORTAL_TYPE'; note: string | null }> {
     const concessionIssue = ctx.evidenceResult?.issues?.concession;
     const contextLines = [
       `Property: ${ctx.confirmedAddress} (PID ${ctx.propId})`,
@@ -272,17 +277,20 @@ Return ONLY the text to paste into the portal text box — no preamble, no label
 
 Ground 9 has been ticked: "Concessions or allowances are incorrect or missing."
 
-The portal REQUIRES selecting exactly ONE of the following concession type radio buttons — a selection is mandatory and cannot be left blank:
+The portal offers exactly these concession type radio buttons:
 ${portalTypes.map((t, i) => `${i + 1}. ${t}`).join('\n')}
 
 CASE CONTEXT:
 ${contextLines}
 
-Select the CLOSEST matching option from the list. You MUST always return one of the exact labels above — never null.
-Use the note field to flag if the match is imperfect or if additional action is required (e.g. escalate to Revenue NSW).
+If — and only if — the actual finding genuinely matches one of the listed portal options, select that exact label.
+If the finding does NOT genuinely match any listed option (e.g. it is a flood, environmental, or other site
+constraint discount, which has no dedicated portal checkbox), do NOT force it onto the closest-sounding
+option — that misrepresents the legal basis in the objection. Instead return concessionType: null with
+classification "NO_MATCHING_PORTAL_TYPE" and explain the true basis in the note field.
 
 Respond ONLY as JSON (no markdown, no extra text):
-{"concessionType":"<exact label from the list above>","note":"<brief note for the accountant, or null if no clarification needed>"}`;
+{"concessionType":"<exact label from the list above, or null>","classification":"PORTAL_TYPE"|"NO_MATCHING_PORTAL_TYPE","note":"<brief note for the accountant — required when classification is NO_MATCHING_PORTAL_TYPE, explaining the real basis and that Revenue NSW/manual classification is needed>"}`;
 
     try {
       const response = await this.client.messages.create({
@@ -293,17 +301,35 @@ Respond ONLY as JSON (no markdown, no extra text):
       });
       const text = response.content?.find(b => b.type === 'text')?.text ?? '';
       const match = text.match(/\{[\s\S]*\}/);
-      if (!match) return { concessionType: portalTypes[2], note: 'Auto-fallback — accountant to confirm correct portal option.' };
-      const parsed = JSON.parse(match[0]) as { concessionType: string | null; note: string | null };
-      // If Claude still returned null or an invalid value, fall back to Section 62K (most general land tax option)
-      if (!parsed.concessionType || !portalTypes.includes(parsed.concessionType)) {
-        parsed.note = `Closest option selected. Accountant to confirm. ${parsed.note ?? ''}`.trim();
-        parsed.concessionType = portalTypes[2]; // Section 62K - Land Tax allowance
+      if (!match) {
+        return {
+          concessionType: null,
+          classification: 'NO_MATCHING_PORTAL_TYPE',
+          note: 'Could not determine a concession type automatically — manual classification required.',
+        };
       }
-      return parsed as { concessionType: string; note: string | null };
+      const parsed = JSON.parse(match[0]) as {
+        concessionType: string | null;
+        classification?: 'PORTAL_TYPE' | 'NO_MATCHING_PORTAL_TYPE';
+        note: string | null;
+      };
+      // A claimed portal match must actually be in the list — otherwise treat it as no match rather
+      // than silently coercing to an arbitrary "closest" option.
+      if (parsed.concessionType && portalTypes.includes(parsed.concessionType)) {
+        return { concessionType: parsed.concessionType, classification: 'PORTAL_TYPE', note: parsed.note ?? null };
+      }
+      return {
+        concessionType: null,
+        classification: 'NO_MATCHING_PORTAL_TYPE',
+        note: parsed.note ?? 'No matching VG portal concession type — manual classification required.',
+      };
     } catch (err: unknown) {
       this.logger.error(`determineConcessionType failed: ${(err as Error).message}`);
-      return { concessionType: portalTypes[2], note: 'Auto-fallback — accountant to confirm correct portal option.' };
+      return {
+        concessionType: null,
+        classification: 'NO_MATCHING_PORTAL_TYPE',
+        note: 'Concession type lookup failed — manual classification required.',
+      };
     }
   }
 

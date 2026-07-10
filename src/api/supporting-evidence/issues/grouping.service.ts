@@ -90,8 +90,8 @@ export class GroupingService {
       this.logger.error(`[GROUPING] Fatal: ${(err as Error).message}`);
       return {
         grouping: {
-          valued_together: { tick: false, confidence: 'MANUAL_REVIEW_REQUIRED', trigger: null, text_box_content: null, documents_to_attach: [] },
-          valued_separately: { tick: false, confidence: 'MANUAL_REVIEW_REQUIRED', trigger: null, text_box_content: null, documents_to_attach: [] },
+          valued_together: { tick: false, confidence: 'MANUAL_REVIEW_REQUIRED', verification_status: 'AI_DETECTED_UNVERIFIED', trigger: null, text_box_content: null, documents_to_attach: [] },
+          valued_separately: { tick: false, confidence: 'MANUAL_REVIEW_REQUIRED', verification_status: 'AI_DETECTED_UNVERIFIED', trigger: null, text_box_content: null, documents_to_attach: [] },
         },
         rawData: { adjacent_lots: [] },
       };

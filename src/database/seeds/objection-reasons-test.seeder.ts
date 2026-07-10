@@ -224,5 +224,6 @@ function buildMockContext(): Record<string, unknown> {
       clientName: 'CASTLE HILL GLEN UNIT TRUST',
     },
     evidenceResult: null,
+    caseDocuments: [],
   };
 }

@@ -56,7 +56,7 @@ export class ApportionmentService {
         lot_plan: c.address,
         area_m2: c.area_m2,
         assessed_value: c.analysed_land_value,
-        value_per_m2: c.rate_per_m2 || (c.area_m2 ? Math.round(c.analysed_land_value / c.area_m2) : null),
+        value_per_m2: c.rate_per_m2 || (c.area_m2 && c.analysed_land_value != null ? Math.round(c.analysed_land_value / c.area_m2) : null),
         zone: c.zone,
         source: 'input_document',
       })).filter(c => c.area_m2 && c.assessed_value);
@@ -123,7 +123,7 @@ export class ApportionmentService {
       return { apportionment: toIssueResult(result), rawData: { vg_comparables: arcgisComps.slice(0, 25) } };
     } catch (err: unknown) {
       this.logger.error(`[APPORT] Fatal: ${(err as Error).message}`);
-      return { apportionment: { tick: false, confidence: 'MANUAL_REVIEW_REQUIRED', trigger: null, text_box_content: null, documents_to_attach: [] }, rawData: { vg_comparables: [] } };
+      return { apportionment: { tick: false, confidence: 'MANUAL_REVIEW_REQUIRED', verification_status: 'AI_DETECTED_UNVERIFIED', trigger: null, text_box_content: null, documents_to_attach: [] }, rawData: { vg_comparables: [] } };
     }
   }
 }

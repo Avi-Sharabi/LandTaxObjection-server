@@ -82,7 +82,7 @@ export class AzureEmailService implements OnModuleInit {
     async sendDisputeApplication(
         caseReferences: string[],
         sendTo: string,
-        details?: { clientName?: string; assessorName?: string; propertyAddresses?: string[] },
+        details?: { clientName?: string; assessorName?: string; propertyAddresses?: string[]; deadlineLapsedWarning?: string },
     ): Promise<void> {
         const contactEmail = this.config.get<string>('CONTACT_EMAIL') ?? '';
 
@@ -92,11 +92,13 @@ export class AzureEmailService implements OnModuleInit {
             clientName:      details?.clientName ?? '',
             assessorName:    details?.assessorName ?? 'Assessment Team',
             contactEmail,
+            deadlineLapsedWarning: details?.deadlineLapsedWarning ?? '',
         });
 
         const subjectLabel = caseReferences.length === 1
             ? `[${caseReferences[0]}]`
             : `[${caseReferences.length} Cases]`;
+        const urgentPrefix = details?.deadlineLapsedWarning ? '⚠ DEADLINE LAPSED — ' : '';
 
         const message = {
             senderAddress: this.sender,
@@ -104,7 +106,7 @@ export class AzureEmailService implements OnModuleInit {
                 to: [{ address: sendTo, displayName: 'Land Tax Dispute Team' }],
             },
             content: {
-                subject: `${subjectLabel} New Land Tax Dispute Intake`,
+                subject: `${urgentPrefix}${subjectLabel} New Land Tax Dispute Intake`,
                 html,
             },
         };
