@@ -1,11 +1,6 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import type { Redis } from 'ioredis';
 import { REDIS_CLIENT } from '../../common/redis/redis.constant';
-import {
-  LOGIN_MAX_ATTEMPTS,
-  LOGIN_ATTEMPTS_WINDOW_SECONDS,
-  LOGIN_LOCK_DURATION_SECONDS,
-} from './constants/login-lockout.constants';
 
 @Injectable()
 export class LoginLockoutService {
@@ -13,21 +8,26 @@ export class LoginLockoutService {
 
   constructor(@Inject(REDIS_CLIENT) private readonly redis: Redis) {}
 
-  async recordFailedAttempt(ip: string): Promise<void> {
+  async recordFailedAttempt(
+    key: string,
+    maxAttempts: number,
+    windowSeconds: number,
+    lockDurationSeconds: number,
+  ): Promise<void> {
     try {
-      const key = `login_attempts:${ip}`;
-      const attempts = await this.redis.incr(key);
+      const attemptsKey = `login_attempts:${key}`;
+      const attempts = await this.redis.incr(attemptsKey);
 
       if (attempts === 1) {
-        await this.redis.expire(key, LOGIN_ATTEMPTS_WINDOW_SECONDS);
+        await this.redis.expire(attemptsKey, windowSeconds);
       }
 
-      if (attempts >= LOGIN_MAX_ATTEMPTS) {
+      if (attempts >= maxAttempts) {
         await this.redis.set(
-          `login_lock:${ip}`,
+          `login_lock:${key}`,
           '1',
           'EX',
-          LOGIN_LOCK_DURATION_SECONDS,
+          lockDurationSeconds,
         );
       }
     } catch (err) {
@@ -35,18 +35,18 @@ export class LoginLockoutService {
     }
   }
 
-  async isLocked(ip: string): Promise<boolean> {
+  async isLocked(key: string): Promise<boolean> {
     try {
-      return (await this.redis.exists(`login_lock:${ip}`)) === 1;
+      return (await this.redis.exists(`login_lock:${key}`)) === 1;
     } catch (err) {
       this.logger.warn(`Redis unavailable, failing open on lockout check: ${err.message}`);
       return false;
     }
   }
 
-  async resetAttempts(ip: string): Promise<void> {
+  async resetAttempts(key: string): Promise<void> {
     try {
-      await this.redis.del(`login_attempts:${ip}`, `login_lock:${ip}`);
+      await this.redis.del(`login_attempts:${key}`, `login_lock:${key}`);
     } catch (err) {
       this.logger.warn(`Redis unavailable, skipping attempt reset: ${err.message}`);
     }

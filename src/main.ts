@@ -1,4 +1,5 @@
 import { NestFactory } from '@nestjs/core';
+import { NestExpressApplication } from '@nestjs/platform-express';
 import { AppModule } from './app.module';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { ValidationPipe, VersioningType } from '@nestjs/common';
@@ -9,7 +10,15 @@ const cookieParser = require('cookie-parser');
 
 async function bootstrap() {
 
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+
+  const trustProxyHops = process.env.TRUST_PROXY_HOPS;
+  if (trustProxyHops) {
+    app.set(
+      'trust proxy',
+      isNaN(Number(trustProxyHops)) ? trustProxyHops : Number(trustProxyHops),
+    );
+  }
 
   const whitelist =
     process.env.CORS_WHITELIST?.split(',').map((origin) => origin.trim()) || [];
