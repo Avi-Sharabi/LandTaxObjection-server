@@ -17,6 +17,11 @@ import {
   FORGOT_PASSWORD_MAX_IP_ATTEMPTS,
   FORGOT_PASSWORD_IP_WINDOW_SECONDS,
 } from './constants/forgot-password-throttle.constants';
+import {
+  LOGIN_MAX_ATTEMPTS,
+  LOGIN_ATTEMPTS_WINDOW_SECONDS,
+  LOGIN_LOCK_DURATION_SECONDS,
+} from './constants/login-lockout.constants';
 import { InvalidCredentialsException } from './exceptions/invalid-credentials.exception';
 import { InvalidResetTokenException } from './exceptions/invalid-reset-token.exception';
 import { ResetTokenExpiredException } from './exceptions/reset-token-expired.exception';
@@ -43,29 +48,31 @@ export class AuthService {
     response: Response,
     ip: string,
   ): Promise<AuthResponseDto> {
-    if (await this.loginLockoutService.isLocked(ip)) {
+    const emailKey = `email:${dto.email}`;
+
+    if (await this.loginLockoutService.isLocked(emailKey)) {
       throw new AccountLockedException();
     }
 
     const user = await this.usersService.findByEmailWithPassword(dto.email);
 
     if (!user || !user.password) {
-      await this.loginLockoutService.recordFailedAttempt(ip);
+      await this.recordFailedLogin(ip, dto.email);
       throw new InvalidCredentialsException();
     }
 
     const passwordMatch = await bcrypt.compare(dto.password, user.password);
     if (!passwordMatch) {
-      await this.loginLockoutService.recordFailedAttempt(ip);
+      await this.recordFailedLogin(ip, dto.email);
       throw new InvalidCredentialsException();
     }
 
     if (!user.isActive) {
-      await this.loginLockoutService.recordFailedAttempt(ip);
+      await this.recordFailedLogin(ip, dto.email);
       throw new InvalidCredentialsException();
     }
 
-    await this.loginLockoutService.resetAttempts(ip);
+    await this.loginLockoutService.resetAttempts(emailKey);
 
     const payload: JwtPayload = {
       sub: user.id,
@@ -90,6 +97,23 @@ export class AuthService {
       fullName: user.fullName,
       role: user.role,
     };
+  }
+
+  private async recordFailedLogin(ip: string, email: string): Promise<void> {
+    await Promise.all([
+      this.loginLockoutService.recordFailedAttempt(
+        `ip:${ip}`,
+        LOGIN_MAX_ATTEMPTS,
+        LOGIN_ATTEMPTS_WINDOW_SECONDS,
+        LOGIN_LOCK_DURATION_SECONDS,
+      ),
+      this.loginLockoutService.recordFailedAttempt(
+        `email:${email}`,
+        LOGIN_MAX_ATTEMPTS,
+        LOGIN_ATTEMPTS_WINDOW_SECONDS,
+        LOGIN_LOCK_DURATION_SECONDS,
+      ),
+    ]);
   }
 
   async getMe(userId: string): Promise<AuthResponseDto> {
