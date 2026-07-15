@@ -16,6 +16,7 @@ import { seedAccuracyTests } from './accuracy-test.seeder';
 import { seedLandTaxRates } from './land-tax-rates.seeder';
 import { seedTaxSavingsTest } from './tax-savings-test.seeder';
 import { testVgEmail } from './test-vg-email.seeder';
+import { seedUpdateDatabaseTestFixture } from './update-database-test.seeder';
 
 const logger = new Logger('Seed');
 
@@ -37,6 +38,7 @@ async function runSeeders(dataSource: DataSource): Promise<void> {
     await seedTaxSavingsTest(dataSource);
     await testVgEmail(dataSource);
     await seedVgFollowUpTest(dataSource);
+    await seedUpdateDatabaseTestFixture(dataSource);
   }
 
 }
