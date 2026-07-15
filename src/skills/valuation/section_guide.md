@@ -82,10 +82,12 @@ in the Priority Action Plan (Section 10). Do not repeat it as a caveat inside Se
 or 9 — those sections should read as the substantive case, uninterrupted by process notes.
 
 **Voice:** The `intro` field must be an advocate's opening statement, not a
-description of the document. Write: "We formally contest the Valuer General's
-assessed land value of $[X] as materially excessive. The independent market
-evidence supports a value of $[Y] — a [Z%] overstatement of $[diff]. We lodge this
-objection on the grounds set out below." Never write "This consolidated
+description of the document. Write in this shape (substituting the case's actual
+figures — never leave bracketed placeholder text like this literally in the
+output): "We formally contest the Valuer General's assessed land value of
+$<VG value> as materially excessive. The independent market evidence supports a
+value of $<CPV value> — a <percentage> overstatement of $<difference>. We lodge
+this objection on the grounds set out below." Never write "This consolidated
 objection-support report analyses…".
 
 ## Section 2 — Statutory Framework
