@@ -118,6 +118,15 @@ export async function seedUpdateDatabaseTestFixture(dataSource: DataSource): Pro
     await clientRepo.restore(IDS.client);
     logger.log(`Restored soft-deleted client: ${QA_FIXTURE.clientName}`);
   }
+  // Self-heal: `name` is the anchor field the test suite's update_database
+  // lookups key off of (there's no other stable handle available to a
+  // chat-driven tool). A prior update/rename test that didn't revert its own
+  // change would otherwise permanently hide this fixture from every
+  // subsequent run, so — unlike other scratch fields — it's healed here.
+  if (client.name !== QA_FIXTURE.clientName) {
+    await clientRepo.update(IDS.client, { name: QA_FIXTURE.clientName });
+    logger.log(`Healed drifted client name: ${QA_FIXTURE.clientName}`);
+  }
 
   // ── Assessment Document ──────────────────────────────────────────────────
   // Created before the valuation notice so its id is available for
