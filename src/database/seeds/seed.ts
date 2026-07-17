@@ -13,6 +13,7 @@ import { seedCasesPagination } from './cases-pagination.seeder';
 import { seedComparablesTest } from './comparables-test.seeder';
 import { seedObjectionReasonsTest } from './objection-reasons-test.seeder';
 import { seedAccuracyTests } from './accuracy-test.seeder';
+import { seedValuationReportTests } from './valuation-report-test.seeder';
 import { seedLandTaxRates } from './land-tax-rates.seeder';
 import { seedTaxSavingsTest } from './tax-savings-test.seeder';
 import { testVgEmail } from './test-vg-email.seeder';
@@ -35,6 +36,7 @@ async function runSeeders(dataSource: DataSource): Promise<void> {
     await seedComparablesTest(dataSource);
     await seedObjectionReasonsTest(dataSource);
     await seedAccuracyTests(dataSource);
+    await seedValuationReportTests(dataSource);
     await seedTaxSavingsTest(dataSource);
     await testVgEmail(dataSource);
     await seedVgFollowUpTest(dataSource);
