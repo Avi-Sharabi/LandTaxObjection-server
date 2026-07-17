@@ -36,9 +36,15 @@ below — never infer them from a tick, a confidence score, or the mere existenc
   `action_plan[].status` have their own closed vocabulary — see "Auto-derived status colours" in
   `data_schema.md` — never write `"Not obtained"` or similar free text there.)
 - **Never use "Lodged" or "Submitted"** (in `cover_facts`, `exec_summary`, `legal_grounds`, or
-  anywhere else) to describe objection grounds, evidence, or the objection itself, UNLESS the
-  `Case status` given in the context is `submitted_to_vg` or a later status. Before that, describe
-  grounds as "Proposed", "Selected for objection", or "Grounds identified" — never "Lodged".
+  anywhere else) to describe objection grounds, evidence, or the objection itself as an act that
+  has already happened, UNLESS the `Case status` given in the context is `submitted_to_vg` or a
+  later status. Before that, describe grounds as "Proposed", "Selected for objection", or "Grounds
+  identified" — never "has been lodged"/"has been submitted". This does NOT restrict the ordinary
+  argumentative phrase "We submit that…" (meaning "we contend/assert that…", the advocacy voice
+  used throughout Sections 6 and 9) — that usage has nothing to do with filing status. The rule is
+  specifically about describing the objection/grounds themselves as already filed with Revenue
+  NSW before that has actually happened; it is not a ban on the word "submit" in its ordinary
+  argumentative sense.
 - **Never write "ticked by client" or "client confirmed"** for an objection ground. There is no
   client-tick mechanism in this system — grounds are ticked by AI/automation only. Use the ground's
   own `verification` value and its `Finding:` text (if present) instead of inventing a confidence
@@ -82,15 +88,15 @@ in the Priority Action Plan (Section 10). Do not repeat it as a caveat inside Se
 or 9 — those sections should read as the substantive case, uninterrupted by process notes.
 
 **Voice:** The `intro` field must be an advocate's opening statement, not a
-description of the document. For example, for a case where VG assessed
-$620,000 and the independent market evidence supports $540,000 (a 12.9%
-overstatement of $80,000), write in this register: "We formally contest the
-Valuer General's assessed land value of $620,000 as materially excessive. The
-independent market evidence supports a value of $540,000 — a 12.9%
-overstatement of $80,000. We lodge this objection on the grounds set out
-below." Substitute this case's own actual figures throughout — never write
-"This consolidated objection-support report analyses…", and never carry the
-example figures above into a real report.
+description of the document. Write in this shape (substituting the case's actual
+figures — never leave bracketed placeholder text like this literally in the
+output): "We formally contest the Valuer General's assessed land value of
+$<VG value> as materially excessive. The independent market evidence supports a
+value of $<CPV value> — a <percentage> overstatement of $<difference>. We raise
+this objection on the grounds set out below." Never write "This consolidated
+objection-support report analyses…", and never write "lodge"/"lodged" here —
+see the controlled-vocabulary rule above; this document is prepared in advance
+of lodgement, not lodged by virtue of being written.
 
 ## Section 2 — Statutory Framework
 - **2.1 basis/dates.** Governing Acts are **Valuation of Land Act 1916 (NSW)**
