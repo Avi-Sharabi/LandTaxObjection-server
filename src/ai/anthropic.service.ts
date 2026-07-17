@@ -8,6 +8,7 @@ export const ANTHROPIC_MODEL = 'claude-sonnet-4-6';
 export interface AnthropicCallOptions {
   systemBlocks: { text: string; cached?: boolean }[];
   userMessage: string;
+  documents?: { base64: string; mediaType?: string }[];
   maxTokens?: number;
   thinkingBudgetTokens?: number;
   mcpServers?: boolean;
@@ -43,7 +44,7 @@ export class AnthropicService {
   ) {}
 
   async call(options: AnthropicCallOptions): Promise<AnthropicCallResult> {
-    const { systemBlocks, userMessage, maxTokens = 4000, thinkingBudgetTokens = 2000, mcpServers } = options;
+    const { systemBlocks, userMessage, documents, maxTokens = 4000, thinkingBudgetTokens = 2000, mcpServers } = options;
 
     const betaHeader = 'mcp-client-2025-04-04,prompt-caching-2024-07-31,interleaved-thinking-2025-05-14';
 
@@ -57,11 +58,21 @@ export class AnthropicService {
     const mcpUrl = mcpBaseUrl ? `${mcpBaseUrl}/api/mcp` : null;
     const mcpToken = mcpUrl ? this.config.get<string>('MCP_SECRET_TOKEN') : null;
 
+    const userContent = documents?.length
+      ? [
+          ...documents.map((doc) => ({
+            type: 'document',
+            source: { type: 'base64', media_type: doc.mediaType ?? 'application/pdf', data: doc.base64 },
+          })),
+          { type: 'text', text: userMessage },
+        ]
+      : userMessage;
+
     const body: Record<string, unknown> = {
       model: ANTHROPIC_MODEL,
       max_tokens: maxTokens,
       system,
-      messages: [{ role: 'user', content: userMessage }],
+      messages: [{ role: 'user', content: userContent }],
     };
 
     body['thinking'] = { type: 'enabled', budget_tokens: thinkingBudgetTokens };
