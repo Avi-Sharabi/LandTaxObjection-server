@@ -18,6 +18,7 @@ import { AzureEmailModule } from 'src/common/azure-email/azure-email.module';
 import { DisputeIntakeOrchestrator } from './intake/dispute-intake.orchestrator';
 import { XpmClientHandler } from './intake/xpm-client.handler';
 import { PdfStorageHandler } from './intake/pdf-storage.handler';
+import { DocumentExtractionHandler } from './intake/document-extraction.handler';
 import { fyiStorageService } from 'src/common/fyi-storage/fyi-storage.service';
 import { ApprovalReminderTask } from './approval-reminder.task';
 import { MsGraphModule } from 'src/common/ms-graph/ms-graph.module';
@@ -90,6 +91,7 @@ import { DisputeEvidenceIssue } from '../supporting-evidence/entities/dispute-ev
     DisputeIntakeOrchestrator,
     XpmClientHandler,
     PdfStorageHandler,
+    DocumentExtractionHandler,
     fyiStorageService,
     ApprovalReminderTask,
     VgEmailMonitorTask,

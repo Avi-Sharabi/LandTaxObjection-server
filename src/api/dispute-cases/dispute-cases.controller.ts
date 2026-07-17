@@ -30,6 +30,7 @@ import { PaginatedDisputeCasesResponseDto } from '../../common/dto/paginated-res
 import { UpdateDisputeCaseDto } from './dto/update-dispute-case.dto';
 import { CreateDisputeIntakeDto } from './dto/create-dispute-intake.dto';
 import { CreateDisputeIntakeV2Dto } from './dto/create-dispute-intake-v2.dto';
+import { ExtractValuationNoticeDto, ValuationNoticeExtractionDto } from './dto/extract-valuation-notice.dto';
 import { CloseNoObjectionDto } from './dto/close-no-objection.dto';
 import { ApproveObjectionPackageDto } from './dto/approve-objection-package.dto';
 import { DisputeCaseResponseDto } from './dto/dispute-case-response.dto';
@@ -114,6 +115,34 @@ export class DisputeCasesController {
     @Body() intakeDto: CreateDisputeIntakeV2Dto,
   ): Promise<unknown> {
     return this.disputeCasesService.submitIntakeApplication(intakeDto);
+  }
+
+  /**
+   * Extract structured data (issue date, tax year, properties) from an uploaded
+   * valuation notice PDF using Claude, to prefill the intake form before submission.
+   */
+  @ApiOperation({
+    summary: 'Extract structured data from an uploaded valuation notice PDF using AI',
+    description:
+      'Reads the attached PDF and returns issueDate, taxYear, and properties to prefill the intake form',
+  })
+  @ApiBody({ type: ExtractValuationNoticeDto })
+  @ApiResponse({
+    status: 201,
+    description: 'Document parsed successfully',
+    type: ValuationNoticeExtractionDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Validation error — missing or invalid base64 attachment',
+  })
+  @ApiResponse({ status: 500, description: 'Internal server error' })
+  // Public endpoint — no auth guard. Called before intake submission, before any account exists.
+  @Post('intake/extract')
+  async extractValuationNotice(
+    @Body() dto: ExtractValuationNoticeDto,
+  ): Promise<ValuationNoticeExtractionDto> {
+    return this.disputeCasesService.extractValuationNoticeDocument(dto.attachment);
   }
 
   // Public endpoint — no auth guard. Accessed via signed approval token in client email.
