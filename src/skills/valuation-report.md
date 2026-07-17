@@ -224,9 +224,11 @@ map those weaknesses onto the formal grounds of objection (see the **Legal
 grounds reference** below). Keep weakness and ground explicitly linked so the
 narrative in Section 9 follows directly from the analysis.
 
-Frame every row's `argument` as first-person advocacy: "We submit that the VG has
-failed to [reason], thereby inflating the adopted rate. The comparable evidence
-supports a rate of $X/m², not $Y/m²."
+Frame every row's `argument` as first-person advocacy — for example: "We
+submit that the VG has failed to adjust for the subject's inferior access,
+thereby inflating the adopted rate. The comparable evidence supports a rate
+of $1,125/m², not $1,292/m²." (substitute this case's own reasoning and
+rates — never carry the example figures above into a real report).
 
 ### Step 8 — Build the financial-impact scenarios
 
@@ -239,11 +241,15 @@ credited, or refunded.
 
 ### Step 9 — Draft the objection narrative
 
-Write a first-person narrative from the objector's perspective. Open with: "We
-[entity name] hereby object to the Valuer General's assessed land value of $[value]
-for [property] as at [relevant date]. We contend the assessment is materially
-excessive for the following reasons:" — then one paragraph per ground with
-`<strong>` lead-ins. Use assertive, un-hedged language throughout. Build it only
+Write a first-person narrative from the objector's perspective, opening with
+this case's own full entity name, assessed value, property, and valuation
+date filled in directly — for example: "We Bexhill Property Holdings Pty Ltd
+ATF Bexhill Family Trust hereby object to the Valuer General's assessed land
+value of $620,000 for 22 Bexhill Avenue, Panania NSW 2213 as at 1 July 2025.
+We contend the assessment is materially excessive for the following
+reasons:" (never carry this example entity/value/property/date into a real
+report — substitute the actual case's own values) — then one paragraph per
+ground with `<strong>` lead-ins. Use assertive, un-hedged language throughout. Build it only
 from confirmed facts already established in the report — the valuer's name and
 credentials, the report reference and date, the variance, the comparable count,
 the planning-proposal refusal date, the constraints. Do not introduce new claims

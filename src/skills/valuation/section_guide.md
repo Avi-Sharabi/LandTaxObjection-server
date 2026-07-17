@@ -82,11 +82,15 @@ in the Priority Action Plan (Section 10). Do not repeat it as a caveat inside Se
 or 9 — those sections should read as the substantive case, uninterrupted by process notes.
 
 **Voice:** The `intro` field must be an advocate's opening statement, not a
-description of the document. Write: "We formally contest the Valuer General's
-assessed land value of $[X] as materially excessive. The independent market
-evidence supports a value of $[Y] — a [Z%] overstatement of $[diff]. We lodge this
-objection on the grounds set out below." Never write "This consolidated
-objection-support report analyses…".
+description of the document. For example, for a case where VG assessed
+$620,000 and the independent market evidence supports $540,000 (a 12.9%
+overstatement of $80,000), write in this register: "We formally contest the
+Valuer General's assessed land value of $620,000 as materially excessive. The
+independent market evidence supports a value of $540,000 — a 12.9%
+overstatement of $80,000. We lodge this objection on the grounds set out
+below." Substitute this case's own actual figures throughout — never write
+"This consolidated objection-support report analyses…", and never carry the
+example figures above into a real report.
 
 ## Section 2 — Statutory Framework
 - **2.1 basis/dates.** Governing Acts are **Valuation of Land Act 1916 (NSW)**
@@ -169,18 +173,24 @@ custom `section_title` once a real CPV report exists, naming the valuer/firm
 ## Section 6 — Weaknesses & Legal Grounds
 6.1 tabulates each VG weakness with Evidence and the Objection Argument.
 6.2 states the formal grounds. For the primary ground (value too high), state
-`valuation.contended_value` explicitly: "We assess the land value at $X as at
-[relevant date], based on the comparable evidence set out in this report, subject
-to independent CPV confirmation." Standard grounds:
+`valuation.contended_value` explicitly — for example: "We assess the land
+value at $540,000 as at 1 July 2025, based on the comparable evidence set out
+in this report, subject to independent CPV confirmation." (substitute this
+case's own contended value and actual valuation date; never carry the example
+figures above into a real report). Standard grounds:
 - **s.34(1)(a)** Valuation of Land Act 1916 — *valuation too high* (primary).
 - **s.6A** — speculative/anticipated rezoning value is *impermissible*; value at
   HBU as at the relevant date.
 - **Constraint oversight** — mass-appraisal benchmark ignores site-specific constraints.
 - **s.34(1)(b)** — *factual error* (e.g. recorded area ≠ registered DP area).
 
-**Voice for 6.1:** Write the `argument` column assertively: "We submit the VG
-erred by [reason]. The comparable evidence demonstrates [counter-evidence]. The
-correct rate is approximately $X/m², not $Y/m² as implied by the assessment."
+**Voice for 6.1:** Write the `argument` column assertively — for example: "We
+submit the VG erred by relying on comparable sales outside the subject's
+market area. The comparable evidence demonstrates a materially lower rate is
+supported locally. The correct rate is approximately $1,125/m², not $1,292/m²
+as implied by the assessment." (substitute this case's own reasoning,
+evidence, and rates — never carry the example figures above into a real
+report).
 
 ## Section 7 — Financial Impact
 One row per scenario (current VG, and each CPV-based value). Supply taxable value
@@ -207,9 +217,13 @@ here (e.g. do not mark something `CONFIRMED` in 4.2 while listing its supporting
 still `PENDING` in this checklist).
 
 ## Section 9 — Objection Narrative
-Ready-to-paste prose for the VG objection form. Open: "We [full entity name]
-hereby object to the land value assessed by the Valuer General for [lots] as at
-[relevant date], on the following grounds:". One paragraph per ground with a
+Ready-to-paste prose for the VG objection form. Open with this case's own
+full entity name, lot(s), and valuation date filled in directly — for
+example: "We Bexhill Property Holdings Pty Ltd ATF Bexhill Family Trust
+hereby object to the land value assessed by the Valuer General for Lot 12 DP
+887744 as at 1 July 2025, on the following grounds:" (never carry this
+example entity/lot/date into a real report — substitute the actual case's
+own values). One paragraph per ground with a
 `<strong>` lead-in. Use "We contend that…", "We submit that…", "The evidence
 demonstrates…". Never hedge — this is a formal objection, not exploratory analysis.
 Base only on confirmed facts established earlier in the report.
