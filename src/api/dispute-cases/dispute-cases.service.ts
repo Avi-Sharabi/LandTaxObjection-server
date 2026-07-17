@@ -38,6 +38,8 @@ import {
   OwnershipType,
 } from '../valuation/dto/calculate-tax.dto';
 import { DisputeIntakeOrchestrator } from './intake/dispute-intake.orchestrator';
+import { DocumentExtractionHandler } from './intake/document-extraction.handler';
+import { ValuationNoticeExtractionDto } from './dto/extract-valuation-notice.dto';
 import { ComparablesService } from '../comparables/comparables.service';
 import { AzureEmailService } from 'src/common/azure-email/azure-email.service';
 import { AzureBlobService } from 'src/common/azure-blob/azure-blob.service';
@@ -70,6 +72,7 @@ export class DisputeCasesService {
   constructor(
     private readonly dataSource: DataSource,
     private readonly intakeOrchestrator: DisputeIntakeOrchestrator,
+    private readonly documentExtractionHandler: DocumentExtractionHandler,
     private readonly comparablesService: ComparablesService,
     private readonly azureEmailService: AzureEmailService,
     private readonly azureBlobService: AzureBlobService,
@@ -89,6 +92,10 @@ export class DisputeCasesService {
   ): Promise<unknown> {
     // V2 omits grounds/constraints; orchestrator treats those as optional at runtime
     return this.intakeOrchestrator.submitIntakeApplication(intakeDto as CreateDisputeIntakeDto);
+  }
+
+  async extractValuationNoticeDocument(attachment: string): Promise<ValuationNoticeExtractionDto> {
+    return this.documentExtractionHandler.extractValuationNotice(attachment);
   }
 
   async findAll(clientId?: string): Promise<DisputeCaseResponseDto[]> {
