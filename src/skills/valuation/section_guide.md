@@ -36,9 +36,15 @@ below — never infer them from a tick, a confidence score, or the mere existenc
   `action_plan[].status` have their own closed vocabulary — see "Auto-derived status colours" in
   `data_schema.md` — never write `"Not obtained"` or similar free text there.)
 - **Never use "Lodged" or "Submitted"** (in `cover_facts`, `exec_summary`, `legal_grounds`, or
-  anywhere else) to describe objection grounds, evidence, or the objection itself, UNLESS the
-  `Case status` given in the context is `submitted_to_vg` or a later status. Before that, describe
-  grounds as "Proposed", "Selected for objection", or "Grounds identified" — never "Lodged".
+  anywhere else) to describe objection grounds, evidence, or the objection itself as an act that
+  has already happened, UNLESS the `Case status` given in the context is `submitted_to_vg` or a
+  later status. Before that, describe grounds as "Proposed", "Selected for objection", or "Grounds
+  identified" — never "has been lodged"/"has been submitted". This does NOT restrict the ordinary
+  argumentative phrase "We submit that…" (meaning "we contend/assert that…", the advocacy voice
+  used throughout Sections 6 and 9) — that usage has nothing to do with filing status. The rule is
+  specifically about describing the objection/grounds themselves as already filed with Revenue
+  NSW before that has actually happened; it is not a ban on the word "submit" in its ordinary
+  argumentative sense.
 - **Never write "ticked by client" or "client confirmed"** for an objection ground. There is no
   client-tick mechanism in this system — grounds are ticked by AI/automation only. Use the ground's
   own `verification` value and its `Finding:` text (if present) instead of inventing a confidence
@@ -82,11 +88,15 @@ in the Priority Action Plan (Section 10). Do not repeat it as a caveat inside Se
 or 9 — those sections should read as the substantive case, uninterrupted by process notes.
 
 **Voice:** The `intro` field must be an advocate's opening statement, not a
-description of the document. Write: "We formally contest the Valuer General's
-assessed land value of $[X] as materially excessive. The independent market
-evidence supports a value of $[Y] — a [Z%] overstatement of $[diff]. We lodge this
-objection on the grounds set out below." Never write "This consolidated
-objection-support report analyses…".
+description of the document. Write in this shape (substituting the case's actual
+figures — never leave bracketed placeholder text like this literally in the
+output): "We formally contest the Valuer General's assessed land value of
+$<VG value> as materially excessive. The independent market evidence supports a
+value of $<CPV value> — a <percentage> overstatement of $<difference>. We raise
+this objection on the grounds set out below." Never write "This consolidated
+objection-support report analyses…", and never write "lodge"/"lodged" here —
+see the controlled-vocabulary rule above; this document is prepared in advance
+of lodgement, not lodged by virtue of being written.
 
 ## Section 2 — Statutory Framework
 - **2.1 basis/dates.** Governing Acts are **Valuation of Land Act 1916 (NSW)**
@@ -169,18 +179,24 @@ custom `section_title` once a real CPV report exists, naming the valuer/firm
 ## Section 6 — Weaknesses & Legal Grounds
 6.1 tabulates each VG weakness with Evidence and the Objection Argument.
 6.2 states the formal grounds. For the primary ground (value too high), state
-`valuation.contended_value` explicitly: "We assess the land value at $X as at
-[relevant date], based on the comparable evidence set out in this report, subject
-to independent CPV confirmation." Standard grounds:
+`valuation.contended_value` explicitly — for example: "We assess the land
+value at $540,000 as at 1 July 2025, based on the comparable evidence set out
+in this report, subject to independent CPV confirmation." (substitute this
+case's own contended value and actual valuation date; never carry the example
+figures above into a real report). Standard grounds:
 - **s.34(1)(a)** Valuation of Land Act 1916 — *valuation too high* (primary).
 - **s.6A** — speculative/anticipated rezoning value is *impermissible*; value at
   HBU as at the relevant date.
 - **Constraint oversight** — mass-appraisal benchmark ignores site-specific constraints.
 - **s.34(1)(b)** — *factual error* (e.g. recorded area ≠ registered DP area).
 
-**Voice for 6.1:** Write the `argument` column assertively: "We submit the VG
-erred by [reason]. The comparable evidence demonstrates [counter-evidence]. The
-correct rate is approximately $X/m², not $Y/m² as implied by the assessment."
+**Voice for 6.1:** Write the `argument` column assertively — for example: "We
+submit the VG erred by relying on comparable sales outside the subject's
+market area. The comparable evidence demonstrates a materially lower rate is
+supported locally. The correct rate is approximately $1,125/m², not $1,292/m²
+as implied by the assessment." (substitute this case's own reasoning,
+evidence, and rates — never carry the example figures above into a real
+report).
 
 ## Section 7 — Financial Impact
 One row per scenario (current VG, and each CPV-based value). Supply taxable value
@@ -207,9 +223,13 @@ here (e.g. do not mark something `CONFIRMED` in 4.2 while listing its supporting
 still `PENDING` in this checklist).
 
 ## Section 9 — Objection Narrative
-Ready-to-paste prose for the VG objection form. Open: "We [full entity name]
-hereby object to the land value assessed by the Valuer General for [lots] as at
-[relevant date], on the following grounds:". One paragraph per ground with a
+Ready-to-paste prose for the VG objection form. Open with this case's own
+full entity name, lot(s), and valuation date filled in directly — for
+example: "We Bexhill Property Holdings Pty Ltd ATF Bexhill Family Trust
+hereby object to the land value assessed by the Valuer General for Lot 12 DP
+887744 as at 1 July 2025, on the following grounds:" (never carry this
+example entity/lot/date into a real report — substitute the actual case's
+own values). One paragraph per ground with a
 `<strong>` lead-in. Use "We contend that…", "We submit that…", "The evidence
 demonstrates…". Never hedge — this is a formal objection, not exploratory analysis.
 Base only on confirmed facts established earlier in the report.

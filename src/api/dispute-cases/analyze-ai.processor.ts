@@ -71,6 +71,11 @@ export class AnalyzeAiProcessor extends WorkerHost {
       const snapshot = await this.snapshotRepo.findOne({
         where: { dispute_case_id: disputeCaseId },
       });
+      // 'report_generation'-mode snapshots invert the usual skip pattern: ground-generation is
+      // skipped (grounds are pre-seeded directly into dispute_objection_reasons) and valuation
+      // report generation runs — see Guard E below.
+      const isReportGenerationSnapshot =
+        snapshot?.snapshot_mode === 'report_generation';
       if (snapshot) {
         this.logger.log(
           JSON.stringify({
@@ -251,18 +256,31 @@ export class AnalyzeAiProcessor extends WorkerHost {
           );
       }
 
-      this.logger.log(
-        JSON.stringify({
-          context: 'ANALYZE_AI.generating_objection_reasons',
-          jobId: job.id,
-          disputeCaseId,
-        }),
-      );
-      await this.objectionReasonGeneratorService.generate(disputeCaseId, ctx);
+      if (isReportGenerationSnapshot) {
+        this.logger.log(
+          JSON.stringify({
+            context: 'ANALYZE_AI.objection_reasons_skipped_report_mode',
+            jobId: job.id,
+            disputeCaseId,
+          }),
+        );
+      } else {
+        this.logger.log(
+          JSON.stringify({
+            context: 'ANALYZE_AI.generating_objection_reasons',
+            jobId: job.id,
+            disputeCaseId,
+          }),
+        );
+        await this.objectionReasonGeneratorService.generate(disputeCaseId, ctx);
+      }
 
-      // Guard E: skip valuation report generation for snapshot/test cases — the report requires
-      // full planning context from ePlanning which is not gathered when a snapshot is active.
-      if (snapshot) {
+      // Guard E: skip valuation report generation for ground-analysis snapshot/test cases — the
+      // report requires full planning context from ePlanning which is not gathered when a
+      // ground-analysis snapshot is active. 'report_generation'-mode snapshots are exempt from
+      // this skip (their planningCtx is derived from the same snapshot's context, which is
+      // sufficient for the report — see buildSafePlanningCtx above).
+      if (snapshot && !isReportGenerationSnapshot) {
         this.logger.log(
           JSON.stringify({
             context: 'ANALYZE_AI.valuation_report_skipped_snapshot',

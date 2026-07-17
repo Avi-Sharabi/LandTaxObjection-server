@@ -4,6 +4,13 @@ import { SupportingEvidenceContext } from '../../supporting-evidence/supporting-
 
 type SnapshotContext = Omit<SupportingEvidenceContext, 'reportBuffer'>;
 
+// 'ground_analysis' (default) — skips ePlanning/comparables/evidence gathering, runs the real
+//   ground-generation LLM call unconditionally, and skips valuation report generation entirely.
+// 'report_generation' — skips the ground-generation LLM call too (grounds must be pre-seeded
+//   directly into dispute_objection_reasons) and, unlike 'ground_analysis', DOES run
+//   valuationReportService.generate(). See analyze-ai.processor.ts's snapshot guards.
+export type DisputeAiSnapshotMode = 'ground_analysis' | 'report_generation';
+
 @Entity('dispute_ai_snapshots')
 export class DisputeAiSnapshot {
   @PrimaryGeneratedColumn('uuid')
@@ -14,6 +21,14 @@ export class DisputeAiSnapshot {
 
   @Column({ type: 'jsonb', nullable: false })
   context: SnapshotContext;
+
+  @Column({
+    type: 'text',
+    nullable: false,
+    default: 'ground_analysis',
+    name: 'snapshot_mode',
+  })
+  snapshot_mode: DisputeAiSnapshotMode;
 
   @CreateDateColumn({ type: 'timestamptz' })
   created_at: Date;
