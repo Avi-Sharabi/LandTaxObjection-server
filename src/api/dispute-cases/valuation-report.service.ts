@@ -170,6 +170,7 @@ export class ValuationReportService {
     if (!result.text) throw new ValuationReportFailedException('Claude returned empty valuation report');
 
     const raw = this.anthropicService.parseJsonObject<RawReportData>(result.text);
+    const internalAssessedValue = raw.valuation?.vg_recorded_value ?? null;
     const renderData = this.buildRenderData(raw);
 
     const html = nunjucks.renderString(skillFiles.template, renderData);
@@ -190,6 +191,7 @@ export class ValuationReportService {
     );
 
     await this.repository.updateAnalysisReportPath(disputeCaseId, storedPath);
+    await this.repository.updateInternalAssessedValue(disputeCaseId, internalAssessedValue);
 
     this.logger.log(JSON.stringify({
       context: 'ValuationReport.complete',
