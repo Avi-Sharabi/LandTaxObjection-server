@@ -47,13 +47,18 @@ export class PropertyContextService {
   async gather(
     disputeCaseId: string,
     address: string,
-  ): Promise<{ ctx: SupportingEvidenceContext; artifactDocIds: Map<string, string> }> {
+  ): Promise<{
+    ctx: SupportingEvidenceContext;
+    artifactDocIds: Map<string, string>;
+  }> {
     const disputeCase = await this.disputeCasesRepository.findOne({
       where: { id: disputeCaseId },
       relations: ['valuation_notice'],
     });
     if (!disputeCase) {
-      this.logger.error(`[CTX] Dispute case ${disputeCaseId} not found — cannot save artifacts`);
+      this.logger.error(
+        `[CTX] Dispute case ${disputeCaseId} not found — cannot save artifacts`,
+      );
       throw new EvidenceDisputeCaseNotFoundException(disputeCaseId);
     }
     const inputDocs = await this.fetchInputDocuments(disputeCase);
@@ -62,7 +67,12 @@ export class PropertyContextService {
       browser = await this.puppeteerSvc.launch();
       const ctx = await this.gatherSharedContext(address, browser, inputDocs);
       const artifactDocIds = new Map<string, string>();
-      await this.saveInitialArtifacts(disputeCaseId, disputeCase.client_id, ctx, artifactDocIds);
+      await this.saveInitialArtifacts(
+        disputeCaseId,
+        disputeCase.client_id,
+        ctx,
+        artifactDocIds,
+      );
       return { ctx, artifactDocIds };
     } finally {
       if (browser) await browser.close().catch(() => {});
@@ -76,8 +86,10 @@ export class PropertyContextService {
   ): Promise<SupportingEvidenceContext> {
     this.logger.log(`[CTX] Gathering shared context for: ${address}`);
 
-    const { propId, confirmedAddress } = await this.eplanning.lookupProperty(address);
-    const { reportText, reportBuffer } = await this.eplanning.downloadPropertyReport(propId);
+    const { propId, confirmedAddress } =
+      await this.eplanning.lookupProperty(address);
+    const { reportText, reportBuffer } =
+      await this.eplanning.downloadPropertyReport(propId);
     const apiData = await this.eplanning.queryLayers(propId);
     const { lat, lng } = await this.geocoding.geocode(confirmedAddress);
 
@@ -87,39 +99,58 @@ export class PropertyContextService {
       plan: rawMeta['plan'] as string | null,
       planType: (rawMeta['planType'] as string) || 'DP',
       assessed_land_value: rawMeta['assessed_land_value'] as number | null,
-      revenue_nsw_notice_date: rawMeta['revenue_nsw_notice_date'] as string | null,
+      revenue_nsw_notice_date: rawMeta['revenue_nsw_notice_date'] as
+        | string
+        | null,
       fsr_from_pdf: rawMeta['fsr_from_pdf'] as number | null,
       land_area_sqm: (rawMeta['land_area_sqm'] as number | null) ?? null,
       height_limit_m: (rawMeta['height_limit_m'] as number | null) ?? null,
       concession_mentions: (rawMeta['concession_mentions'] as string[]) || [],
       heritage_mentions: (rawMeta['heritage_mentions'] as string[]) || [],
-      multiple_lots_in_report: (rawMeta['multiple_lots_in_report'] as string[]) || [],
+      multiple_lots_in_report:
+        (rawMeta['multiple_lots_in_report'] as string[]) || [],
     };
 
     let lotAreaM2: number | null = null;
     if (meta.lot && meta.plan) {
-      lotAreaM2 = await this.eplanning.getLotArea(meta.lot, meta.plan, meta.planType).catch(e => {
-        this.logger.warn(`getLotArea failed: ${e.message}`);
-        return null;
-      });
+      lotAreaM2 = await this.eplanning
+        .getLotArea(meta.lot, meta.plan, meta.planType)
+        .catch((e) => {
+          this.logger.warn(`getLotArea failed: ${(e as Error).message}`);
+          return null;
+        });
     }
     if (!lotAreaM2) {
-      const cadInfo = await this.geocoding.getLotInfoFromCadastre(lat, lng).catch(e => {
-        this.logger.warn(`Cadastre fallback failed: ${e.message}`);
-        return null;
-      });
+      const cadInfo = await this.geocoding
+        .getLotInfoFromCadastre(lat, lng)
+        .catch((e) => {
+          this.logger.warn(`Cadastre fallback failed: ${(e as Error).message}`);
+          return null;
+        });
       if (cadInfo?.areaM2) lotAreaM2 = cadInfo.areaM2;
     }
     if (!lotAreaM2 && meta.land_area_sqm) {
       lotAreaM2 = meta.land_area_sqm;
     }
 
-    const spatialBase64 = await this.puppeteerSvc.capturePortalScreenshot(confirmedAddress, propId, browser)
-      .catch(e => { this.logger.warn(`Portal screenshot: ${e.message}`); return null; });
-    const contextBase64 = await this.puppeteerSvc.captureContextSatellite(lat, lng, browser)
-      .catch(e => { this.logger.warn(`Context satellite: ${e.message}`); return null; });
-    const closeupBase64 = await this.puppeteerSvc.captureCloseupSatellite(lat, lng, browser)
-      .catch(e => { this.logger.warn(`Closeup satellite: ${e.message}`); return null; });
+    const spatialBase64 = await this.puppeteerSvc
+      .capturePortalScreenshot(confirmedAddress, propId, browser)
+      .catch((e) => {
+        this.logger.warn(`Portal screenshot: ${(e as Error).message}`);
+        return null;
+      });
+    const contextBase64 = await this.puppeteerSvc
+      .captureContextSatellite(lat, lng, browser)
+      .catch((e) => {
+        this.logger.warn(`Context satellite: ${(e as Error).message}`);
+        return null;
+      });
+    const closeupBase64 = await this.puppeteerSvc
+      .captureCloseupSatellite(lat, lng, browser)
+      .catch((e) => {
+        this.logger.warn(`Closeup satellite: ${(e as Error).message}`);
+        return null;
+      });
 
     return {
       propId,
@@ -144,14 +175,21 @@ export class PropertyContextService {
     };
   }
 
-  async fetchInputDocuments(disputeCase: DisputeCase | null): Promise<InputDocuments> {
+  async fetchInputDocuments(
+    disputeCase: DisputeCase | null,
+  ): Promise<InputDocuments> {
     if (!disputeCase) {
-      return { salesComparables: [], inputBenchmarkReport: null, landTaxNotice: null, rawTexts: [], caseDocuments: [] };
+      return {
+        salesComparables: [],
+        inputBenchmarkReport: null,
+        landTaxNotice: null,
+        rawTexts: [],
+        caseDocuments: [],
+      };
     }
 
     const docs = await this.assessmentDocumentsService.findForCase(
       disputeCase.id,
-      disputeCase.client_id,
       disputeCase.valuation_notice?.source_document_id ?? null,
     );
 
@@ -165,12 +203,19 @@ export class PropertyContextService {
       docs.map(async (doc) => {
         if (!doc.file_path) return null;
         try {
-          const buffer = await this.azureBlobService.getFileContent(doc.file_path);
+          const buffer = await this.azureBlobService.getFileContent(
+            doc.file_path,
+          );
           const rawText = await this.pdfExtractor.parseBuffer(buffer);
-          const result = await this.pdfExtractor.classifyAndExtractDocument(buffer, doc.document_name);
+          const result = await this.pdfExtractor.classifyAndExtractDocument(
+            buffer,
+            doc.document_name,
+          );
           return { docId: doc.id, rawText, result };
         } catch (e) {
-          this.logger.warn(`Failed to process assessment doc ${doc.id}: ${(e as Error).message}`);
+          this.logger.warn(
+            `Failed to process assessment doc ${doc.id}: ${(e as Error).message}`,
+          );
           return null;
         }
       }),
@@ -185,7 +230,8 @@ export class PropertyContextService {
         landTaxNotice = item.result as unknown as LandTaxNotice;
       } else if (item.result.document_type === 'benchmark_report') {
         inputBenchmarkReport = item.result as unknown as BenchmarkReport;
-        if (inputBenchmarkReport.sales?.length) salesComparables.push(...inputBenchmarkReport.sales);
+        if (inputBenchmarkReport.sales?.length)
+          salesComparables.push(...inputBenchmarkReport.sales);
       } else if (item.result.document_type === 'sales_report') {
         const salesData = item.result as { sales?: InputComparable[] };
         if (salesData.sales?.length) salesComparables.push(...salesData.sales);
@@ -202,7 +248,13 @@ export class PropertyContextService {
       document_type: classifiedTypeByDocId.get(doc.id) ?? 'unknown',
     }));
 
-    return { salesComparables, inputBenchmarkReport, landTaxNotice, rawTexts, caseDocuments };
+    return {
+      salesComparables,
+      inputBenchmarkReport,
+      landTaxNotice,
+      rawTexts,
+      caseDocuments,
+    };
   }
 
   private async saveInitialArtifacts(
@@ -211,13 +263,23 @@ export class PropertyContextService {
     ctx: SupportingEvidenceContext,
     artifactDocIds: Map<string, string>,
   ): Promise<void> {
-    const uploadBlob = async (blobPath: string, base64: string, documentName: string, key: string) => {
+    const uploadBlob = async (
+      blobPath: string,
+      base64: string,
+      documentName: string,
+      key: string,
+    ) => {
       const filePath = await this.azureBlobService.uploadFile(blobPath, base64);
       if (!filePath) {
         this.logger.warn(`Azure uploadFile returned null for ${blobPath}`);
         return;
       }
-      const doc = await this.assessmentDocumentsService.createArtifactRecord(clientId, documentName, filePath, disputeCaseId);
+      const doc = await this.assessmentDocumentsService.createArtifactRecord(
+        clientId,
+        documentName,
+        filePath,
+        disputeCaseId,
+      );
       artifactDocIds.set(key, doc.id);
     };
 
@@ -227,9 +289,16 @@ export class PropertyContextService {
     ]) {
       if (!base64) continue;
       try {
-        await uploadBlob(`${FOLDER}/${disputeCaseId}/${key}.png`, base64, key, key);
+        await uploadBlob(
+          `${FOLDER}/${disputeCaseId}/${key}.png`,
+          base64,
+          key,
+          key,
+        );
       } catch (e) {
-        this.logger.warn(`Screenshot upload failed (${key}): ${(e as Error).message}`);
+        this.logger.warn(
+          `Screenshot upload failed (${key}): ${(e as Error).message}`,
+        );
       }
     }
 
@@ -242,7 +311,9 @@ export class PropertyContextService {
           'property_report',
         );
       } catch (e) {
-        this.logger.warn(`Property report upload failed: ${(e as Error).message}`);
+        this.logger.warn(
+          `Property report upload failed: ${(e as Error).message}`,
+        );
       }
     }
   }
