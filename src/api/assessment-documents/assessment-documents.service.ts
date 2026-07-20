@@ -3,6 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { AzureBlobService } from 'src/common/azure-blob/azure-blob.service';
 import { AssessmentDocument } from './entities/assessment-document.entity';
+import { DisputeCase } from '../dispute-cases/entities/dispute-case.entity';
 import { CreateAssessmentDocumentDto } from './dto/create-assessment-document.dto';
 import { UpdateAssessmentDocumentDto } from './dto/update-assessment-document.dto';
 import { AssessmentDocumentResponseDto } from './dto/assessment-document-response.dto';
@@ -15,10 +16,14 @@ export class AssessmentDocumentsService {
   constructor(
     @InjectRepository(AssessmentDocument)
     private readonly assessmentDocumentsRepository: Repository<AssessmentDocument>,
+    @InjectRepository(DisputeCase)
+    private readonly disputeCaseRepository: Repository<DisputeCase>,
     private readonly azureBlobService: AzureBlobService,
   ) {}
 
-  async create(dto: CreateAssessmentDocumentDto): Promise<AssessmentDocumentResponseDto> {
+  async create(
+    dto: CreateAssessmentDocumentDto,
+  ): Promise<AssessmentDocumentResponseDto> {
     const doc = await this.assessmentDocumentsRepository.save(
       this.assessmentDocumentsRepository.create({
         client_id: dto.client_id,
@@ -44,11 +49,26 @@ export class AssessmentDocumentsService {
     return this.toResponseDto(doc);
   }
 
-  async createBatch(dtos: CreateAssessmentDocumentDto[]): Promise<AssessmentDocumentResponseDto[]> {
+  async createBatch(
+    dtos: CreateAssessmentDocumentDto[],
+  ): Promise<AssessmentDocumentResponseDto[]> {
     return Promise.all(dtos.map((dto) => this.create(dto)));
   }
 
-  async findAll(clientId?: string): Promise<AssessmentDocumentResponseDto[]> {
+  async findAll(
+    clientId?: string,
+    disputeCaseId?: string,
+  ): Promise<AssessmentDocumentResponseDto[]> {
+    if (disputeCaseId) {
+      const extraDocumentId =
+        await this.resolveCaseSourceDocumentId(disputeCaseId);
+      const docs = await this.findDocumentsForCase(
+        disputeCaseId,
+        extraDocumentId,
+      );
+      return docs.map((doc) => this.toResponseDto(doc));
+    }
+
     const docs = await this.assessmentDocumentsRepository.find({
       where: clientId ? { client_id: clientId } : undefined,
       order: { created_at: 'DESC' },
@@ -58,14 +78,23 @@ export class AssessmentDocumentsService {
   }
 
   async findOne(id: string): Promise<AssessmentDocumentResponseDto> {
-    const doc = await this.assessmentDocumentsRepository.findOne({ where: { id } });
-    if (!doc) throw new NotFoundException(`AssessmentDocument #${id} not found`);
+    const doc = await this.assessmentDocumentsRepository.findOne({
+      where: { id },
+    });
+    if (!doc)
+      throw new NotFoundException(`AssessmentDocument #${id} not found`);
     return this.toResponseDto(doc);
   }
 
-  async update(id: string, dto: UpdateAssessmentDocumentDto): Promise<AssessmentDocumentResponseDto> {
-    const doc = await this.assessmentDocumentsRepository.findOne({ where: { id } });
-    if (!doc) throw new NotFoundException(`AssessmentDocument #${id} not found`);
+  async update(
+    id: string,
+    dto: UpdateAssessmentDocumentDto,
+  ): Promise<AssessmentDocumentResponseDto> {
+    const doc = await this.assessmentDocumentsRepository.findOne({
+      where: { id },
+    });
+    if (!doc)
+      throw new NotFoundException(`AssessmentDocument #${id} not found`);
 
     const { file, ...scalarFields } = dto;
     Object.assign(doc, scalarFields);
@@ -73,7 +102,12 @@ export class AssessmentDocumentsService {
     if (file) {
       const ext = this.extractExtension(file);
       const name = dto.document_name ?? doc.document_name;
-      const filePath = await this.azureBlobService.uploadToAzureBlob(file, doc.id, FOLDER, `${name}.${ext}`);
+      const filePath = await this.azureBlobService.uploadToAzureBlob(
+        file,
+        doc.id,
+        FOLDER,
+        `${name}.${ext}`,
+      );
       if (filePath) doc.file_path = filePath;
     }
 
@@ -82,8 +116,11 @@ export class AssessmentDocumentsService {
   }
 
   async remove(id: string): Promise<{ message: string }> {
-    const doc = await this.assessmentDocumentsRepository.findOne({ where: { id } });
-    if (!doc) throw new NotFoundException(`AssessmentDocument #${id} not found`);
+    const doc = await this.assessmentDocumentsRepository.findOne({
+      where: { id },
+    });
+    if (!doc)
+      throw new NotFoundException(`AssessmentDocument #${id} not found`);
     await this.assessmentDocumentsRepository.remove(doc);
     return { message: `AssessmentDocument #${id} removed` };
   }
@@ -104,7 +141,9 @@ export class AssessmentDocumentsService {
   }
 
   async updateFilePath(id: string, filePath: string): Promise<void> {
-    await this.assessmentDocumentsRepository.update(id, { file_path: filePath });
+    await this.assessmentDocumentsRepository.update(id, {
+      file_path: filePath,
+    });
   }
 
   async createArtifactRecord(
@@ -123,16 +162,25 @@ export class AssessmentDocumentsService {
     );
   }
 
-  async findByClientId(clientId: string): Promise<AssessmentDocument[]> {
-    return this.assessmentDocumentsRepository.find({
-      where: { client_id: clientId },
-      order: { created_at: 'DESC' },
-    });
-  }
-
   async findForCase(
     disputeCaseId: string,
-    clientId: string,
+    extraDocumentId?: string | null,
+  ): Promise<AssessmentDocument[]> {
+    return this.findDocumentsForCase(disputeCaseId, extraDocumentId);
+  }
+
+  private async resolveCaseSourceDocumentId(
+    disputeCaseId: string,
+  ): Promise<string | null> {
+    const disputeCase = await this.disputeCaseRepository.findOne({
+      where: { id: disputeCaseId },
+      relations: ['valuation_notice'],
+    });
+    return disputeCase?.valuation_notice?.source_document_id ?? null;
+  }
+
+  private async findDocumentsForCase(
+    disputeCaseId: string,
     extraDocumentId?: string | null,
   ): Promise<AssessmentDocument[]> {
     const caseScoped = await this.assessmentDocumentsRepository.find({
@@ -140,17 +188,23 @@ export class AssessmentDocumentsService {
       order: { created_at: 'DESC' },
     });
 
-    let result = caseScoped;
     if (extraDocumentId && !caseScoped.some((d) => d.id === extraDocumentId)) {
-      const extraDoc = await this.assessmentDocumentsRepository.findOne({ where: { id: extraDocumentId } });
-      if (extraDoc) result = [...caseScoped, extraDoc];
+      const extraDoc = await this.assessmentDocumentsRepository.findOne({
+        where: { id: extraDocumentId },
+      });
+      if (extraDoc) return [...caseScoped, extraDoc];
     }
 
-    return result.length > 0 ? result : this.findByClientId(clientId);
+    return caseScoped;
   }
 
-  private toResponseDto(doc: AssessmentDocument): AssessmentDocumentResponseDto {
-    const viewUrl = this.azureBlobService.getFileUrl(doc.file_path, URL_EXPIRY_MINUTES);
+  private toResponseDto(
+    doc: AssessmentDocument,
+  ): AssessmentDocumentResponseDto {
+    const viewUrl = this.azureBlobService.getFileUrl(
+      doc.file_path,
+      URL_EXPIRY_MINUTES,
+    );
     const downloadUrl = doc.file_path
       ? this.azureBlobService.getFileUrl(
           doc.file_path,

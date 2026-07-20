@@ -1,5 +1,23 @@
-import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Query, UseGuards } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
+import {
+  Body,
+  Controller,
+  Delete,
+  Get,
+  Param,
+  ParseUUIDPipe,
+  Patch,
+  Post,
+  Query,
+  UseGuards,
+} from '@nestjs/common';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiParam,
+  ApiQuery,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AssessmentDocumentsService } from './assessment-documents.service';
 import { CreateAssessmentDocumentDto } from './dto/create-assessment-document.dto';
@@ -12,28 +30,54 @@ import { AssessmentDocumentResponseDto } from './dto/assessment-document-respons
 @UseGuards(JwtAuthGuard)
 @Controller({ path: 'assessment-documents', version: '1' })
 export class AssessmentDocumentsController {
-  constructor(private readonly assessmentDocumentsService: AssessmentDocumentsService) {}
+  constructor(
+    private readonly assessmentDocumentsService: AssessmentDocumentsService,
+  ) {}
 
   @Post('batch')
-  @ApiOperation({ summary: 'Create multiple assessment documents in one request' })
+  @ApiOperation({
+    summary: 'Create multiple assessment documents in one request',
+  })
   @ApiResponse({ status: 201, type: [AssessmentDocumentResponseDto] })
-  createBatch(@Body() dto: CreateAssessmentDocumentsBatchDto): Promise<AssessmentDocumentResponseDto[]> {
+  createBatch(
+    @Body() dto: CreateAssessmentDocumentsBatchDto,
+  ): Promise<AssessmentDocumentResponseDto[]> {
     return this.assessmentDocumentsService.createBatch(dto.documents);
   }
 
   @Post()
   @ApiOperation({ summary: 'Create a new assessment document' })
   @ApiResponse({ status: 201, type: AssessmentDocumentResponseDto })
-  create(@Body() dto: CreateAssessmentDocumentDto): Promise<AssessmentDocumentResponseDto> {
+  create(
+    @Body() dto: CreateAssessmentDocumentDto,
+  ): Promise<AssessmentDocumentResponseDto> {
     return this.assessmentDocumentsService.create(dto);
   }
 
   @Get()
-  @ApiOperation({ summary: 'List all assessment documents, optionally filtered by client' })
-  @ApiQuery({ name: 'client_id', required: false, description: 'Filter by client UUID' })
+  @ApiOperation({
+    summary:
+      'List all assessment documents, optionally filtered by client or dispute case',
+  })
+  @ApiQuery({
+    name: 'client_id',
+    required: false,
+    description: 'Filter by client UUID',
+  })
+  @ApiQuery({
+    name: 'dispute_case_id',
+    required: false,
+    description:
+      'Filter by dispute case UUID (takes precedence over client_id)',
+  })
   @ApiResponse({ status: 200, type: [AssessmentDocumentResponseDto] })
-  findAll(@Query('client_id', new ParseUUIDPipe({ optional: true })) clientId?: string): Promise<AssessmentDocumentResponseDto[]> {
-    return this.assessmentDocumentsService.findAll(clientId);
+  findAll(
+    @Query('client_id', new ParseUUIDPipe({ optional: true }))
+    clientId?: string,
+    @Query('dispute_case_id', new ParseUUIDPipe({ optional: true }))
+    disputeCaseId?: string,
+  ): Promise<AssessmentDocumentResponseDto[]> {
+    return this.assessmentDocumentsService.findAll(clientId, disputeCaseId);
   }
 
   @Get(':id')
@@ -41,7 +85,9 @@ export class AssessmentDocumentsController {
   @ApiParam({ name: 'id', description: 'Assessment document UUID' })
   @ApiResponse({ status: 200, type: AssessmentDocumentResponseDto })
   @ApiResponse({ status: 404, description: 'Not found' })
-  findOne(@Param('id', ParseUUIDPipe) id: string): Promise<AssessmentDocumentResponseDto> {
+  findOne(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<AssessmentDocumentResponseDto> {
     return this.assessmentDocumentsService.findOne(id);
   }
 
