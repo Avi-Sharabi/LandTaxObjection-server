@@ -173,7 +173,7 @@ export class DisputeCase {
   analysis_report_blob_path: string | null;
 
   @Column({ type: 'numeric', precision: 15, scale: 2, nullable: true })
-  ai_assessed_value: number | null;
+  internal_assessed_value: number | null;
 
   @Column({ type: 'text', nullable: true })
   vg_response_notes: string | null;

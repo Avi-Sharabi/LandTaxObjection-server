@@ -32,8 +32,8 @@ export class ValuationReportRepository {
     await this.disputeCaseRepo.update(id, { analysis_report_blob_path: blobPath });
   }
 
-  async updateAiAssessedValue(id: string, value: number | null): Promise<void> {
-    await this.disputeCaseRepo.update(id, { ai_assessed_value: value });
+  async updateInternalAssessedValue(id: string, value: number | null): Promise<void> {
+    await this.disputeCaseRepo.update(id, { internal_assessed_value: value });
   }
 
   getComparables(disputeCaseId: string): Promise<ComparableSale[]> {
