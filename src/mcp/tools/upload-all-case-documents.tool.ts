@@ -46,12 +46,20 @@ export class UploadAllCaseDocumentsTool implements IMcpTool {
     private readonly fyiStorage: fyiStorageService,
   ) {}
 
-  async execute(args: Record<string, unknown>, _correlationId: string): Promise<ToolResult> {
+  async execute(
+    args: Record<string, unknown>,
+    _correlationId: string,
+  ): Promise<ToolResult> {
     const dto = plainToInstance(UploadAllCaseDocumentsArgsDto, args);
 
     if (!dto.case_reference && !dto.case_id) {
       return {
-        content: [{ type: 'text', text: 'Invalid arguments: case_reference or case_id is required' }],
+        content: [
+          {
+            type: 'text',
+            text: 'Invalid arguments: case_reference or case_id is required',
+          },
+        ],
         isError: true,
       };
     }
@@ -63,7 +71,7 @@ export class UploadAllCaseDocumentsTool implements IMcpTool {
                 ad.file_path AS blob_storage_url,
                 dc.case_reference
          FROM assessment_documents ad
-         INNER JOIN dispute_cases dc ON dc.client_id = ad.client_id
+         INNER JOIN dispute_cases dc ON dc.id = ad.dispute_case_id
          WHERE dc.id = $1
            AND ad.file_path IS NOT NULL
          ORDER BY ad.created_at ASC`
@@ -73,7 +81,7 @@ export class UploadAllCaseDocumentsTool implements IMcpTool {
                 ad.file_path AS blob_storage_url,
                 dc.case_reference
          FROM assessment_documents ad
-         INNER JOIN dispute_cases dc ON dc.client_id = ad.client_id
+         INNER JOIN dispute_cases dc ON dc.id = ad.dispute_case_id
          WHERE dc.case_reference = $1
            AND ad.file_path IS NOT NULL
          ORDER BY ad.created_at ASC`;
@@ -83,14 +91,25 @@ export class UploadAllCaseDocumentsTool implements IMcpTool {
 
     if (!rows.length) {
       return {
-        content: [{
-          type: 'text',
-          text: JSON.stringify({ uploaded: [], total: 0, message: `No documents found for case ${param}` }),
-        }],
+        content: [
+          {
+            type: 'text',
+            text: JSON.stringify({
+              uploaded: [],
+              total: 0,
+              message: `No documents found for case ${param}`,
+            }),
+          },
+        ],
       };
     }
 
-    const uploaded: { document_type: string; filename: string; fyi_name: string; version_id: string }[] = [];
+    const uploaded: {
+      document_type: string;
+      filename: string;
+      fyi_name: string;
+      version_id: string;
+    }[] = [];
 
     for (const row of rows) {
       const fyi_name = `${row.case_reference} - ${row.filename.replace(/\.[^.]+$/, '')}`;
@@ -98,47 +117,66 @@ export class UploadAllCaseDocumentsTool implements IMcpTool {
 
       if (!sasUrl) {
         return {
-          content: [{
-            type: 'text',
-            text: JSON.stringify({
-              uploaded,
-              failed: {
-                document_type: row.document_type,
-                filename: row.filename,
-                fyi_name,
-                error: 'Failed to generate download URL — check Azure Blob Storage configuration',
-              },
-            }),
-          }],
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                uploaded,
+                failed: {
+                  document_type: row.document_type,
+                  filename: row.filename,
+                  fyi_name,
+                  error:
+                    'Failed to generate download URL — check Azure Blob Storage configuration',
+                },
+              }),
+            },
+          ],
           isError: true,
         };
       }
 
-      const versionId = await this.fyiStorage.uploadToFyi({ url: sasUrl }, fyi_name);
+      const versionId = await this.fyiStorage.uploadToFyi(
+        { url: sasUrl },
+        fyi_name,
+      );
 
       if (!versionId) {
         return {
-          content: [{
-            type: 'text',
-            text: JSON.stringify({
-              uploaded,
-              failed: {
-                document_type: row.document_type,
-                filename: row.filename,
-                fyi_name,
-                error: 'FYI upload failed — verify FYI_CLIENT_CODE and credentials',
-              },
-            }),
-          }],
+          content: [
+            {
+              type: 'text',
+              text: JSON.stringify({
+                uploaded,
+                failed: {
+                  document_type: row.document_type,
+                  filename: row.filename,
+                  fyi_name,
+                  error:
+                    'FYI upload failed — verify FYI_CLIENT_CODE and credentials',
+                },
+              }),
+            },
+          ],
           isError: true,
         };
       }
 
-      uploaded.push({ document_type: row.document_type, filename: row.filename, fyi_name, version_id: versionId });
+      uploaded.push({
+        document_type: row.document_type,
+        filename: row.filename,
+        fyi_name,
+        version_id: versionId,
+      });
     }
 
     return {
-      content: [{ type: 'text', text: JSON.stringify({ uploaded, total: uploaded.length }) }],
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({ uploaded, total: uploaded.length }),
+        },
+      ],
     };
   }
 }

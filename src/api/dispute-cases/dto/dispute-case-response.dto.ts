@@ -61,6 +61,9 @@ export class DisputeCaseResponseDto {
   original_assessed_value: number | null;
 
   @ApiPropertyOptional()
+  internal_assessed_value: number | null;
+
+  @ApiPropertyOptional()
   final_agreed_value: number | null;
 
   @ApiPropertyOptional()
