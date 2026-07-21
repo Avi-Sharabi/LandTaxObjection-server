@@ -555,7 +555,13 @@ export class ValuationReportService {
       '---',
       'Using the skill, data schema, and section guide above, produce a single JSON object matching the data_schema.md schema.',
       'Wrap it in a ```json code fence. Return only the JSON — no other text or commentary.',
-      'Provide raw numbers for money/area/rate fields. Omit sections where data is not available rather than guessing.',
+      'Provide raw numbers for money/area/rate fields. Do not guess a value you cannot support from the data above.',
+      'Never omit a row/field from a list (cover_facts, exec_summary.rows, statutory.basis/assessment, ' +
+      'subject.identification/attributes, constraints, comparables, weaknesses, financial_scenarios, ' +
+      'evidence_checklist, action_plan, legal_grounds) solely because its value could not be found — include the ' +
+      'row and set its value to "-". This is different from the fully-optional blocks (subject.development, ' +
+      'planning_proposal, residual): omit (null/[]) those ONLY when they genuinely do not apply to this property ' +
+      '(no DA, no rezoning proposal, not a residual-method valuation) — not when the data merely could not be found.',
       'Mark any unconfirmed figures as the string "UNCONFIRMED" in the relevant value field.',
       'Exception: for financial_scenarios[].taxable_value and .land_tax, use null (not "UNCONFIRMED") when values are unknown.',
       'Write all prose fields (exec_summary.intro, objection_narrative paragraphs, cpv.rate_analysis, weakness argument values, hbu.statement) in a confident first-person advocate voice: "We contend...", "We submit...", "The VG has failed to...". Do NOT use neutral third-person language.',

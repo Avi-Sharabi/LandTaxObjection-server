@@ -28,8 +28,11 @@ the same data shape with different values.
 
 ## What you produce
 
-A single multi-section PDF with this fixed structure (sections auto-omit when
-their data is absent):
+A single multi-section PDF with this fixed structure. Only three subsections
+auto-omit when genuinely not applicable to the property — 3 (DA / planning
+proposal parts), 5.3 (residual cash flow). Every other section always renders;
+a row whose fact could not be found still appears, with its value as `"-"`
+rather than being dropped:
 
 1. Executive Summary
 2. Statutory Framework and Assessment Details (basis/dates + tax breakdown)
@@ -70,8 +73,11 @@ nsw-land-valuation-objection-report/
    - Provide raw numbers for money/area fields (e.g. `20800000`, `45288`); the
      script formats them (`$20,800,000`, `45,288 m²`). Strings already formatted
      also pass through.
-   - Leave a section's data out (or `null`) to omit that subsection — e.g. no
-     `planning_proposal` block ⇒ section 3.4 is skipped.
+   - Leave a section's data out (or `null`) to omit that subsection **only** for the
+     three genuinely-optional blocks (`subject.development`, `planning_proposal`,
+     `residual`) — e.g. no `planning_proposal` block ⇒ section 3.4 is skipped. For
+     every other list, never drop a row for a fact you couldn't find — include the
+     row with its value set to `"-"` instead.
 3. **Run the build script:**
    ```bash
    pip install jinja2 weasyprint --break-system-packages   # only if not present
@@ -133,12 +139,14 @@ table → light-blue CONFIDENTIALITY banner); content flows from page 2.
 - Land tax figures (taxable value, tax payable, arrears, savings) come from the
   assessment notice and the user's calculation. The script computes savings as
   `current_tax − scenario_tax` when both are supplied; it does **not** invent
-  marginal land-tax amounts. If a figure isn't supplied, leave it blank rather
-  than guessing.
+  marginal land-tax amounts. If a figure isn't supplied, use `"-"` rather than
+  guessing (exception: `financial_scenarios[].taxable_value`/`.land_tax` use
+  `null`, not `"-"` or `"UNCONFIRMED"`, when unknown).
 - This is an internal objection-support tool, not a substitute for the
   independent CPV report — the disclaimer in section 11 must say so.
 - Do not assert facts the user hasn't supplied (zoning, refusal dates, areas).
-  Mark unconfirmed items as such, exactly as the reference does.
+  Mark unconfirmed-but-present findings as `"UNCONFIRMED"`; use `"-"` only when
+  the fact itself could not be found at all.
 
 ## Quick test prompts
 

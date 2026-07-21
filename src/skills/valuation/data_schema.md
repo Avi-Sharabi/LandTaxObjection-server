@@ -7,8 +7,17 @@ the script formats them and computes variances, rates, and savings. Strings are
 passed through unchanged, so anything pre-formatted (e.g. `"$8,500,000 + GST"`)
 also works.
 
-Omit a block (or set it to `null`/`[]`) to drop that part of the report — e.g.
-no `planning_proposal` ⇒ section 3.4 is skipped; empty `residual` ⇒ no 5.3.
+Omit a block (or set it to `null`/`[]`) **only** for the three blocks that are genuinely
+optional depending on the property — `subject.development` (no DA), `planning_proposal`
+(no refused rezoning), `residual` (not a residual-method valuation) — e.g. no
+`planning_proposal` ⇒ section 3.4 is skipped; empty `residual` ⇒ no 5.3.
+
+For every other list (`cover_facts`, `exec_summary.rows`, `statutory.basis`/`assessment`,
+`subject.identification`/`attributes`, `constraints`, `comparables`, `weaknesses`,
+`financial_scenarios`, `evidence_checklist`, `action_plan`, `legal_grounds`), never drop a
+row just because a fact couldn't be found — include the row with its `value` (or
+equivalent field) set to `"-"`. These sections are always relevant to the report; an
+empty/missing table reads as an incomplete report, not as "not applicable."
 
 `| safe`: every value rendered into the document allows inline HTML, so you may
 use `<strong>…</strong>` and `<br>` inside any string (the narrative grounds use

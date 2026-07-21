@@ -171,7 +171,7 @@ ul.tight li { margin-bottom: 3pt; }
   {% for r in rows %}
   <tr>
     <td>{{ r.label }}</td>
-    <td>{{ r.value | safe }}</td>
+    <td>{{ r.value | default("-", true) | safe }}</td>
   </tr>
   {% endfor %}
 </table>
@@ -211,10 +211,12 @@ ul.tight li { margin-bottom: 3pt; }
   <thead><tr><th style="width:26%">Item</th><th>Summary Finding</th></tr></thead>
   <tbody>
   {% for r in exec_summary.rows %}
-    <tr><td class="lbl">{{ r.item | safe }}</td><td>{{ r.finding | safe }}</td></tr>
+    <tr><td class="lbl">{{ r.item | default("-", true) | safe }}</td><td>{{ r.finding | default("-", true) | safe }}</td></tr>
   {% endfor %}
   </tbody>
 </table>
+{% else %}
+<p>-</p>
 {% endif %}
 
 {# =========================== 2. STATUTORY FRAMEWORK =========================== #}
@@ -262,14 +264,16 @@ ul.tight li { margin-bottom: 3pt; }
   <tbody>
   {% for c in constraints %}
     <tr>
-      <td class="lbl">{{ c.constraint }}</td>
-      <td>{{ c.status | safe }}</td>
-      <td>{{ c.source }}</td>
-      <td>{{ c.impact | safe }}</td>
+      <td class="lbl">{{ c.constraint | default("-", true) }}</td>
+      <td>{{ c.status | default("-", true) | safe }}</td>
+      <td>{{ c.source | default("-", true) }}</td>
+      <td>{{ c.impact | default("-", true) | safe }}</td>
     </tr>
   {% endfor %}
   </tbody>
 </table>
+{% else %}
+<p>-</p>
 {% endif %}
 
 {# =========================== 5. CPV REPORT ANALYSIS =========================== #}
@@ -305,14 +309,14 @@ ul.tight li { margin-bottom: 3pt; }
   <tbody>
   {% for c in comparables %}
     <tr>
-      <td class="num">{{ c.ref }}</td>
-      <td>{{ c.address | safe }}</td>
-      <td>{{ c.date }}</td>
-      <td class="{{ c.price_class | default('num') }}">{{ c.price_display }}</td>
-      <td>{{ c.area_display }}</td>
-      <td>{{ c.zone }}</td>
-      <td class="num">{{ c.rate_display }}</td>
-      <td>{{ c.comparison | safe }}</td>
+      <td class="num">{{ c.ref | default("-", true) }}</td>
+      <td>{{ c.address | default("-", true) | safe }}</td>
+      <td>{{ c.date | default("-", true) }}</td>
+      <td class="{{ c.price_class | default('num') }}">{{ c.price_display | default("-", true) }}</td>
+      <td>{{ c.area_display | default("-", true) }}</td>
+      <td>{{ c.zone | default("-", true) }}</td>
+      <td class="num">{{ c.rate_display | default("-", true) }}</td>
+      <td>{{ c.comparison | default("-", true) | safe }}</td>
     </tr>
   {% endfor %}
   {% if cpv.comp_summary_row %}
@@ -328,6 +332,8 @@ ul.tight li { margin-bottom: 3pt; }
   {% endif %}
   </tbody>
 </table>
+{% else %}
+<p>-</p>
 {% endif %}
 {% if cpv.rate_analysis %}{{ callout(cpv.rate_analysis, "blue") }}{% endif %}
 
@@ -345,10 +351,12 @@ ul.tight li { margin-bottom: 3pt; }
   <thead><tr><th style="width:4%">#</th><th style="width:26%">Weakness</th><th style="width:35%">Evidence</th><th>Objection Argument</th></tr></thead>
   <tbody>
   {% for w in weaknesses %}
-    <tr><td class="num">{{ w.n }}</td><td class="note-strong">{{ w.weakness | safe }}</td><td>{{ w.evidence | safe }}</td><td>{{ w.argument | safe }}</td></tr>
+    <tr><td class="num">{{ w.n | default("-", true) }}</td><td class="note-strong">{{ w.weakness | default("-", true) | safe }}</td><td>{{ w.evidence | default("-", true) | safe }}</td><td>{{ w.argument | default("-", true) | safe }}</td></tr>
   {% endfor %}
   </tbody>
 </table>
+{% else %}
+<p>-</p>
 {% endif %}
 
 <h3 class="subsection">6.2 Legal Grounds — Formal Objection Basis</h3>
@@ -362,15 +370,17 @@ ul.tight li { margin-bottom: 3pt; }
   <tbody>
   {% for s in financial_scenarios %}
     <tr class="{{ 'emph-row' if s.emph else '' }}">
-      <td class="{{ '' if s.emph else 'lbl' }}">{{ s.scenario | safe }}</td>
-      <td>{{ s.basis }}</td>
-      <td>{{ s.taxable_display }}</td>
-      <td>{{ s.tax_display }}</td>
-      <td class="{{ s.saving_class | default('') }}">{{ s.saving_display }}</td>
+      <td class="{{ '' if s.emph else 'lbl' }}">{{ s.scenario | default("-", true) | safe }}</td>
+      <td>{{ s.basis | default("-", true) }}</td>
+      <td>{{ s.taxable_display | default("-", true) }}</td>
+      <td>{{ s.tax_display | default("-", true) }}</td>
+      <td class="{{ s.saving_class | default('') }}">{{ s.saving_display | default("-", true) }}</td>
     </tr>
   {% endfor %}
   </tbody>
 </table>
+{% else %}
+<p>-</p>
 {% endif %}
 {% for cb in financial_callouts | default([]) %}{{ callout(cb.text, cb.kind | default("blue")) }}{% endfor %}
 
@@ -381,10 +391,12 @@ ul.tight li { margin-bottom: 3pt; }
   <thead><tr><th style="width:32%">Document / Evidence Item</th><th style="width:16%">Status</th><th>Action / Notes</th></tr></thead>
   <tbody>
   {% for e in evidence_checklist %}
-    <tr><td class="lbl">{{ e.item | safe }}</td><td class="{{ e.status_class | default('') }}">{{ e.status }}</td><td>{{ e.notes | safe }}</td></tr>
+    <tr><td class="lbl">{{ e.item | default("-", true) | safe }}</td><td class="{{ e.status_class | default('') }}">{{ e.status | default("-", true) }}</td><td>{{ e.notes | default("-", true) | safe }}</td></tr>
   {% endfor %}
   </tbody>
 </table>
+{% else %}
+<p>-</p>
 {% endif %}
 
 {# =========================== 9. OBJECTION NARRATIVE =========================== #}
@@ -399,10 +411,12 @@ ul.tight li { margin-bottom: 3pt; }
   <thead><tr><th style="width:4%">Pri.</th><th style="width:24%">Action</th><th>How To Do It</th><th style="width:14%">Deadline</th><th style="width:11%">Status</th></tr></thead>
   <tbody>
   {% for a in action_plan %}
-    <tr><td class="num">{{ a.priority }}</td><td class="note-strong">{{ a.action | safe }}</td><td>{{ a.how | safe }}</td><td>{{ a.deadline }}</td><td class="{{ a.status_class | default('') }}">{{ a.status }}</td></tr>
+    <tr><td class="num">{{ a.priority | default("-", true) }}</td><td class="note-strong">{{ a.action | default("-", true) | safe }}</td><td>{{ a.how | default("-", true) | safe }}</td><td>{{ a.deadline | default("-", true) }}</td><td class="{{ a.status_class | default('') }}">{{ a.status | default("-", true) }}</td></tr>
   {% endfor %}
   </tbody>
 </table>
+{% else %}
+<p>-</p>
 {% endif %}
 
 {# =========================== 11. DISCLAIMER =========================== #}
