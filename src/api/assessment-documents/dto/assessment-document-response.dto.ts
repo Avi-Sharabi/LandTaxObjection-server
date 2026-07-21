@@ -8,16 +8,28 @@ export class AssessmentDocumentResponseDto {
   @ApiProperty()
   client_id: string;
 
+  @ApiProperty({
+    nullable: true,
+    description: 'Dispute case this document is scoped to, if any',
+  })
+  dispute_case_id: string | null;
+
   @ApiProperty()
   document_name: string;
 
   @ApiProperty()
   created_at: Date;
 
-  @ApiProperty({ nullable: true, description: 'Signed Azure Blob URL for inline viewing (30 min)' })
+  @ApiProperty({
+    nullable: true,
+    description: 'Signed Azure Blob URL for inline viewing (30 min)',
+  })
   viewUrl: string | null;
 
-  @ApiProperty({ nullable: true, description: 'Signed Azure Blob URL for download / Save As (30 min)' })
+  @ApiProperty({
+    nullable: true,
+    description: 'Signed Azure Blob URL for download / Save As (30 min)',
+  })
   downloadUrl: string | null;
 
   static fromEntity(
@@ -28,6 +40,7 @@ export class AssessmentDocumentResponseDto {
     const dto = new AssessmentDocumentResponseDto();
     dto.id = doc.id;
     dto.client_id = doc.client_id;
+    dto.dispute_case_id = doc.dispute_case_id;
     dto.document_name = doc.document_name;
     dto.created_at = doc.created_at;
     dto.viewUrl = viewUrl;
