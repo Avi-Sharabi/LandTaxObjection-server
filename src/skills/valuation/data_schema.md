@@ -41,6 +41,8 @@ this). Do not paste untrusted HTML.
 | `action_plan` | list | `{priority, action, how, deadline, status}` (+ optional `status_class`). → Section 10 |
 | `disclaimer_paragraphs` | list | Strings. → Section 11 |
 | `payment_reminder` | string | Red callout at the very end (optional). |
+| `evidence_strength_score` | integer | 0–100 case-level evidence strength score. Computed via the deterministic rubric in the `evidence-score` skill — never a subjective guess. Persisted to `dispute_cases.evidence_strength_score`; **not rendered anywhere in the PDF report.** |
+| `evidence_strength_rationale` | string | One-sentence justification for the score above, per the `evidence-score` skill. Logged for audit only — not rendered in the PDF. |
 
 ## `meta`
 `title_line1` / `title_line2` / `title_line3` (banner; defaults supplied),
@@ -123,3 +125,10 @@ missing document is `"PENDING"` (or `"PENDING — URGENT"` if it blocks lodgemen
 Whole values → `$20,800,000`; fractional → `$630,764.25`; areas →
 `45,288 m²`; `$/m²` column → bare `$446`. Pass a pre-formatted string anywhere
 the automatic format isn't what you want.
+
+## `evidence_strength_score` / `evidence_strength_rationale`
+
+Computed by the separate `evidence-score` skill (`src/skills/evidence-score.md`),
+which is loaded as its own system block alongside this schema whenever a valuation
+report is generated. See that skill for the full deterministic rubric — this file
+only defines the two fields' JSON types (see the top-level keys table above).

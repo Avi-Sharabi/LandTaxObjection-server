@@ -105,6 +105,8 @@ interface RawReportData {
   action_plan?: Array<{ priority: string | number; action: string; how: string; deadline: string; status: string; status_class?: string }>;
   disclaimer_paragraphs?: string[];
   payment_reminder?: string;
+  evidence_strength_score?: number;
+  evidence_strength_rationale?: string;
 }
 
 interface SkillFiles {
@@ -147,6 +149,7 @@ export class ValuationReportService {
     }
 
     const skillContent = this.skillRegistry.getSkillContent('valuation-report');
+    const evidenceScoreSkillContent = this.skillRegistry.getSkillContent('evidence-score');
     const userMessage = this.buildUserMessage(disputeCase, comparables, evidenceIssues, objectionReasons, resolvedCtx);
 
     this.logger.log(JSON.stringify({ context: 'ValuationReport.calling_claude', disputeCaseId }));
@@ -155,6 +158,7 @@ export class ValuationReportService {
         { text: skillContent, cached: true },
         { text: `# Data Schema — JSON output contract\n\n${skillFiles.dataSchema}`, cached: true },
         { text: skillFiles.sectionGuide, cached: true },
+        { text: evidenceScoreSkillContent, cached: true },
       ],
       userMessage,
       maxTokens: 32000,
@@ -171,6 +175,10 @@ export class ValuationReportService {
 
     const raw = this.anthropicService.parseJsonObject<RawReportData>(result.text);
     const internalAssessedValue = raw.valuation?.contended_value ?? null;
+    const rawScore = raw.evidence_strength_score;
+    const evidenceStrengthScore = typeof rawScore === 'number' && isFinite(rawScore)
+      ? Math.max(0, Math.min(100, Math.round(rawScore)))
+      : null;
     const renderData = this.buildRenderData(raw);
 
     const html = nunjucks.renderString(skillFiles.template, renderData);
@@ -192,11 +200,14 @@ export class ValuationReportService {
 
     await this.repository.updateAnalysisReportPath(disputeCaseId, storedPath);
     await this.repository.updateInternalAssessedValue(disputeCaseId, internalAssessedValue);
+    await this.repository.updateEvidenceStrengthScore(disputeCaseId, evidenceStrengthScore);
 
     this.logger.log(JSON.stringify({
       context: 'ValuationReport.complete',
       disputeCaseId,
       blobPath: storedPath,
+      evidenceStrengthScore,
+      evidenceStrengthRationale: raw.evidence_strength_rationale ?? null,
       usage: result.usage,
     }));
   }
@@ -559,6 +570,7 @@ export class ValuationReportService {
       'Mark any unconfirmed figures as the string "UNCONFIRMED" in the relevant value field.',
       'Exception: for financial_scenarios[].taxable_value and .land_tax, use null (not "UNCONFIRMED") when values are unknown.',
       'Write all prose fields (exec_summary.intro, objection_narrative paragraphs, cpv.rate_analysis, weakness argument values, hbu.statement) in a confident first-person advocate voice: "We contend...", "We submit...", "The VG has failed to...". Do NOT use neutral third-person language.',
+      'Compute `evidence_strength_score` (top-level integer, 0-100) and a one-sentence `evidence_strength_rationale` (top-level string) using ONLY the deterministic rubric in the evidence-score skill, applied to the ticked Supporting Evidence Issues, Comparable Sales, and Objection Grounds sections above. Do not use any other basis, and do not render this score anywhere inside the report content itself.',
     );
 
     return lines.join('\n');
