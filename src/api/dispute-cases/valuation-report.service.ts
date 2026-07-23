@@ -69,7 +69,7 @@ export function buildSafePlanningCtx(ctx: SupportingEvidenceContext): SafePlanni
 interface RawReportData {
   meta?: Record<string, unknown>;
   property?: Record<string, unknown>;
-  valuation?: { vg_recorded_value?: number; [k: string]: unknown };
+  valuation?: { vg_recorded_value?: number; contended_value?: number; [k: string]: unknown };
   key_finding?: string;
   cover_facts?: Array<{ label: string; value: string }>;
   exec_summary?: { intro?: string; rows?: Array<{ item: string; finding: string }> };
@@ -282,7 +282,9 @@ export class ValuationReportService {
     if (!result.text) throw new ValuationReportFailedException('Claude returned empty valuation report');
 
     const raw = this.anthropicService.parseJsonObject<RawReportData>(result.text);
-    const renderData = this.buildRenderData(raw, deterministicFacts);
+
+    const internalAssessedValue = raw.valuation?.contended_value ?? null;
+    const renderData = this.buildRenderData(raw,deterministicFacts);
 
     const html = nunjucks.renderString(skillFiles.template, renderData);
     this.assertNoLeftoverArtifacts(html, disputeCaseId);
