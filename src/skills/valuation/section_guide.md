@@ -54,6 +54,26 @@ below — never infer them from a tick, a confidence score, or the mere existenc
   Business Register search"). If no real external reference number exists in the supplied data, do
   not invent one — an internal placeholder (e.g. a notice reference beginning `INTAKE-`) is never a
   real Revenue NSW number and must never be echoed as if it were.
+- **Never write an ad hoc placeholder token — `"TBD"`, `"TODO"`, `"XXX"`, bracketed
+  `[LIKE_THIS]`, or similar — anywhere in the output, for any field.** The closed vocabulary for
+  something missing, unconfirmed, or not computable is exactly `"-"` (fact not found at all) or
+  `"UNCONFIRMED"` (fact present but not yet verified) — per `data_schema.md`'s rule that a row is
+  **never dropped** just because a fact couldn't be found; keep the row and set its value to
+  `"-"` instead. This applies to every field without exception, **including
+  `valuation.contended_value`** — if no comparable evidence supports a defensible figure, set it
+  to `"-"`, not `null` and not an omitted field; every row that mirrors it (`cover_facts`
+  "Our Assessed Value", the `cover_facts` "Our Implied Rate ($/m²)" row, the Section 1
+  exec-summary row, the `cpv.extra_rows` "Firm's Assessed Value" entry) stays in the output
+  and simply shows `"-"`. **No field or section is ever omitted from the report** —
+  this includes `subject.development`, `planning_proposal`, and `residual`: when one of these
+  doesn't apply to the property, set it to `null`/`[]` and the section still renders with `"-"`,
+  exactly like everything else. Every list
+  (`cover_facts`, `exec_summary.rows`, `statutory.basis`/`assessment`,
+  `subject.identification`/`attributes`, `constraints`, `comparables`, `weaknesses`,
+  `financial_scenarios`, `evidence_checklist`, `action_plan`, `legal_grounds`) must still contain
+  its full set of rows even when most values are `"-"` — a short/empty list here is always wrong.
+  If you are unsure whether something qualifies for omission, it does not — write `"-"` or
+  `"UNCONFIRMED"` instead of leaving the row, or the whole list, out.
 
 Domain guidance for populating an objection report for any NSW matter. This
 report **is the objector's submission-ready advocacy package** — write every
@@ -73,14 +93,25 @@ two-column Item/Finding table. Lead with: subject, approved development, plannin
 status, VG value, CPV value, variance, tax saving, primary legal ground,
 recommendation, most-urgent action.
 
-**State a contended value, not just a range.** When `valuation.contended_value` is
-supplied, state it explicitly in `key_finding` (a specific number, not only "a range
-of $X–$Y") and add a dedicated `exec_summary.rows` entry ("Our Assessed Land Value").
-This is the firm's own professional assessment from the investigation in this report —
-distinct from, and stated in addition to, the note that an independent CPV valuation
-will confirm or refine it. Do not mark `contended_value` "UNCONFIRMED" merely because
-CPV confirmation is pending — that caveat is a separate sentence, not a reason to avoid
-taking a position.
+**The cover fact table (`cover_facts`) is entirely system-generated — nothing for you to do
+here.** Every row (Owner, Property, Property ID, Site Area, Zoning, dates, VG/Our assessed
+values and implied rates, Variance, Land Tax Payable, Payment Due Date, Case Status) is built
+server-side from real case data, in a fixed order, on every generation. Omit the `cover_facts`
+key from your JSON entirely; if you include it anyway, it is ignored and replaced.
+
+**State a contended value, not just a range — or state `"-"` consistently.** When
+`valuation.contended_value` is a real number, state it explicitly in `key_finding` (a
+specific number, not only "a range of $X–$Y") and add a dedicated `exec_summary.rows`
+entry ("Our Assessed Land Value") with that figure. This is the firm's own professional
+assessment from the investigation in this report — distinct from, and stated in addition
+to, the note that an independent CPV valuation will confirm or refine it. Do not mark
+`contended_value` "UNCONFIRMED" merely because CPV confirmation is pending — that caveat
+is a separate sentence, not a reason to avoid taking a position. **When
+`contended_value` is `"-"`** (no comparable evidence supports a figure), still add the
+"Our Assessed Land Value" `exec_summary.rows` entry — with value `"-"` — rather than
+leaving it out; `key_finding` should note that no defensible figure could be established
+from comparable evidence and an independent CPV valuation is required, without stating a
+range or a number in its place.
 
 **Deadline/process status goes here once, not throughout.** If the objection window has
 lapsed, state it in exactly one place in this section (an amber/red exec-summary row) and
@@ -169,21 +200,38 @@ custom `section_title` once a real CPV report exists, naming the valuer/firm
   fees, contributions, finance, selling costs, margin/IRR, and the residual land
   value — this is the second independent confirmation of the adopted value.
 - Close with the **KEY RATE ANALYSIS** blue callout comparing the VG implied
-  $/m² to the comparable range.
-- Add a `cpv.extra_rows` entry stating the firm's own assessed value distinctly from the
-  comparable range itself, e.g. `{label: "Firm's Assessed Value", value: <contended_value,
-  formatted>, note: "Based on the comparable evidence in this report; independent CPV
-  valuation will confirm or refine"}`. `comp_summary_row.ref` may still read
-  `"CPV ADOPTED RANGE"` for the range itself — the extra row is what states a specific number.
+  $/m² to the comparable range. **Show the arithmetic, not just the conclusion**: list each
+  comparable actually used in the median (its address and $/m² rate) and state the computed
+  median explicitly (e.g. "Comparables: $1,980, $2,010, $2,054, $2,110/m² → median $2,032/m²"),
+  before stating any constraint-based adjustment and the final adopted rate. This doesn't change
+  the underlying comparable-sales data, but it makes the derivation auditable — a reviewer
+  comparing two regenerations of the same report can see exactly which sales and which rate
+  produced the adopted figure, rather than only seeing a final number that may have shifted for
+  reasons that aren't visible in the document.
+- **Always add a `cpv.extra_rows` entry** stating the firm's own assessed value distinctly from
+  the comparable range itself, e.g. `{label: "Firm's Assessed Value", value: <contended_value,
+  formatted>, note: "Based on the comparable evidence in this report; independent CPV valuation
+  will confirm or refine"}`. `comp_summary_row.ref` may still read `"CPV ADOPTED RANGE"` for the
+  range itself — the extra row is what states a specific number. **When `valuation.contended_value`
+  is `"-"`** (no comparable evidence supports a figure this time), still add this row with
+  `value: "-"` and a note explaining why (e.g. "No comparable sale in this report supports a
+  figure below the VG's assessed rate; an independent CPV valuation is required") — never skip
+  the row.
 
 ## Section 6 — Weaknesses & Legal Grounds
 6.1 tabulates each VG weakness with Evidence and the Objection Argument.
-6.2 states the formal grounds. For the primary ground (value too high), state
-`valuation.contended_value` explicitly — for example: "We assess the land
-value at $540,000 as at 1 July 2025, based on the comparable evidence set out
-in this report, subject to independent CPV confirmation." (substitute this
-case's own contended value and actual valuation date; never carry the example
-figures above into a real report). Standard grounds:
+6.2 states the formal grounds. For the primary ground (value too high), **when
+`valuation.contended_value` is a real number**, state it explicitly — for example: "We assess
+the land value at $540,000 as at 1 July 2025, based on the comparable evidence set out in this
+report, subject to independent CPV confirmation." (substitute this case's own contended value
+and actual valuation date; never carry the example figures above into a real report). **When
+`contended_value` is `"-"`** (this report has no comparable-sales evidence to base a figure
+on), argue the primary ground without stating a specific dollar figure — e.g. "We submit the
+Valuer General's assessed land value is excessive having regard to the constraints and factual
+matters set out in this report" — and rely on the constraint/legal-error grounds below to carry
+the argument instead (there is no way to substitute a literal `"-"` into this sentence, so the
+sentence is reworded instead — this is the one place in the report where the value's absence
+changes the wording rather than showing `"-"` directly). Standard grounds:
 - **s.34(1)(a)** Valuation of Land Act 1916 — *valuation too high* (primary).
 - **s.6A** — speculative/anticipated rezoning value is *impermissible*; value at
   HBU as at the relevant date.

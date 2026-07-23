@@ -191,6 +191,16 @@ export class AnalyzeAiProcessor extends WorkerHost {
           ctx.meta.lot && ctx.meta.plan
             ? `Lot ${ctx.meta.lot} ${ctx.meta.planType} ${ctx.meta.plan}`
             : undefined;
+        // Persist so the report generator has these too — same fix as the eplanning-area
+        // persist above; previously both were resolved successfully here but discarded before
+        // ever reaching the report (only the one-off comparables DTO below ever saw them).
+        if (zoningCode || lotDp) {
+          await this.aiPropertySearchService.persistZoningAndLotDp(
+            disputeCaseId,
+            zoningCode,
+            lotDp ?? null,
+          );
+        }
         await this.comparablesService.generateComparableSales(
           {
             dispute_case_id: disputeCaseId,
