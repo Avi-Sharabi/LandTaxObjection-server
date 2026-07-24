@@ -29,6 +29,10 @@ import { CloseNoObjectionDto } from './dto/close-no-objection.dto';
 import { DisputeCaseResponseDto } from './dto/dispute-case-response.dto';
 import { AnalysisReportResponseDto } from './dto/analysis-report-response.dto';
 import { ApprovalDocumentsResponseDto } from './dto/approval-documents-response.dto';
+import {
+  BulkDeleteDisputeCasesResponseDto,
+  BulkDeleteDisputeCasesResultDto,
+} from './dto/bulk-delete-cases.dto';
 import { DisputeCase, DisputeStatus } from './entities/dispute-case.entity';
 import { ValuationNotice } from '../valuation-notices/entities/valuation-notice.entity';
 import { getLandTaxYearFromValuationDate } from '../../common/utils/land-tax-year.util';
@@ -936,6 +940,40 @@ export class DisputeCasesService {
     }
 
     return { message: `Dispute case #${id} has been deleted` };
+  }
+
+  async removeMany(
+    caseIds: string[],
+    deletedById: string,
+  ): Promise<BulkDeleteDisputeCasesResponseDto> {
+    const settled = await Promise.allSettled(
+      caseIds.map((id) => this.remove(id, deletedById)),
+    );
+
+    const results: BulkDeleteDisputeCasesResultDto[] = settled.map((outcome, i) => {
+      const id = caseIds[i];
+      if (outcome.status === 'fulfilled') {
+        return { id, status: 'deleted' };
+      }
+      const err = outcome.reason;
+      if (err instanceof NotFoundException) {
+        return { id, status: 'not_found' };
+      }
+      if (err instanceof ConflictException) {
+        return { id, status: 'already_deleted' };
+      }
+      this.logger.error(`[BulkDelete] Failed to delete dispute case #${id}: ${err instanceof Error ? err.message : String(err)}`);
+      return { id, status: 'error' };
+    });
+
+    const deleted = results.filter((r) => r.status === 'deleted').length;
+
+    return {
+      results,
+      total: results.length,
+      deleted,
+      skipped: results.length - deleted,
+    };
   }
 
 

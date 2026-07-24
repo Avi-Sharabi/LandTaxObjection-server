@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { QueryFailedError, Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import {
   CreateDisputeIntakeDto,
@@ -93,11 +93,11 @@ export class DisputeIntakeOrchestrator {
         continue;
       }
 
-      const caseReference = await this.generateCaseReference();
-
       const flags = this.mapConstraintsToFlags(prop.constraints ?? []);
       const notice = await this.createValuationNotice(property.id, prop.valuation_notice, intakeDto.valuationYear, assessmentDocument.id, intakeDto.noticeDate);
-      const disputeCase = await this.createDisputeCase(client as Client, property.id, notice.id, caseReference, prop.state, prop.valuation_notice.assessed_land_value, intakeDto, flags, authoritativeDeadline, deadlineLapsed);
+      const { disputeCase, caseReference } = await this.createDisputeCaseWithUniqueReference(
+        client as Client, property.id, notice.id, prop.state, prop.valuation_notice.assessed_land_value, intakeDto, flags, authoritativeDeadline, deadlineLapsed,
+      );
 
       await this.createLegalGrounds(disputeCase.id, prop.grounds ?? []);
       caseReferences.push(caseReference);
@@ -199,6 +199,50 @@ export class DisputeIntakeOrchestrator {
     return this.valuationNoticesRepository.save(notice);
   }
 
+  private static readonly MAX_CASE_REFERENCE_ATTEMPTS = 3;
+
+  // generateCaseReference() + createDisputeCase() need to be retried together: the reference is
+  // only a best-effort read of the current max, so two concurrent intake submissions can still
+  // compute the same next number. Retrying with a freshly generated reference on a unique-
+  // constraint collision closes that race without needing a DB-level lock.
+  private async createDisputeCaseWithUniqueReference(
+    client: Client,
+    propertyId: string,
+    valuationNoticeId: string,
+    jurisdiction: Jurisdiction,
+    assessedLandValue: number | null,
+    intakeDto: CreateDisputeIntakeDto,
+    flags: PropertyFlags,
+    statutoryDeadline: Date,
+    deadlineLapsedFlagged: boolean,
+  ): Promise<{ disputeCase: DisputeCase; caseReference: string }> {
+    for (let attempt = 1; attempt <= DisputeIntakeOrchestrator.MAX_CASE_REFERENCE_ATTEMPTS; attempt++) {
+      const caseReference = await this.generateCaseReference();
+      try {
+        const disputeCase = await this.createDisputeCase(
+          client, propertyId, valuationNoticeId, caseReference, jurisdiction,
+          assessedLandValue, intakeDto, flags, statutoryDeadline, deadlineLapsedFlagged,
+        );
+        return { disputeCase, caseReference };
+      } catch (err) {
+        const isLastAttempt = attempt === DisputeIntakeOrchestrator.MAX_CASE_REFERENCE_ATTEMPTS;
+        if (this.isDuplicateCaseReferenceError(err) && !isLastAttempt) {
+          this.logger.warn(`Case reference ${caseReference} collided with a concurrent submission (attempt ${attempt}) — retrying with a new reference.`);
+          continue;
+        }
+        throw err;
+      }
+    }
+    // Unreachable — the loop always returns or throws — but keeps TypeScript satisfied.
+    throw new Error('Failed to generate a unique case reference after retries');
+  }
+
+  private isDuplicateCaseReferenceError(err: unknown): boolean {
+    if (!(err instanceof QueryFailedError)) return false;
+    const driverErr = err as QueryFailedError & { code?: string; constraint?: string };
+    return driverErr.code === '23505' && driverErr.constraint === 'UQ_dispute_cases_case_reference';
+  }
+
   private async createDisputeCase(
     client: Client,
     propertyId: string,
@@ -284,8 +328,17 @@ export class DisputeIntakeOrchestrator {
 
   private async generateCaseReference(): Promise<string> {
     const year = new Date().getFullYear();
-    const count = await this.disputeCasesRepository.count();
-    const sequence = (count + 1).toString().padStart(6, '0');
+
+    // Based on the highest existing sequence number rather than a row count, so that
+    // deleting cases (soft via the UI, or hard via the retention cleanup task) can never
+    // free up a number that collides with a case reference still in use.
+    const result = await this.disputeCasesRepository
+      .createQueryBuilder('dc')
+      .withDeleted()
+      .select(`MAX(CAST(SUBSTRING(dc.case_reference FROM 'LTD-\\d{4}-(\\d{6})$') AS INTEGER))`, 'max')
+      .getRawOne<{ max: number | null }>();
+
+    const sequence = ((result?.max ?? 0) + 1).toString().padStart(6, '0');
     return `LTD-${year}-${sequence}`;
   }
 }

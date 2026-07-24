@@ -47,6 +47,7 @@ import { AnalyzeAiQueueService } from './analyze-ai-queue.service';
 import { ObjectionReasonGeneratorService } from './objection-reason-generator.service';
 import { ObjectionReasonResponseDto } from './dto/objection-reason-response.dto';
 import { AnalyzeAiEnqueueResponseDto, AnalyzeAiQueueResponseDto, AnalyzeAiStatusResponseDto, BatchAnalyzeAiRequestDto, BatchAnalyzeAiResponseDto } from './dto/analyze-ai-response.dto';
+import { BulkDeleteDisputeCasesDto, BulkDeleteDisputeCasesResponseDto } from './dto/bulk-delete-cases.dto';
 import { ValuationReportService } from './valuation-report.service';
 
 @ApiTags('dispute-cases')
@@ -603,5 +604,20 @@ export class DisputeCasesController {
     @Req() req: { user: { id: string } },
   ): Promise<{ message: string }> {
     return this.disputeCasesService.remove(id, req.user.id);
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ACCOUNTANT)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Soft-delete multiple dispute cases in one request' })
+  @ApiResponse({ status: 200, type: BulkDeleteDisputeCasesResponseDto })
+  @ApiResponse({ status: 401, description: 'Unauthorised' })
+  @ApiResponse({ status: 403, description: 'Forbidden — accountant or admin role required' })
+  @Post('batch-delete')
+  removeMany(
+    @Body() dto: BulkDeleteDisputeCasesDto,
+    @Req() req: { user: { id: string } },
+  ): Promise<BulkDeleteDisputeCasesResponseDto> {
+    return this.disputeCasesService.removeMany(dto.caseIds, req.user.id);
   }
 }

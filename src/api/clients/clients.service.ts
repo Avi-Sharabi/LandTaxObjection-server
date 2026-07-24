@@ -1,4 +1,4 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { AzureBlobService } from 'src/common/azure-blob/azure-blob.service';
 import { XpmService } from 'src/common/xpm/xpm.service';
@@ -9,6 +9,10 @@ import { AcceptTCDto } from './dto/accept-tc.dto';
 import { AcceptTcResponseDto } from './dto/accept-tc-response.dto';
 import { CreateClientDto } from './dto/create-client.dto';
 import { UpdateClientInfoDto } from './dto/update-client-info.dto';
+import {
+  BulkDeleteClientsResponseDto,
+  BulkDeleteClientsResultDto,
+} from './dto/bulk-delete-clients.dto';
 import { GetClientsQueryDto } from '../../common/dto/paginated-query.dto';
 import { PaginatedClientsResponseDto } from '../../common/dto/paginated-response.dto';
 import { Client, ClientStatus } from './entities/client.entity';
@@ -19,6 +23,7 @@ import { ConfigService } from '@nestjs/config';
 
 @Injectable()
 export class ClientsService {
+  private readonly logger = new Logger(ClientsService.name);
 
   constructor(
     private readonly dataSource: DataSource,
@@ -188,5 +193,39 @@ export class ClientsService {
     });
 
     return { message: `Client #${id} has been deleted` };
+  }
+
+  async removeMany(
+    ids: string[],
+    deletedById: string,
+  ): Promise<BulkDeleteClientsResponseDto> {
+    const settled = await Promise.allSettled(
+      ids.map((id) => this.remove(id, deletedById)),
+    );
+
+    const results: BulkDeleteClientsResultDto[] = settled.map((outcome, i) => {
+      const id = ids[i];
+      if (outcome.status === 'fulfilled') {
+        return { id, status: 'deleted' };
+      }
+      const err = outcome.reason;
+      if (err instanceof NotFoundException) {
+        return { id, status: 'not_found' };
+      }
+      if (err instanceof ConflictException) {
+        return { id, status: 'already_deleted' };
+      }
+      this.logger.error(`[BulkDelete] Failed to delete client #${id}: ${err instanceof Error ? err.message : String(err)}`);
+      return { id, status: 'error' };
+    });
+
+    const deleted = results.filter((r) => r.status === 'deleted').length;
+
+    return {
+      results,
+      total: results.length,
+      deleted,
+      skipped: results.length - deleted,
+    };
   }
 }
