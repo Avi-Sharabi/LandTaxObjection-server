@@ -115,6 +115,14 @@ export class ComparableSale {
   @Column({ type: 'text', nullable: true })
   explanation: string | null;
 
+  // Structured confidence signal (see 1784100000000-AddImprovementConfidenceToComparableSales) —
+  // 'exact': vacant land, no improvement deduction applied, the strongest/least-estimated
+  // evidence. 'estimated': an improved sale relying on the flat 50% improvement-deduction
+  // estimate (no GFA/building data exists in property_sales_raw to do better — see
+  // ComparablesService.computeAdjustedFields).
+  @Column({ type: 'text', nullable: true })
+  improvement_confidence: 'exact' | 'estimated' | null;
+
   // ── Relations ─────────────────────────────────────────────────────────────
 
   @ManyToOne(() => DisputeCase, (disputeCase) => disputeCase.comparables, {
