@@ -99,10 +99,10 @@ export class AnalyzeAiProcessor extends WorkerHost {
         ));
         // Cache ctx so the regenerate-valuation-report endpoint can restore planning context without re-running the pipeline
         await this.ctxCacheService.save(disputeCaseId, ctx);
-        // Persist the resolved cadastre lot area so the report generator has it — previously this
-        // value was resolved successfully here but discarded before ever reaching the report.
-        if (ctx.lotAreaM2) {
-          await this.aiPropertySearchService.persistEplanningArea(disputeCaseId, ctx.lotAreaM2);
+        // Persist the Land Value Search document's fields so the report generator has them —
+        // this is now the sole source of subject land size (see property-context.service.ts).
+        if (ctx.landValueSearch) {
+          await this.aiPropertySearchService.persistLandValueSearchDetails(disputeCaseId, ctx.landValueSearch);
         }
       }
 
@@ -150,20 +150,6 @@ export class AnalyzeAiProcessor extends WorkerHost {
       } else {
         this.logger.log(
           JSON.stringify({
-            context: 'ANALYZE_AI.ai_property_search',
-            jobId: job.id,
-            disputeCaseId,
-          }),
-        );
-        const aiPropertyDetails =
-          await this.aiPropertySearchService.enrichPropertyFromWeb(
-            disputeCaseId,
-            address,
-            ctx.lotAreaM2 ?? undefined,
-          );
-
-        this.logger.log(
-          JSON.stringify({
             context: 'ANALYZE_AI.generating_comparables',
             jobId: job.id,
             disputeCaseId,
@@ -191,9 +177,9 @@ export class AnalyzeAiProcessor extends WorkerHost {
           ctx.meta.lot && ctx.meta.plan
             ? `Lot ${ctx.meta.lot} ${ctx.meta.planType} ${ctx.meta.plan}`
             : undefined;
-        // Persist so the report generator has these too — same fix as the eplanning-area
-        // persist above; previously both were resolved successfully here but discarded before
-        // ever reaching the report (only the one-off comparables DTO below ever saw them).
+        // Persist so the report generator has these too — same rationale as the Land Value
+        // Search persist above; previously both were resolved successfully here but discarded
+        // before ever reaching the report (only the one-off comparables DTO below ever saw them).
         if (zoningCode || lotDp) {
           await this.aiPropertySearchService.persistZoningAndLotDp(
             disputeCaseId,
@@ -204,7 +190,6 @@ export class AnalyzeAiProcessor extends WorkerHost {
         await this.comparablesService.generateComparableSales(
           {
             dispute_case_id: disputeCaseId,
-            land_area_sqm: aiPropertyDetails?.land_area_sqm ?? undefined,
             land_area_eplanning_sqm: ctx.lotAreaM2 ?? undefined,
             suburb: parsedSuburb,
             postcode: parsedPostcode,

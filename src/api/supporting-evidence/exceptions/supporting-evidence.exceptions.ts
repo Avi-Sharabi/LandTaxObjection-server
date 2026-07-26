@@ -13,18 +13,6 @@ export class EplanningReportUrlException extends DomainException {
   }
 }
 
-export class EplanningLotNotFoundException extends DomainException {
-  constructor(query: string) {
-    super('EPLANNING_LOT_NOT_FOUND', `Lot not found in ePlanning API: ${query}`, 404);
-  }
-}
-
-export class EplanningCadastreException extends DomainException {
-  constructor(reason: string) {
-    super('EPLANNING_CADASTRE_ERROR', `ePlanning cadastre query failed: ${reason}`, 500);
-  }
-}
-
 export class GeocodingFailedException extends InternalServerErrorException {
   constructor(address: string) {
     super(`Geocoding returned no candidates for address: ${address}`);

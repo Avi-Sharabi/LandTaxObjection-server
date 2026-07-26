@@ -152,6 +152,10 @@ td.lbl, th.lbl {
 .emph-cell { background: #1F3864; color: #ffffff; font-weight: 700; }
 tr.emph-row td { background: #1F3864; color: #ffffff; font-weight: 700; }
 
+/* comparable sale row excluded from the headline $/m² median (part-interest or statistical
+   outlier) — muted, not hidden, so the report stays transparent about what evidence existed */
+tr.quarantined-row td { background: #F2F2F2; color: #595959; }
+
 /* status pills (plain text, used in checklists) */
 .st-ok      { color: #375623; font-weight: 700; }
 .st-pending { color: #7B4F00; font-weight: 700; }
@@ -306,28 +310,34 @@ ul.tight li { margin-bottom: 3pt; }
 {% if comparables and comparables.length %}
 <table>
   <thead><tr>
-    <th style="width:5%">#</th><th style="width:17%">Address</th><th style="width:9%">Date</th>
-    <th style="width:11%">Price</th><th style="width:9%">Area m²</th><th style="width:10%">Zone</th>
-    <th style="width:8%">$/m²</th><th>CPV Comparison to Subject</th>
+    <th style="width:5%">#</th><th style="width:14%">Address</th><th style="width:8%">Date</th>
+    <th style="width:10%">Sale Price (actual)</th><th style="width:10%">Adjusted Value</th>
+    <th style="width:8%">Area m²</th><th style="width:8%">Zone</th>
+    <th style="width:7%">$/m²</th><th>CPV Comparison to Subject</th>
   </tr></thead>
   <tbody>
   {% for c in comparables %}
-    <tr>
+    <tr class="{{ 'quarantined-row' if c.quarantined else '' }}">
       <td class="num">{{ c.ref | default("-", true) }}</td>
       <td>{{ c.address | default("-", true) | safe }}</td>
       <td>{{ c.date | default("-", true) }}</td>
-      <td class="{{ c.price_class | default('num') }}">{{ c.price_display | default("-", true) }}</td>
+      <td class="num">{{ c.sale_price_display | default("-", true) }}</td>
+      <td class="{{ c.price_class | default('num') }}">{{ c.adjusted_value_display | default("-", true) }}</td>
       <td>{{ c.area_display | default("-", true) }}</td>
       <td>{{ c.zone | default("-", true) }}</td>
       <td class="num">{{ c.rate_display | default("-", true) }}</td>
-      <td>{{ c.comparison | default("-", true) | safe }}</td>
+      <td>
+        {{ c.comparison | default("-", true) | safe }}
+        {% if c.quarantined %}<br><span class="txt-amber">⚠ EXCLUDED FROM HEADLINE FIGURE — {{ c.quarantine_reason | default("statistically excluded", true) }}</span>{% endif %}
+      </td>
     </tr>
   {% endfor %}
   {% if cpv.comp_summary_row %}
     <tr class="emph-row">
       <td colspan="2">{{ cpv.comp_summary_row.ref | default("CPV ADOPTED RANGE", true) }}</td>
       <td>{{ cpv.comp_summary_row.date | default("-", true) }}</td>
-      <td>{{ cpv.comp_summary_row.price | default("-", true) | safe }}</td>
+      <td>-</td>
+      <td>{{ cpv.comp_summary_row.adjusted_value | default("-", true) | safe }}</td>
       <td>{{ cpv.comp_summary_row.area | default("-", true) }}</td>
       <td>{{ cpv.comp_summary_row.zone | default("-", true) }}</td>
       <td>{{ cpv.comp_summary_row.rate | default("-", true) | safe }}</td>
