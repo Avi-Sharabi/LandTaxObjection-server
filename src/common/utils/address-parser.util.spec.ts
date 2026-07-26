@@ -1,4 +1,8 @@
-import { parseNswAddressComponents } from './address-parser.util';
+import {
+  parseNswAddressComponents,
+  stripTrailingPostcode,
+  resolveSuburbWithFallback,
+} from './address-parser.util';
 
 describe('parseNswAddressComponents', () => {
   it('extracts a multi-word suburb', () => {
@@ -95,4 +99,53 @@ describe('parseNswAddressComponents', () => {
       });
     },
   );
+
+  it('strips a bare trailing postcode when the address omits an NSW token', () => {
+    expect(
+      parseNswAddressComponents('24 Brompton Rd, Kensington 2033'),
+    ).toEqual({
+      suburb: 'KENSINGTON',
+      postcode: '2033',
+    });
+  });
+});
+
+describe('stripTrailingPostcode', () => {
+  it('strips a trailing postcode and whitespace', () => {
+    expect(stripTrailingPostcode('KENSINGTON 2033')).toBe('KENSINGTON');
+  });
+
+  it('strips a postcode preceded by an NSW token without double-stripping', () => {
+    expect(stripTrailingPostcode('CASTLE HILL NSW 2154')).toBe('CASTLE HILL');
+  });
+
+  it('is a no-op when there is no trailing postcode', () => {
+    expect(stripTrailingPostcode('KENSINGTON')).toBe('KENSINGTON');
+  });
+
+  it('strips surrounding commas and whitespace', () => {
+    expect(stripTrailingPostcode(' Kensington 2033, ')).toBe('Kensington');
+  });
+
+  it('handles empty input without throwing', () => {
+    expect(stripTrailingPostcode('')).toBe('');
+  });
+});
+
+describe('resolveSuburbWithFallback', () => {
+  it('uses the primary parser when it can isolate a suburb', () => {
+    expect(
+      resolveSuburbWithFallback('Unit 4 25 TERMINUS ST CASTLE HILL NSW 2154'),
+    ).toBe('CASTLE HILL');
+  });
+
+  it('falls back to a comma-split when the primary parser finds no street-type suffix, stripping a trailing postcode from the fallback', () => {
+    expect(
+      resolveSuburbWithFallback('Lot 12 Farm Access, Kensington 2033'),
+    ).toBe('KENSINGTON');
+  });
+
+  it('returns an empty string when there is no comma-delimited fallback fragment either', () => {
+    expect(resolveSuburbWithFallback('Lot 12 Farm Access')).toBe('');
+  });
 });

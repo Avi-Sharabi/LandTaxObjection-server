@@ -18,8 +18,9 @@ import { XpmClientHandler } from './xpm-client.handler';
 import { PdfStorageHandler } from './pdf-storage.handler';
 import { AzureEmailService } from 'src/common/azure-email/azure-email.service';
 import { AccountantNotFoundException } from '../exceptions/accountant-not-found.exception';
+import { CaseReferenceGenerationFailedException } from '../exceptions/case-reference-generation-failed.exception';
 import { Client, ClientStatus } from '../../clients/entities/client.entity';
-import { parseNswAddressComponents } from 'src/common/utils/address-parser.util';
+import { resolveSuburbWithFallback } from 'src/common/utils/address-parser.util';
 
 interface PropertyFlags {
   flag_heritage: boolean;
@@ -168,10 +169,7 @@ export class DisputeIntakeOrchestrator {
     const property = this.propertiesRepository.create({
       client_id: clientId,
       address: prop.address,
-      suburb:
-        parseNswAddressComponents(prop.address).suburb ??
-        prop.address.split(',')[1]?.trim().toUpperCase() ??
-        '',
+      suburb: resolveSuburbWithFallback(prop.address),
       state: prop.state,
       postcode: '',
       pid: prop.pid,
@@ -284,9 +282,22 @@ export class DisputeIntakeOrchestrator {
 
   private async generateCaseReference(): Promise<string> {
     const year = new Date().getFullYear();
-    const [{ nextval }] = await this.disputeCasesRepository.query(
-      `SELECT nextval('dispute_case_reference_seq') AS nextval`,
-    );
+    // A DB sequence, not repository.count() + 1 — the count is non-atomic (two concurrent intake
+    // requests can read the same value and mint duplicate case references) and isn't stable under
+    // soft-deletes.
+    let nextval: string;
+    try {
+      const rows = await this.disputeCasesRepository.query<Array<{ nextval: string }>>(
+        `SELECT nextval('dispute_case_reference_seq') AS nextval`,
+      );
+      nextval = rows[0].nextval;
+    } catch (e) {
+      // Log the raw driver/DB error server-side only — surfacing it to the client would leak
+      // internal detail (sequence/table names, connection errors) the exception filter forwards
+      // verbatim in the response body.
+      this.logger.error(`generateCaseReference failed: ${(e as Error).message}`);
+      throw new CaseReferenceGenerationFailedException();
+    }
     const sequence = nextval.toString().padStart(6, '0');
     return `LTD-${year}-${sequence}`;
   }

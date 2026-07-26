@@ -7,6 +7,7 @@ import { GeocodingService } from './shared/geocoding.service';
 import { PuppeteerService } from './shared/puppeteer.service';
 import { PdfExtractorService } from './shared/pdf-extractor.service';
 import { AzureBlobService } from 'src/common/azure-blob/azure-blob.service';
+import { parsePlausibleLandAreaSqm } from 'src/common/utils/land-area.util';
 import { AssessmentDocumentsService } from '../assessment-documents/assessment-documents.service';
 import { DisputeCase } from '../dispute-cases/entities/dispute-case.entity';
 import { EvidenceDisputeCaseNotFoundException } from './exceptions/supporting-evidence.exceptions';
@@ -16,6 +17,7 @@ import {
   InputComparable,
   BenchmarkReport,
   LandTaxNotice,
+  LandValueSearch,
   CaseDocumentSummary,
 } from './supporting-evidence.types';
 
@@ -25,6 +27,7 @@ interface InputDocuments {
   salesComparables: InputComparable[];
   inputBenchmarkReport: BenchmarkReport | null;
   landTaxNotice: LandTaxNotice | null;
+  landValueSearch: LandValueSearch | null;
   rawTexts: string[];
   caseDocuments: CaseDocumentSummary[];
 }
@@ -103,7 +106,6 @@ export class PropertyContextService {
         | string
         | null,
       fsr_from_pdf: rawMeta['fsr_from_pdf'] as number | null,
-      land_area_sqm: (rawMeta['land_area_sqm'] as number | null) ?? null,
       height_limit_m: (rawMeta['height_limit_m'] as number | null) ?? null,
       concession_mentions: (rawMeta['concession_mentions'] as string[]) || [],
       heritage_mentions: (rawMeta['heritage_mentions'] as string[]) || [],
@@ -111,27 +113,15 @@ export class PropertyContextService {
         (rawMeta['multiple_lots_in_report'] as string[]) || [],
     };
 
-    let lotAreaM2: number | null = null;
-    if (meta.lot && meta.plan) {
-      lotAreaM2 = await this.eplanning
-        .getLotArea(meta.lot, meta.plan, meta.planType)
-        .catch((e) => {
-          this.logger.warn(`getLotArea failed: ${(e as Error).message}`);
-          return null;
-        });
-    }
-    if (!lotAreaM2) {
-      const cadInfo = await this.geocoding
-        .getLotInfoFromCadastre(lat, lng)
-        .catch((e) => {
-          this.logger.warn(`Cadastre fallback failed: ${(e as Error).message}`);
-          return null;
-        });
-      if (cadInfo?.areaM2) lotAreaM2 = cadInfo.areaM2;
-    }
-    if (!lotAreaM2 && meta.land_area_sqm) {
-      lotAreaM2 = meta.land_area_sqm;
-    }
+    // Subject land size now comes exclusively from an uploaded "NSW Valuer General — Land Value
+    // Search" document (see PdfExtractorService.classifyAndExtractDocument's land_value_search
+    // branch) — no ePlanning/cadastre fallback. If no such document is on file for this case, or
+    // the AI-extracted figure isn't plausible, lotAreaM2 stays null and comparables generation
+    // throws MissingLandAreaException (see ComparablesService.resolveSubjectContext).
+    const lotAreaM2 = parsePlausibleLandAreaSqm(
+      inputDocs.landValueSearch?.property_area_sqm,
+      { source: 'land_value_search' },
+    );
 
     const spatialBase64 = await this.puppeteerSvc
       .capturePortalScreenshot(confirmedAddress, propId, browser)
@@ -168,6 +158,7 @@ export class PropertyContextService {
       inputComparables: inputDocs.salesComparables,
       inputBenchmarkReport: inputDocs.inputBenchmarkReport,
       landTaxNotice: inputDocs.landTaxNotice,
+      landValueSearch: inputDocs.landValueSearch,
       inputDocumentsText: inputDocs.rawTexts,
       entityEvidence: null,
       evidenceResult: null,
@@ -183,6 +174,7 @@ export class PropertyContextService {
         salesComparables: [],
         inputBenchmarkReport: null,
         landTaxNotice: null,
+        landValueSearch: null,
         rawTexts: [],
         caseDocuments: [],
       };
@@ -194,6 +186,7 @@ export class PropertyContextService {
     );
 
     let landTaxNotice: LandTaxNotice | null = null;
+    let landValueSearch: LandValueSearch | null = null;
     let inputBenchmarkReport: BenchmarkReport | null = null;
     const salesComparables: InputComparable[] = [];
     const rawTexts: string[] = [];
@@ -235,6 +228,8 @@ export class PropertyContextService {
       } else if (item.result.document_type === 'sales_report') {
         const salesData = item.result as { sales?: InputComparable[] };
         if (salesData.sales?.length) salesComparables.push(...salesData.sales);
+      } else if (item.result.document_type === 'land_value_search') {
+        landValueSearch = item.result as unknown as LandValueSearch;
       }
     }
 
@@ -248,10 +243,24 @@ export class PropertyContextService {
       document_type: classifiedTypeByDocId.get(doc.id) ?? 'unknown',
     }));
 
+    // Land size now depends entirely on a land_value_search classification succeeding for one of
+    // this case's documents (no ePlanning/AI-search fallback exists) — log the outcome explicitly
+    // so a missing/failed classification is visible in logs instead of only surfacing later as a
+    // generic MissingLandAreaException deep in comparables generation.
+    this.logger.log(JSON.stringify({
+      context: 'CTX.land_value_search_lookup',
+      disputeCaseId: disputeCase.id,
+      documentsScanned: docs.length,
+      documentTypesFound: [...classifiedTypeByDocId.values()],
+      landValueSearchFound: !!landValueSearch,
+      propertyAreaSqm: landValueSearch?.property_area_sqm ?? null,
+    }));
+
     return {
       salesComparables,
       inputBenchmarkReport,
       landTaxNotice,
+      landValueSearch,
       rawTexts,
       caseDocuments,
     };
