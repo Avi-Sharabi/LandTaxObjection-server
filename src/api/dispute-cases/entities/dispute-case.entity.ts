@@ -27,6 +27,30 @@ export enum DisputeStatus {
   CLOSED_NO_OBJECTION = 'closed_no_objection',
 }
 
+// Canonical human phrasing per status, so any report/cover-fact/email surfacing case status
+// renders identically every time instead of being reworded ad hoc. Respects the controlled-
+// vocabulary rule that nothing is described as "lodged"/"submitted" before SUBMITTED_TO_VG
+// (see src/skills/valuation/section_guide.md).
+export const DISPUTE_STATUS_LABELS: Record<DisputeStatus, string> = {
+  [DisputeStatus.PENDING_TNC]: 'Pending — Terms & Conditions acceptance (case not yet started)',
+  [DisputeStatus.DRAFT]: 'Draft — case intake in progress',
+  [DisputeStatus.GROUNDS_SELECTION]: 'Grounds identified — not yet lodged',
+  [DisputeStatus.EVIDENCE_COMPILATION]: 'Evidence compilation in progress — not yet lodged',
+  [DisputeStatus.APPRAISAL]: 'Independent appraisal in progress — not yet lodged',
+  [DisputeStatus.ADVISORY_LETTER_ISSUED]: 'Advisory letter issued — not yet lodged',
+  [DisputeStatus.OBJECTION_PACKAGE_PREPARED]: 'Objection package prepared — awaiting approval to lodge',
+  [DisputeStatus.AWAITING_CLIENT_APPROVAL]: 'Awaiting client approval to lodge',
+  [DisputeStatus.CLIENT_APPROVED]: 'Client approved — ready to lodge',
+  [DisputeStatus.SUBMITTED_TO_VG]: 'Lodged with the Valuer General — awaiting response',
+  [DisputeStatus.VG_RESPONSE_RECEIVED]: 'VG response received',
+  [DisputeStatus.VG_APPROVED]: 'VG objection approved',
+  [DisputeStatus.VG_DECLINED]: 'VG objection declined',
+  [DisputeStatus.FOR_REVIEW]: 'Outcome under review',
+  [DisputeStatus.OUTCOME_RECEIVED]: 'Outcome received',
+  [DisputeStatus.CLOSED]: 'Case closed',
+  [DisputeStatus.CLOSED_NO_OBJECTION]: 'Case closed — no objection lodged',
+};
+
 export enum OutcomeResult {
   UPHELD = 'upheld',
   PARTIALLY_UPHELD = 'partially_upheld',

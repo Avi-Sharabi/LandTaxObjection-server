@@ -3,7 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import { plainToInstance } from 'class-transformer';
-import { isAxiosError } from 'axios';
+import { APIError } from '@anthropic-ai/sdk';
 import { ComparableSale } from './entities/comparable-sale.entity';
 import { NswLocalityCentroid } from './entities/nsw-locality-centroid.entity';
 import { GeocodingService } from '../supporting-evidence/shared/geocoding.service';
@@ -23,12 +23,16 @@ import { LlmToolUseException } from './exceptions/llm-tool-use.exception';
 import { LlmParseException } from './exceptions/llm-parse.exception';
 import { LlmApiException } from './exceptions/llm-api.exception';
 import { MissingValuationDateException } from './exceptions/missing-valuation-date.exception';
+import { MissingLandAreaException } from './exceptions/missing-land-area.exception';
 import { DisputeCase } from '../dispute-cases/entities/dispute-case.entity';
 import { SkillRegistryService } from '../../mcp/skill-registry.service';
 import { buildUserPrompt, SubjectContext } from './comparables.prompts';
 
 
-const MAX_CANDIDATE_SALES = 80;
+// Lowered from 80 — after the postcode/zoning SQL pre-filter and dealing-number dedup above,
+// 80 candidates were mostly noise/redundant near-duplicates; 20 is already more than enough
+// for the LLM to select good comparables from.
+const MAX_CANDIDATE_SALES = 20;
 
 // Real-distance gate applied after the postcode-prefix SQL pre-filter — NSW postcode
 // prefixes are not geographically contiguous (e.g. "203" spans both the eastern suburbs
@@ -350,8 +354,8 @@ export class ComparablesService implements OnModuleInit {
       }
       rawText = result.text;
     } catch (err: unknown) {
-      if (isAxiosError(err)) {
-        const status = err.response?.status;
+      if (err instanceof APIError) {
+        const status = err.status;
         this.logEvent('GENERATE.anthropic_error', { correlationId, status, errorMessage: err.message });
         if (status === 529 || status === 503) throw new LlmApiException('Anthropic API is temporarily overloaded. Please retry in a few seconds.', 503);
         if (status === 401) throw new LlmApiException('Anthropic API key is invalid or expired.', 502);
@@ -456,15 +460,26 @@ export class ComparablesService implements OnModuleInit {
     const valuationDate = dto.valuation_date
       ?? (vn?.valuation_date ? new Date(vn.valuation_date).toISOString().split('T')[0] : null);
     if (!valuationDate) throw new MissingValuationDateException(disputeCase.id);
+
+    // Persisted, previously-resolved property data outranks per-request fields — a caller
+    // passing a stale/ad-hoc land_area_sqm or land_area_eplanning_sqm must never silently
+    // override the cadastre/ePlanning figure already on file (see MissingLandAreaException
+    // below for the no-source-at-all case). Mirrors the same priority used for site area in
+    // ValuationReportService.buildUserMessage.
+    const landAreaSqm =
+      (Number(disputeCase.property?.land_area_eplanning_sqm) || null)
+      ?? (Number(disputeCase.property?.land_area_sqm) || null)
+      ?? dto.land_area_sqm
+      ?? (Number(vn?.land_area_vg_sqm) || null)
+      ?? dto.land_area_eplanning_sqm
+      ?? null;
+    if (landAreaSqm == null) throw new MissingLandAreaException(disputeCase.id);
+
     return {
       pid: dto.pid ?? disputeCase.property?.pid ?? 'unknown',
       suburb: (dto.suburb || disputeCase.property?.suburb || '').trim().toUpperCase(),
       postcode: dto.postcode || disputeCase.property?.postcode || null,
-      landAreaSqm:
-        dto.land_area_sqm
-        ?? (Number(vn?.land_area_vg_sqm) || null)
-        ?? dto.land_area_eplanning_sqm
-        ?? (Number(disputeCase.property?.land_area_sqm) || null),
+      landAreaSqm,
       zoning: dto.zoning ?? disputeCase.property?.zoning ?? 'unknown',
       lotDp: dto.lot_dp ?? disputeCase.property?.lot_dp ?? null,
       dimensions: dto.dimensions ?? disputeCase.property?.dimensions ?? null,

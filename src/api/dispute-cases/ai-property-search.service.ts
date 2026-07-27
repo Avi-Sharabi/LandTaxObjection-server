@@ -77,6 +77,32 @@ export class AiPropertySearchService {
     }));
   }
 
+  /**
+   * Persists the ePlanning-resolved zoning code and lot/DP identifier onto the property —
+   * mirrors persistEplanningArea above. Without this, both values are only ever passed into
+   * the comparables-generation DTO for a single request and never saved, so the report (and
+   * any later comparables run) sees them as unknown even though ePlanning already resolved them.
+   */
+  async persistZoningAndLotDp(disputeCaseId: string, zoning: string | null, lotDp: string | null): Promise<void> {
+    const dc = await this.disputeCaseRepo.findOne({
+      where: { id: disputeCaseId },
+      relations: ['property'],
+    });
+    if (!dc?.property) return;
+
+    const updates: Partial<Property> = {};
+    if (zoning) updates.zoning = zoning;
+    if (lotDp) updates.lot_dp = lotDp;
+    if (Object.keys(updates).length === 0) return;
+
+    await this.propertyRepo.update({ id: dc.property.id }, updates);
+    this.logger.log(JSON.stringify({
+      context: 'AiPropertySearch.zoning_lot_dp_persisted',
+      propertyId: dc.property.id,
+      ...updates,
+    }));
+  }
+
   private async searchLandArea(address: string): Promise<AiPropertySearchResult | null> {
     const safeAddress = address.slice(0, 200).replace(/[\r\n]/g, ' ');
 

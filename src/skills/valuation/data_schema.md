@@ -7,8 +7,18 @@ the script formats them and computes variances, rates, and savings. Strings are
 passed through unchanged, so anything pre-formatted (e.g. `"$8,500,000 + GST"`)
 also works.
 
-Omit a block (or set it to `null`/`[]`) to drop that part of the report — e.g.
-no `planning_proposal` ⇒ section 3.4 is skipped; empty `residual` ⇒ no 5.3.
+No block is ever omitted from the rendered report — every section always appears, including
+`subject.development`, `planning_proposal`, and `residual`. When one of these doesn't apply to
+the property (no DA, no rezoning proposal, not a residual-method valuation), set it to
+`null`/`[]` exactly as you would for any other missing fact — the section still renders, with
+`"-"` in place of content, the same as everywhere else in this document.
+
+For every other list (`cover_facts`, `exec_summary.rows`, `statutory.basis`/`assessment`,
+`subject.identification`/`attributes`, `constraints`, `comparables`, `weaknesses`,
+`financial_scenarios`, `evidence_checklist`, `action_plan`, `legal_grounds`), never drop a
+row just because a fact couldn't be found — include the row with its `value` (or
+equivalent field) set to `"-"`. These sections are always relevant to the report; an
+empty/missing table reads as an incomplete report, not as "not applicable."
 
 `| safe`: every value rendered into the document allows inline HTML, so you may
 use `<strong>…</strong>` and `<br>` inside any string (the narrative grounds use
@@ -22,7 +32,7 @@ this). Do not paste untrusted HTML.
 | `property` | object | `estate_name`, `lots_dps_short`, `area_sqm` (used for cover subtitle). |
 | `valuation` | object | `vg_recorded_value` (number) — drives every variance calc and the 5.1 header. |
 | `key_finding` | string | Cover green callout body. Do NOT include "KEY FINDING: " — the template prepends it automatically. |
-| `cover_facts` | list | `{label, value}` rows of the cover fact table. Never use "Lodged"/"Submitted" here unless `Case status` is `submitted_to_vg` or later — see controlled-vocabulary rules in section_guide.md. |
+| `cover_facts` | — | **Fully system-generated — omit this key entirely.** The cover fact table (Owner, Property, Property ID, Site Area, Zoning, dates, VG/Our assessed values and implied rates, Variance, Land Tax Payable, Payment Due Date, Case Status) is built server-side from real case data, in a fixed row order, every time. Anything you provide under this key is ignored and replaced. |
 | `exec_summary` | object | `intro` (string) + `rows` of `{item, finding}`. → Section 1 |
 | `statutory` | object | `basis` and `assessment`, each a list of `{label, value}`. → Section 2 |
 | `subject` | object | `identification`, `attributes`, `development` — each `{label, value}` lists. → Section 3 |
@@ -47,6 +57,16 @@ this). Do not paste untrusted HTML.
 `headline_address` (required), `valuation_date`, `land_tax_year`, `report_date`,
 `confidentiality` (footer banner text).
 
+**`valuation_date` and `land_tax_year` are server-computed, not yours to derive.** The user
+message includes explicit lines — `"System-computed relevant valuation date: ..."` and
+`"System-computed land tax year: ..."` — sourced from the real valuation notice on file, not
+inferred from context. Copy those two values verbatim into `meta.valuation_date` and
+`meta.land_tax_year`. Never recompute them from the "1 July of the year before the land tax
+year" rule yourself, and never state a different date/year anywhere else in the report
+(Section 1, Section 2.1, Section 9 narrative, etc.) — the system overwrites these two `meta`
+fields after generation regardless of what you write, so a mismatched figure elsewhere in your
+own prose is the only way this ends up inconsistent within one report.
+
 **Omit `title_line1` and `title_line2` in the large majority of reports** — let the template's
 fixed defaults ("NSW STATUTORY LAND VALUATION" / "APPRAISAL & OBJECTION ASSESSMENT REPORT")
 render, rather than inventing new top-line wording each time. `title_line3` is the one banner
@@ -59,12 +79,46 @@ edition label like "FINAL CONSOLIDATED EDITION") when there's a genuine reason t
 (e.g. `"$20.8M"`). Falls back to the full formatted value if omitted.
 `contended_value` (number) — the preparer's own concluded land value, based on the
 comparable-sales investigation performed in this report, stated as this firm's
-professional assessment. Required whenever comparable evidence supports a figure
-(e.g. the most defensible point within the adjusted comparable range, after applying
-any identified constraint discount). Distinct from `cpv.methods[]`, which holds an
-independent CPV valuer's own results — do not set this to `"UNCONFIRMED"` merely
-because CPV confirmation is still pending; that caveat is stated separately (see
-`section_guide.md`).
+professional assessment. Distinct from `cpv.methods[]`, which holds an independent CPV
+valuer's own results — do not set this to `"UNCONFIRMED"` merely because CPV confirmation
+is still pending; that caveat is stated separately (see `section_guide.md`).
+
+**Methodology — fixed, do not deviate (this determines the number, not the model's discretion):**
+1. Take the `$/m²` rate of every sale actually included in `comparables[]` for this report.
+2. Compute the **median** of those rates (not the mean, not a point "somewhere in the range,"
+   not the ceiling or floor of the range) — this is the starting rate.
+3. If a constraint identified in `constraints[]` carries a `Major`/`Negative` valuation impact
+   (e.g. flood-planning-area affectation), apply a downward adjustment from the median rate and
+   state the adjusted rate and the reasoning in `cpv.rate_analysis` — do not apply a discount that
+   isn't traceable to a specific constraint already in the register.
+4. `contended_value` = the resulting rate × the site area used elsewhere in this report (the
+   same cadastre-confirmed area used in `subject.identification`/`meta`, not a different figure).
+This is a fixed procedure precisely so that re-running this report on the same comparable
+evidence produces the same figure every time — never pick a different point in the range on a
+subsequent run of the same data. The resulting rate (step 2/3) is also what populates the
+cover's "Our Implied Rate ($/m²)" row (see `cover_facts` above and section_guide.md) — that
+figure and `cpv.rate_analysis`/`comp_summary_row.rate` in Section 5 must never disagree.
+
+**Server enforcement note**: `cover_facts` "Our Assessed Value" / "Our Implied Rate ($/m²)" and
+this `contended_value` field are computed server-side (median of the persisted comparable
+`$/m²` rates × site area — steps 1, 2, and 4 above) and force-overwritten after you generate
+your response, regardless of what you write. **Step 3 (the constraint-based downward
+adjustment) is not applied automatically anywhere** — there is no severity/dollar signal on
+file to derive a numeric discount from. You may still discuss in `cpv.rate_analysis` that a
+constraint could justify further reduction and recommend manual/CPV review, but do not state a
+different final adopted rate there (or anywhere else) than the server-enforced figure — the
+narrative and the enforced number must never disagree.
+
+**If `comparables[]` is empty or does not support a defensible figure** (no comparable-sales
+investigation could be performed for this case, or the sales found all trade above the VG's own
+implied rate with none supporting a lower value), set `contended_value` to the string `"-"` —
+the same closed-vocabulary value used for any other fact that couldn't be established — rather
+than a number, `null`, `"UNCONFIRMED"`, or any invented placeholder such as `"TBD"`. Every other
+part of the report that normally mirrors this figure (the "Our Assessed Value" cover row, the
+Section 1 exec-summary row, the `cpv.extra_rows` "Firm's Assessed Value" entry) is **always
+included, never dropped** — same as every other row in this report — and simply shows `"-"` when
+`contended_value` is `"-"`. The Section 6.2 primary-ground narrative is the one exception: see
+`section_guide.md` for how to phrase that sentence when there's no figure to state.
 
 ## `cpv` object
 - `section_title`, `intro`, `comp_title`, `comp_intro` — strings.
@@ -75,7 +129,10 @@ because CPV confirmation is still pending; that caveat is stated separately (see
   - `var_class` overrides the auto colour (`v-strong` red / `v-mod` amber).
 - `extra_rows`: list of `{label, value, note}` — the non-method rows (implied rate, gross realisation).
 - `comp_summary_row`: the navy summary row under the comparables (`ref, date, price, area, zone, rate, comparison` — all strings here). The `ref` value (e.g. `"CPV ADOPTED RANGE"`) spans the # **and** Address columns (colspan=2 in the template); remaining fields map left-to-right to Date → Price → Area m² → Zone → $/m² → CPV Comparison. `price`, `rate`, and `comparison` all support `<br>`/`<strong>` for a stacked range + adopted-value display (e.g. `rate: "$3,034 – $3,640<br><strong>Adopted: $3,371</strong>"`) — `date`/`area`/`zone` are plain text only.
-- `rate_analysis`: string → blue analysis callout.
+- `rate_analysis`: string → blue analysis callout. Show the arithmetic behind the adopted rate,
+  not just the conclusion: list each comparable's $/m² rate used and the computed median
+  explicitly, then any constraint-based adjustment, then the final adopted rate — see
+  section_guide.md §5.
 
 ## HTML-safe fields — inline color spans
 
