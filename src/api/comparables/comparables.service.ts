@@ -139,6 +139,23 @@ const SIZE_BAND_TOLERANCE_FRACTION = 0.3;
 // filterOutsideSizeBand call is untouched and still gates at the strict ±30% band only.
 const SIZE_BAND_WIDENED_TOLERANCE_FRACTION = 0.5;
 
+// Ranked last-resort scoring weights (see selectRankedLastResortCandidates) — used only once
+// every hard-gated round (including the zoning-family bypass) has already run and the case is
+// still under MINIMUM_COMPARABLES. Size and zoning dominate the weighting because those are the
+// two dimensions this tier is specifically bypassing the hard gates on; distance/recency remain
+// as tiebreakers. Weights are relative, not required to sum to 1.
+const RANKED_LAST_RESORT_SIZE_WEIGHT = 0.4;
+const RANKED_LAST_RESORT_ZONING_WEIGHT = 0.3;
+const RANKED_LAST_RESORT_DISTANCE_WEIGHT = 0.2;
+const RANKED_LAST_RESORT_TIME_WEIGHT = 0.1;
+// Size deviation (a ratio, e.g. 21.0 for a candidate 21x the subject's area) is the only one of
+// the four scoring terms above that isn't naturally bounded to [0,1] — capped here so one
+// pathologically extreme candidate can't produce a score so large it makes the logged value
+// meaningless. Set well above 1.0 (the ±100%-deviation point) so size still decisively dominates
+// the ranking for genuinely extreme subjects (matching the weighting rationale above) — this only
+// clamps the truly absurd tail, it doesn't flatten the normal range.
+const RANKED_LAST_RESORT_SIZE_DEVIATION_CAP = 3;
+
 // Four-band time treatment replacing the old single 12-month cliff. Thresholds are months
 // between contract_date and the subject's valuation date.
 const TIME_BAND_FRESH_MAX_MONTHS = 6;     // 0-6mo: use as-is, no adjustment
@@ -155,7 +172,7 @@ const TIME_BAND_MINOR_ADJUSTMENT_FRACTION = 0.4; // dampens the 6-12mo band's ad
 const TIME_BAND_PRIORITY_ORDER: Array<'fresh' | 'recent' | 'adjusted' | 'last_resort'> =
   ['fresh', 'recent', 'adjusted', 'last_resort'];
 
-type SizeTier = 'preferred' | 'widened';
+type SizeTier = 'preferred' | 'widened' | 'extrapolated';
 
 // Rung order for the deterministic auto-include path ONLY (see classifySizeTier and
 // selectByTimeBandPreference). Walks every 'preferred' (±30%) time band first —
@@ -169,6 +186,13 @@ const SELECTION_RUNGS: Array<{ timeBand: typeof TIME_BAND_PRIORITY_ORDER[number]
   ...TIME_BAND_PRIORITY_ORDER.filter((b) => b !== 'last_resort').map((timeBand) => ({ timeBand, sizeTier: 'preferred' as const })),
   ...TIME_BAND_PRIORITY_ORDER.filter((b) => b !== 'last_resort').map((timeBand) => ({ timeBand, sizeTier: 'widened' as const })),
   { timeBand: 'last_resort' as const, sizeTier: 'preferred' as const },
+  // 'extrapolated' — ranked-last-resort candidates outside even the widened ±50% band (see
+  // selectRankedLastResortCandidates) — sits dead last across every time band, including
+  // last_resort. Unlike the widened tier's deliberate exclusion of last_resort above, compounding
+  // "stale" with "extrapolated" here is acceptable: this rung only ever gets consulted once every
+  // rung above has already failed to fill the case to MINIMUM_COMPARABLES, so there is no better
+  // evidence being displaced by including it.
+  ...TIME_BAND_PRIORITY_ORDER.map((timeBand) => ({ timeBand, sizeTier: 'extrapolated' as const })),
 ];
 
 // 'insufficient': below MINIMUM_COMPARABLES regardless of quality — a hard-floor breach, distinct
@@ -265,6 +289,32 @@ export class ComparablesService implements OnModuleInit {
       return { lat: subject.lat, lng: subject.lng };
     }
     return this.resolveCentroid(subject.suburb, correlationId);
+  }
+
+  /**
+   * Cross-round hard exclusion — dedupeByDealingNumber (candidate-stratification.util.ts) only
+   * dedupes WITHIN a single prefetch call's own result set; it can't see a sale already considered
+   * by an earlier round. A multi-lot dealing (one real transaction, several property_sales_raw
+   * ids) could otherwise have one sibling survive round 1's dedup alone, while a DIFFERENT sibling
+   * gets freshly fetched by a later, more broadly-scoped round — seenPoolIds alone doesn't catch
+   * this since it only excludes the specific id already seen, not the underlying transaction. Runs
+   * before filterByDistance so a would-be duplicate never reaches the LLM prompt or auto-include.
+   */
+  private excludeSeenDealingNumbers(
+    candidates: Record<string, unknown>[],
+    seenDealingNumbers: Set<string>,
+    correlationId?: string,
+  ): Record<string, unknown>[] {
+    const kept: Record<string, unknown>[] = [];
+    let dropped = 0;
+    for (const candidate of candidates) {
+      const key = String(candidate.dealing_number ?? candidate.id);
+      if (seenDealingNumbers.has(key)) { dropped++; continue; }
+      seenDealingNumbers.add(key);
+      kept.push(candidate);
+    }
+    this.logEvent('GENERATE.dealing_number_dedup', { correlationId, input: candidates.length, kept: kept.length, dropped });
+    return kept;
   }
 
   /**
@@ -588,7 +638,13 @@ export class ComparablesService implements OnModuleInit {
     const idealCount = selected.filter((c) => {
       const timeBand = String(c.time_band ?? 'last_resort');
       const zoningConfidence = String(c.zoning_confidence ?? 'same_family');
-      return (timeBand === 'fresh' || timeBand === 'recent') && zoningConfidence !== 'different_class_last_resort';
+      // 'extrapolated' (ranked-last-resort — see selectRankedLastResortCandidates) is explicitly
+      // excluded here, unlike 'widened' (see IDEAL_EVIDENCE_RATIO_THRESHOLD's doc comment on why
+      // size_tier is otherwise ignored) — this tier exists specifically to never be mistaken for
+      // strong evidence, regardless of how MINIMUM_COMPARABLES/TARGET_COMPARABLES are tuned later.
+      return (timeBand === 'fresh' || timeBand === 'recent')
+        && zoningConfidence !== 'different_class_last_resort'
+        && c.size_tier !== 'extrapolated';
     }).length;
     const idealRatio = count > 0 ? idealCount / count : 0;
     const tier: EvidenceConfidence['tier'] =
@@ -671,6 +727,113 @@ export class ComparablesService implements OnModuleInit {
     });
 
     return autoIncluded;
+  }
+
+  /**
+   * Ranked last-resort — the final safety net when GENERATE.zoning_last_resort still leaves the
+   * case under MINIMUM_COMPARABLES. Every tier above this one is a hard gate (pass/fail on a
+   * fixed threshold); this tier instead re-scores every candidate already fetched across every
+   * round above (never re-queries the DB — see allConsideredPool in generateComparableSales) by
+   * weighted closeness to the subject on size deviation, zoning match, distance and recency, and
+   * returns the `needed` best-ranked. Deliberately skips the LLM: there's no judgement call left
+   * to make (deterministic scoring, same philosophy as computeEvidenceConfidence's doc comment on
+   * preferring computed signals over LLM self-reporting), and computeAdjustedFields's
+   * rankedLastResort flag adds an unconditional disclosure bullet in place of an LLM-authored
+   * zoning_justification. Still runs the same non-negotiable correctness gates every other path
+   * uses (no future-dated sales, no partial-interest sales, must still support the objection) —
+   * only the size/zoning THRESHOLDS are bypassed here, never basic correctness.
+   */
+  private selectRankedLastResortCandidates(
+    pool: Record<string, unknown>[],
+    subject: SubjectContext,
+    vgRate: number | null,
+    needed: number,
+    resolvedIds: Set<string>,
+    correlationId?: string,
+  ): Record<string, unknown>[] {
+    if (vgRate === null || needed <= 0) return [];
+
+    // allConsideredPool is a straight concatenation across every round's own geo-filtered pool —
+    // seenPoolIds/excludeIds already prevent the SAME physical sale being re-fetched by a LATER
+    // round in production, but this dedupes defensively anyway (by id, first-seen wins) so a gap
+    // in that upstream guarantee can never surface the same sale as multiple "comparables".
+    const seenIds = new Set<string>();
+    const deduped = pool.filter((c) => {
+      const id = String(c.id);
+      if (seenIds.has(id)) return false;
+      seenIds.add(id);
+      return true;
+    });
+
+    const unresolved = deduped.filter((c) => !resolvedIds.has(String(c.id)));
+    const dateFiltered = this.filterFutureDatedCandidates(unresolved, subject, correlationId);
+    const wholeInterestOnly = this.filterPartialInterestSales(dateFiltered, correlationId);
+
+    const subjectZoning = subject.zoning !== 'unknown' ? subject.zoning.trim().toUpperCase() : null;
+
+    const scored = wholeInterestOnly
+      .map((candidate) => {
+        // rankedLastResort=true — adds the unconditional disclosure bullet in computeAdjustedFields'
+        // explanation instead of relying on an LLM-authored zoning_justification (there is none here).
+        const adjusted = this.computeAdjustedFields(candidate, subject, null, true);
+        if (adjusted.adjusted_rate_per_sqm === null || Number(adjusted.adjusted_rate_per_sqm) > vgRate) return null;
+
+        let area = candidate.area != null ? Number(candidate.area) : null;
+        if (area == null) return null;
+        if (candidate.area_type === 'H') area = Math.round(area * 10000);
+        // Raw (uncapped) deviation is kept alongside for logging — GENERATE.ranked_last_resort
+        // should show the real percentage even when the scoring term below clamps it.
+        const sizeDeviation = subject.landAreaSqm ? Math.abs(area - subject.landAreaSqm) / subject.landAreaSqm : 0;
+        const sizeDeviationScored = Math.min(RANKED_LAST_RESORT_SIZE_DEVIATION_CAP, sizeDeviation);
+
+        // Missing candidate zoning is always the conservative worst case (mirrors
+        // computeAdjustedFields' zoning_confidence precedent below) — checked before the
+        // subject-unknown case so the two functions never disagree on the same candidate.
+        const candidateZoning = String(candidate.zoning ?? '').trim().toUpperCase();
+        const zoningPenalty = !candidateZoning ? 1
+          : !subjectZoning ? 0
+          : candidateZoning === subjectZoning ? 0
+          : zoningFamily(candidateZoning) === zoningFamily(subjectZoning) ? 0.4
+          : 1;
+
+        const distanceKm = typeof candidate._distanceKm === 'number' ? candidate._distanceKm : null;
+        const distancePenalty = distanceKm != null ? Math.min(1, distanceKm / ROUND3_MAX_KM) : 1;
+
+        const timePenalty = adjusted.time_band === 'fresh' ? 0
+          : adjusted.time_band === 'recent' ? 0.33
+          : adjusted.time_band === 'adjusted' ? 0.66
+          : 1;
+
+        const score =
+          RANKED_LAST_RESORT_SIZE_WEIGHT * sizeDeviationScored +
+          RANKED_LAST_RESORT_ZONING_WEIGHT * zoningPenalty +
+          RANKED_LAST_RESORT_DISTANCE_WEIGHT * distancePenalty +
+          RANKED_LAST_RESORT_TIME_WEIGHT * timePenalty;
+
+        const withFields: Record<string, unknown> = { ...candidate, ...adjusted, size_tier: 'extrapolated' as const };
+        return { candidate: withFields, score, sizeDeviation, zoningPenalty };
+      })
+      .filter((r): r is { candidate: Record<string, unknown>; score: number; sizeDeviation: number; zoningPenalty: number } => r !== null)
+      .sort((a, b) => a.score - b.score);
+
+    const selected = scored.slice(0, needed);
+    for (const s of selected) resolvedIds.add(String(s.candidate.id));
+
+    this.logEvent('GENERATE.ranked_last_resort', {
+      correlationId,
+      poolSize: pool.length,
+      eligibleCount: scored.length,
+      selectedCount: selected.length,
+      needed,
+      topPicks: selected.map((s) => ({
+        id: s.candidate.id,
+        score: Number(s.score.toFixed(3)),
+        sizeDeviationPct: Math.round(s.sizeDeviation * 100),
+        zoningPenalty: s.zoningPenalty,
+      })),
+    });
+
+    return selected.map((s) => s.candidate);
   }
 
   async create(
@@ -777,6 +940,14 @@ export class ComparablesService implements OnModuleInit {
     // Union of every candidate id fetched by ANY round's SQL prefetch so far — fed to each
     // subsequent broadening round's excludeIds so it never re-fetches a row already considered.
     const seenPoolIds = new Set<unknown>();
+    // Union of every dealing_number (the real-world legal transaction) considered by ANY round so
+    // far — dedupeByDealingNumber (candidate-stratification.util.ts) only dedupes WITHIN a single
+    // prefetch call's own result set, so without this a multi-lot sale (one dealing_number, several
+    // property_sales_raw ids) could have one sibling row survive round 1 and a DIFFERENT sibling
+    // get freshly fetched by a later, more broadly-scoped round — seenPoolIds alone wouldn't catch
+    // it, since only the specific id already seen is excluded, not the underlying transaction. See
+    // excludeSeenDealingNumbers.
+    const seenDealingNumbers = new Set<string>();
     // Every id mechanically resolved (auto-includable or LLM-supporting) across every round so
     // far — see gatherRoundCandidates for why this is needed even though seenPoolIds already
     // prevents the SQL layer from re-fetching the same row.
@@ -786,6 +957,10 @@ export class ComparablesService implements OnModuleInit {
     // so a stronger later-round candidate can displace a weaker earlier-round one rather than
     // just piling on top of it.
     const accumulatedPool: Record<string, unknown>[] = [];
+    // Every geo-filtered candidate seen across every round below, regardless of whether it went
+    // on to pass any hard gate — kept purely so selectRankedLastResortCandidates has a pool to
+    // re-rank from at the very end without re-querying the DB. Never used for anything else.
+    const allConsideredPool: Record<string, unknown>[] = [];
     let roundsRun = 0;
     let selected: Record<string, unknown>[] = [];
     let confidence: EvidenceConfidence = { tier: 'insufficient', idealRatio: 0, count: 0 };
@@ -794,7 +969,9 @@ export class ComparablesService implements OnModuleInit {
     // the SQL tiers (suburb/postcode/postcode-prefix) are a performance pre-filter only.
     const round1Pool = await this.prefetchCandidateSales(subject, correlationId);
     for (const c of round1Pool) seenPoolIds.add(c.id);
-    const round1Geo = await this.filterByDistance(round1Pool, subjectCentroid, ROUND1_MAX_KM, correlationId);
+    const round1Deduped = this.excludeSeenDealingNumbers(round1Pool, seenDealingNumbers, correlationId);
+    const round1Geo = await this.filterByDistance(round1Deduped, subjectCentroid, ROUND1_MAX_KM, correlationId);
+    allConsideredPool.push(...round1Geo);
     roundsRun++;
     accumulatedPool.push(...(await this.gatherRoundCandidates(
       round1Geo, subject, vgRate, ROUND1_MAX_KM, subjectCentroid, resolvedIds, correlationId, roundsRun,
@@ -812,7 +989,9 @@ export class ComparablesService implements OnModuleInit {
       });
       const round2Pool = await this.prefetchBroadCandidateSales(subject, seenPoolIds, correlationId);
       for (const c of round2Pool) seenPoolIds.add(c.id);
-      const round2Geo = await this.filterByDistance(round2Pool, subjectCentroid, ROUND2_MAX_KM, correlationId);
+      const round2Deduped = this.excludeSeenDealingNumbers(round2Pool, seenDealingNumbers, correlationId);
+      const round2Geo = await this.filterByDistance(round2Deduped, subjectCentroid, ROUND2_MAX_KM, correlationId);
+      allConsideredPool.push(...round2Geo);
       roundsRun++;
       if (round2Geo.length > 0) {
         accumulatedPool.push(...(await this.gatherRoundCandidates(
@@ -830,7 +1009,9 @@ export class ComparablesService implements OnModuleInit {
       });
       const round3Pool = await this.prefetchBroadCandidateSales(subject, seenPoolIds, correlationId, ROUND3_LOOKBACK_YEARS);
       for (const c of round3Pool) seenPoolIds.add(c.id);
-      const round3Geo = await this.filterByDistance(round3Pool, subjectCentroid, ROUND3_MAX_KM, correlationId);
+      const round3Deduped = this.excludeSeenDealingNumbers(round3Pool, seenDealingNumbers, correlationId);
+      const round3Geo = await this.filterByDistance(round3Deduped, subjectCentroid, ROUND3_MAX_KM, correlationId);
+      allConsideredPool.push(...round3Geo);
       roundsRun++;
       if (round3Geo.length > 0) {
         accumulatedPool.push(...(await this.gatherRoundCandidates(
@@ -850,12 +1031,34 @@ export class ComparablesService implements OnModuleInit {
       this.logEvent('GENERATE.zoning_last_resort', { correlationId, ...confidence, minimum: MINIMUM_COMPARABLES });
       const lastResortPool = await this.prefetchZoningLastResortCandidates(subject, seenPoolIds, correlationId);
       for (const c of lastResortPool) seenPoolIds.add(c.id);
-      const lastResortGeo = await this.filterByDistance(lastResortPool, subjectCentroid, ROUND3_MAX_KM, correlationId);
+      const lastResortDeduped = this.excludeSeenDealingNumbers(lastResortPool, seenDealingNumbers, correlationId);
+      const lastResortGeo = await this.filterByDistance(lastResortDeduped, subjectCentroid, ROUND3_MAX_KM, correlationId);
+      allConsideredPool.push(...lastResortGeo);
       if (lastResortGeo.length > 0) {
         accumulatedPool.push(...(await this.gatherRoundCandidates(
           lastResortGeo, subject, vgRate, ROUND3_MAX_KM, subjectCentroid, resolvedIds, correlationId, roundsRun + 1, true,
         )));
       }
+      ({ selected, confidence } = this.previewSelection(accumulatedPool, correlationId));
+    }
+
+    // Ranked last-resort — the final safety net once every hard-gated round above (including the
+    // zoning-family bypass) still leaves the case under the hard MINIMUM_COMPARABLES floor. Rather
+    // than another SQL prefetch + hard gate + widen cycle, this re-ranks every candidate already
+    // considered by every round above (allConsideredPool) by weighted closeness to the subject —
+    // size deviation, zoning family, distance, recency — and surfaces the best available as
+    // explicitly flagged, non-auto-included, manual-review evidence (see
+    // selectRankedLastResortCandidates and computeAdjustedFields's rankedLastResort disclosure
+    // bullet). This never runs in place of the hard-gated paths above, only once they've already
+    // given up — a genuinely atypical subject (e.g. a large/rare-zoned parcel) can otherwise end
+    // the case with zero comparables even after considering 100+ candidates across every round.
+    if (vgRate !== null && confidence.count < MINIMUM_COMPARABLES) {
+      const needed = MINIMUM_COMPARABLES - confidence.count;
+      this.logEvent('GENERATE.ranked_last_resort_triggered', { correlationId, ...confidence, minimum: MINIMUM_COMPARABLES, needed });
+      const ranked = this.selectRankedLastResortCandidates(
+        allConsideredPool, subject, vgRate, needed, resolvedIds, correlationId,
+      );
+      accumulatedPool.push(...ranked);
       ({ selected, confidence } = this.previewSelection(accumulatedPool, correlationId));
     }
 
@@ -1490,6 +1693,7 @@ export class ComparablesService implements OnModuleInit {
     candidate: Record<string, unknown>,
     subject: SubjectContext,
     zoningJustification: string | null = null,
+    rankedLastResort: boolean = false,
   ): {
     adjusted_rate_per_sqm: number | null;
     adjusted_land_value: number | null;
@@ -1600,6 +1804,15 @@ export class ComparablesService implements OnModuleInit {
           ? 'same_family'
           : 'different_class_last_resort';
 
+    // Used only to keep the rankedLastResort disclosure bullet below honest — a candidate can
+    // land in the ranked-last-resort tier simply because auto-include's EXACT-zoning requirement
+    // or the LLM's own selection missed it, not because it's actually outside this report's
+    // normal tolerances. Claiming "outside tolerance" for a candidate that's genuinely within it
+    // would overstate how weak the evidence is.
+    const areaRatio = area / subject.landAreaSqm;
+    const withinNormalTolerance = zoning_confidence === 'same_family'
+      && areaRatio >= (1 - SIZE_BAND_TOLERANCE_FRACTION) && areaRatio <= (1 + SIZE_BAND_TOLERANCE_FRACTION);
+
     const supportsObjection = adjusted_rate_per_sqm <= vgRate;
 
     // NSW VG definition: comparable's own adjusted land value = land component × time factor only.
@@ -1635,6 +1848,11 @@ export class ComparablesService implements OnModuleInit {
 
     const explanation = [
       `${address} | ${candidate.zoning} | ${isVacant ? 'Vacant Land' : `Improved - ${candidate.primary_purpose}`}`,
+      rankedLastResort
+        ? withinNormalTolerance
+          ? `• ℹ SELECTED VIA RANKED LAST-RESORT FALLBACK — this comparable is within the report's standard size and zoning tolerances but wasn't picked up by automatic inclusion (which requires an exact zoning match) or the LLM selection step; included deterministically to help reach the minimum evidence requirement. A quick manual check is still recommended.`
+          : `• ⚠ RANKED LAST-RESORT MATCH — no comparable sale was found within this report's standard size/zoning tolerances even after full geographic and time-period widening. This is the closest available match by combined size, zoning, distance and recency proximity, included so the objection isn't left without evidence. Manual valuer review is strongly recommended before relying on this comparable.`
+        : null,
       similarityLine,
       `• Sale: ${saleDateStr} — $${purchasePrice.toLocaleString()} (${area}m²)`,
       isCompatibleZoning && zoningJustification ? `• Zoning justification: ${zoningJustification}` : null,
@@ -1705,6 +1923,7 @@ export class ComparablesService implements OnModuleInit {
         suggested_land_value: item.suggested_land_value != null ? Number(item.suggested_land_value) : null,
         explanation: (item.explanation as string) ?? null,
         improvement_confidence: (item.improvement_confidence as 'exact' | 'estimated') ?? null,
+        size_tier: (item.size_tier as 'preferred' | 'widened' | 'extrapolated') ?? null,
       }),
     );
 
