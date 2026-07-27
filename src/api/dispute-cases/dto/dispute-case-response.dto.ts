@@ -58,6 +58,9 @@ export class DisputeCaseResponseDto {
   evidence_strength_score: number | null;
 
   @ApiPropertyOptional()
+  evidence_strength_rationale: string | null;
+
+  @ApiPropertyOptional()
   original_assessed_value: number | null;
 
   @ApiPropertyOptional()

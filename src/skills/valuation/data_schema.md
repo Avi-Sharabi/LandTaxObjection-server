@@ -51,6 +51,8 @@ this). Do not paste untrusted HTML.
 | `action_plan` | list | `{priority, action, how, deadline, status}` (+ optional `status_class`). → Section 10 |
 | `disclaimer_paragraphs` | list | Strings. → Section 11 |
 | `payment_reminder` | string | Red callout at the very end (optional). |
+| `evidence_strength_score` | number | Integer 0–100 — your qualitative judgment of overall evidence strength, per the `evidence-score` skill. Never rendered in the report; consumed only by the case-detail "Evidence score" KPI tile. |
+| `evidence_strength_rationale` | string | One-sentence justification for the score above. Never rendered in the report; log-only, not persisted to the database. |
 
 ## `meta`
 `title_line1` / `title_line2` / `title_line3` (banner; defaults supplied),
@@ -202,9 +204,24 @@ the automatic format isn't what you want.
 
 ## `evidence_strength_score` / `evidence_strength_rationale`
 
-Not part of this JSON contract. `evidence_strength_score`/`evidence_strength_rationale`
-are computed deterministically in code by `calculateEvidenceStrengthScore` (see
-`src/api/dispute-cases/evidence-score.util.ts`, implementing the rubric in
-`src/skills/evidence-score.md`) directly from the Supporting Evidence Issues,
-Comparable Sales, and Objection Grounds rows — Claude is not asked to produce
-these fields and never sees this section of the rubric.
+These ARE part of this JSON contract — two more top-level keys, alongside
+everything else in this document. Unlike every other field described here,
+they are never used to populate the rendered report/PDF; they exist purely
+so the case-detail "Evidence score" KPI tile
+(`dispute_cases.evidence_strength_score`) has a value, and so the reasoning
+behind it is captured in a server log line.
+
+`evidence_strength_score` (integer, 0–100) and `evidence_strength_rationale`
+(one sentence) are **your own qualitative judgment** of how strong this
+case's evidence is — a genuine assessment of quality, relevance, and
+persuasiveness, not a tally of ticked items, a comparable-sales row count,
+or any other mechanical ratio. Follow the full rubric and guardrails in the
+`evidence-score` skill (loaded alongside this schema) and apply it only to
+the Supporting Evidence Issues, Comparable Sales, and Objection Grounds
+sections of the prompt — never to the narrative you write elsewhere in this
+report, the valuation outcome, or your own writing quality.
+
+Do not render `evidence_strength_score`/`evidence_strength_rationale`
+anywhere inside the report content itself (no cover fact, no section, no
+callout) — they are returned purely as top-level JSON fields for the server
+to parse, clamp, persist, and log.

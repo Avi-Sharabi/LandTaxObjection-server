@@ -36,8 +36,11 @@ export class ValuationReportRepository {
     await this.disputeCaseRepo.update(id, { internal_assessed_value: value });
   }
 
-  async updateEvidenceStrengthScore(id: string, value: number | null): Promise<void> {
-    await this.disputeCaseRepo.update(id, { evidence_strength_score: value });
+  async updateEvidenceStrength(id: string, score: number | null, rationale: string | null): Promise<void> {
+    await this.disputeCaseRepo.update(id, {
+      evidence_strength_score: score,
+      evidence_strength_rationale: rationale,
+    });
   }
 
   getComparables(disputeCaseId: string): Promise<ComparableSale[]> {
