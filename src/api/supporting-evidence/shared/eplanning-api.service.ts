@@ -1,12 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { firstValueFrom } from 'rxjs';
-import { EplanningApiData, ReportMeta } from '../supporting-evidence.types';
+import { EplanningApiData } from '../supporting-evidence.types';
 import { PDFParse } from 'pdf-parse';
 import {
   EplanningAddressNotFoundException,
-  EplanningCadastreException,
-  EplanningLotNotFoundException,
   EplanningReportUrlException,
 } from '../exceptions/supporting-evidence.exceptions';
 
@@ -87,29 +85,6 @@ export class EplanningApiService {
     return { layers: layers as EplanningApiData['layers'], sepp: sepp as EplanningApiData['sepp'], warn: warn as EplanningApiData['warn'], council: council as string[] };
   }
 
-  async getLotArea(lot: string, plan: string, planType = 'DP'): Promise<number> {
-    const query = `${lot} ${planType} ${plan}`;
-    const lotRes = await firstValueFrom(
-      this.http.get<Array<{ cadId: string }>>(`${BASE}/lot?l=${encodeURIComponent(query)}`, { headers: HEADERS, timeout: EplanningApiService.QUERY_TIMEOUT_MS }),
-    );
-    const lotData = lotRes.data;
-    if (!Array.isArray(lotData) || lotData.length === 0) throw new EplanningLotNotFoundException(query);
-    const cadId = lotData[0]?.cadId;
-    if (!cadId) throw new EplanningCadastreException('No cadId in lot response');
-
-    const cadRes = await firstValueFrom(
-      this.http.get<{ features: Array<{ attributes: { shape_Area: number } }> }>(
-        'https://maps.six.nsw.gov.au/arcgis/rest/services/public/NSW_Cadastre/MapServer/9/query',
-        { params: { where: `cadid=${cadId}`, outFields: 'shape_Area', f: 'json' }, timeout: EplanningApiService.QUERY_TIMEOUT_MS },
-      ),
-    );
-    const feats = cadRes.data?.features;
-    if (!feats?.length) throw new EplanningCadastreException('No cadastre feature found');
-    const rawArea = feats[0].attributes?.shape_Area;
-    if (!rawArea) throw new EplanningCadastreException('shape_Area is null');
-    return Math.round(rawArea);
-  }
-
   formatLayersAsText(apiData: EplanningApiData): string {
     const { layers = [], sepp = [], warn = [], council = [] } = apiData;
     const lines: string[] = [];
@@ -169,48 +144,5 @@ export class EplanningApiService {
     }
 
     return lines.join('\n') || '';
-  }
-
-  parseReportMeta(text: string): ReportMeta {
-    const dpMatch = text.match(/Lot\s+(\d+[A-Z]?)\s+(?:in\s+)?(?:Deposited\s+Plan\s+|DP\s*)(\d+)/i);
-    const spMatch = text.match(/Lot\s+(\d+[A-Z]?)\s+(?:in\s+)?(?:Strata\s+Plan\s+|SP\s*)(\d+)/i);
-    const lotPlan = dpMatch || spMatch;
-    const planType = dpMatch ? 'DP' : spMatch ? 'SP' : 'DP';
-
-    const lvMatch =
-      text.match(/[Ll]and\s+[Vv]alue[:\s]+\$?\s*([\d,]+)/i) ||
-      text.match(/[Aa]ssessed\s+(?:[Ll]and\s+)?[Vv]alue[:\s]+\$?\s*([\d,]+)/i) ||
-      text.match(/\$\s*([\d,]+)\s*(?:as\s+at|at\s+\d)/i);
-
-    const dateMatch =
-      text.match(/[Aa]s\s+at\s+(\d{1,2}\s+\w+\s+\d{4})/i) ||
-      text.match(/(\d{1,2}\s+(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4})/i);
-
-    const fsrMatch =
-      text.match(/[Ff]loor\s+[Ss]pace\s+[Rr]atio[^0-9]*(\d+\.?\d*)\s*:\s*1/i) ||
-      text.match(/\bFSR[^0-9]*(\d+\.?\d*)\s*:\s*1/i);
-
-    const concessionMentions = [...text.matchAll(/(?:concession|allowance|discount|deduction)[^\n]{0,200}/gi)]
-      .map(m => m[0].trim().replace(/\s+/g, ' '));
-
-    const heritageMentions = [...text.matchAll(/(?:heritage|listed heritage|conservation area)[^\n]{0,200}/gi)]
-      .map(m => m[0].trim().replace(/\s+/g, ' '));
-
-    const multipleLots = [...text.matchAll(/Lot\s+\d+[A-Z]?\s+(?:in\s+)?(?:DP|SP|Deposited Plan|Strata Plan)\s*\d+/gi)]
-      .map(m => m[0].trim());
-
-    return {
-      lot: lotPlan ? lotPlan[1] : null,
-      plan: lotPlan ? lotPlan[2] : null,
-      planType,
-      assessed_land_value: lvMatch ? parseInt(lvMatch[1].replace(/,/g, '')) : null,
-      revenue_nsw_notice_date: dateMatch ? dateMatch[1].trim() : null,
-      fsr_from_pdf: fsrMatch ? parseFloat(fsrMatch[1]) : null,
-      land_area_sqm: null,
-      height_limit_m: null,
-      concession_mentions: [...new Set(concessionMentions)],
-      heritage_mentions: [...new Set(heritageMentions)],
-      multiple_lots_in_report: [...new Set(multipleLots)],
-    };
   }
 }

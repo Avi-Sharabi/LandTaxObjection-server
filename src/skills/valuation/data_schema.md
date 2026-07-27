@@ -84,7 +84,11 @@ valuer's own results — do not set this to `"UNCONFIRMED"` merely because CPV c
 is still pending; that caveat is stated separately (see `section_guide.md`).
 
 **Methodology — fixed, do not deviate (this determines the number, not the model's discretion):**
-1. Take the `$/m²` rate of every sale actually included in `comparables[]` for this report.
+1. Take the `$/m²` rate of every full-interest, non-outlier comparable sale on file for this
+   case — not just the subset you choose to display in `comparables[]`, and never including a
+   comparable marked EXCLUDED in the prompt's Status column (part-interest sale or statistical
+   outlier — those are excluded from this step regardless of whether you also show them in the
+   table for transparency).
 2. Compute the **median** of those rates (not the mean, not a point "somewhere in the range,"
    not the ceiling or floor of the range) — this is the starting rate.
 3. If a constraint identified in `constraints[]` carries a `Major`/`Negative` valuation impact
@@ -92,7 +96,9 @@ is still pending; that caveat is stated separately (see `section_guide.md`).
    state the adjusted rate and the reasoning in `cpv.rate_analysis` — do not apply a discount that
    isn't traceable to a specific constraint already in the register.
 4. `contended_value` = the resulting rate × the site area used elsewhere in this report (the
-   same cadastre-confirmed area used in `subject.identification`/`meta`, not a different figure).
+   same area — extracted from the uploaded NSW Valuer General Land Value Search document,
+   AI-extracted rather than independently confirmed — used in `subject.identification`/`meta`,
+   not a different figure).
 This is a fixed procedure precisely so that re-running this report on the same comparable
 evidence produces the same figure every time — never pick a different point in the range on a
 subsequent run of the same data. The resulting rate (step 2/3) is also what populates the
@@ -101,8 +107,9 @@ figure and `cpv.rate_analysis`/`comp_summary_row.rate` in Section 5 must never d
 
 **Server enforcement note**: `cover_facts` "Our Assessed Value" / "Our Implied Rate ($/m²)" and
 this `contended_value` field are computed server-side (median of the persisted comparable
-`$/m²` rates × site area — steps 1, 2, and 4 above) and force-overwritten after you generate
-your response, regardless of what you write. **Step 3 (the constraint-based downward
+`$/m²` rates × site area, **after excluding part-interest sales and statistical outliers** —
+steps 1, 2, and 4 above) and force-overwritten after you generate your response, regardless of
+what you write. **Step 3 (the constraint-based downward
 adjustment) is not applied automatically anywhere** — there is no severity/dollar signal on
 file to derive a numeric discount from. You may still discuss in `cpv.rate_analysis` that a
 constraint could justify further reduction and recommend manual/CPV review, but do not state a
@@ -128,7 +135,7 @@ included, never dropped** — same as every other row in this report — and sim
   - `adopted: true` renders the **navy** Method label + **green** value cell.
   - `var_class` overrides the auto colour (`v-strong` red / `v-mod` amber).
 - `extra_rows`: list of `{label, value, note}` — the non-method rows (implied rate, gross realisation).
-- `comp_summary_row`: the navy summary row under the comparables (`ref, date, price, area, zone, rate, comparison` — all strings here). The `ref` value (e.g. `"CPV ADOPTED RANGE"`) spans the # **and** Address columns (colspan=2 in the template); remaining fields map left-to-right to Date → Price → Area m² → Zone → $/m² → CPV Comparison. `price`, `rate`, and `comparison` all support `<br>`/`<strong>` for a stacked range + adopted-value display (e.g. `rate: "$3,034 – $3,640<br><strong>Adopted: $3,371</strong>"`) — `date`/`area`/`zone` are plain text only.
+- `comp_summary_row`: the navy summary row under the comparables (`ref, date, adjusted_value, area, zone, rate, comparison` — all strings here). This is a synthetic aggregate row, not a real comparable, so it has no `sale_price` — the template renders its Sale Price cell as a fixed `-`. The `ref` value (e.g. `"CPV ADOPTED RANGE"`) spans the # **and** Address columns (colspan=2 in the template); remaining fields map left-to-right to Date → Adjusted Value → Area m² → Zone → $/m² → CPV Comparison. `adjusted_value`, `rate`, and `comparison` all support `<br>`/`<strong>` for a stacked range + adopted-value display (e.g. `rate: "$3,034 – $3,640<br><strong>Adopted: $3,371</strong>"`) — `date`/`area`/`zone` are plain text only.
 - `rate_analysis`: string → blue analysis callout. Show the arithmetic behind the adopted rate,
   not just the conclusion: list each comparable's $/m² rate used and the computed median
   explicitly, then any constraint-based adjustment, then the final adopted rate — see
@@ -146,14 +153,26 @@ Available utility classes (apply as `<span class="CLASS">text</span>`):
 - `exec_summary.rows[].item` — use amber/green spans for risk/positive labels
 - `constraints[].status` — use colored spans for CONFIRMED (green), REFUSED (red), UNCONFIRMED (amber). "CONFIRMED" requires EVIDENCE_OBTAINED/CLIENT_CONFIRMED verification (see controlled-vocabulary rules in section_guide.md) — otherwise use "AI-DETECTED — NOT YET VERIFIED" (amber)
 - `financial_scenarios[].scenario` — use amber spans for current-VG baseline rows
-- `cpv.comp_summary_row.price`, `.rate`, and `.comparison` — support `<br>` for line breaks
+- `cpv.comp_summary_row.adjusted_value`, `.rate`, and `.comparison` — support `<br>` for line breaks
 
 ## `comparables[]`
 `ref`, `address`, `date`, `zone`, `comparison` (strings). Numbers/overrides:
-- `price` (number) → formatted; or set `price_display` to override. `price_suffix` appends (e.g. `"+ GST"`).
+- `sale_price` (number) → the real contract-of-sale transaction amount. **This field is
+  force-overwritten server-side from the actual database record for any row whose `ref` matches
+  a comparable you were shown in the prompt** — whatever you write here is only a fallback for
+  an unmatched row (which should not normally happen; never invent one). Do not confuse this
+  with `adjusted_value` below — they are deliberately separate fields.
+- `adjusted_value` (number) → this firm's derived/adjusted bare-land-value figure (after
+  stripping improvements, time/size/constraint adjustments) → formatted; or set
+  `adjusted_value_display` to override.
 - `area_sqm` (number) → `"NN,NNN m²"`; or `area_display` to override (e.g. `"26,500 (13,400 developable)"`).
-- `rate_per_sqm` (number) → `"$NNN"`; or `rate_display` to override (e.g. `"$313 gross $619 dev."`). Falls back to `price/area` if absent.
-- `highlight: "green"` renders the price in green (mark a superior comp).
+- `rate_per_sqm` (number) → `"$NNN"`; or `rate_display` to override (e.g. `"$313 gross $619 dev."`). Falls back to `adjusted_value/area` if absent.
+- `highlight: "green"` renders the adjusted value in green (mark a superior comp).
+- `quarantined` (boolean) + `quarantine_reason` (string) — set both, copying the exact reason
+  text given in the prompt's Status column, for any comparable already marked EXCLUDED there.
+  These are also force-enforced server-side; this is for the model to render the in-table
+  footnote/flag correctly. Do not set `quarantined: true` on a row the prompt marked INCLUDED,
+  and never cite an EXCLUDED row's rate as part of the median arithmetic in `cpv.rate_analysis`.
 
 ## `financial_scenarios[]`
 `scenario`, `basis` (strings); `taxable_value`, `land_tax` (numbers, formatted whole-dollar).

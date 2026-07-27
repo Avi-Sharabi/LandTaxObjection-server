@@ -9,12 +9,13 @@ import { AssessmentDocumentsService } from '../assessment-documents/assessment-d
 import { PuppeteerService } from '../supporting-evidence/shared/puppeteer.service';
 import { ValuationReportRepository } from './valuation-report.repository';
 import { ValuationCtxCacheService } from './valuation-ctx-cache.service';
-import { SupportingEvidenceContext, LandTaxNotice, CaseDocumentSummary } from '../supporting-evidence/supporting-evidence.types';
+import { SupportingEvidenceContext, LandTaxNotice, LandValueSearch, CaseDocumentSummary } from '../supporting-evidence/supporting-evidence.types';
 import { DisputeCase, DisputeStatus, DISPUTE_STATUS_LABELS } from './entities/dispute-case.entity';
 import { getLandTaxYearFromValuationDate } from 'src/common/utils/land-tax-year.util';
 import { computeMedian } from 'src/common/utils/median.util';
+import { classifyComparablesForMedian } from 'src/common/utils/comparable-quarantine.util';
+import { assignComparableRefs, overrideComparableSalePrice, ComparableRefMatch } from './valuation-report-comparables.util';
 import { DisputeObjectionReason } from './entities/dispute-objection-reason.entity';
-import { ComparableSale } from '../comparables/entities/comparable-sale.entity';
 import { DisputeEvidenceIssue } from '../supporting-evidence/entities/dispute-evidence-issue.entity';
 import { ValuationNotice } from '../valuation-notices/entities/valuation-notice.entity';
 import { Property } from '../properties/entities/property.entity';
@@ -39,6 +40,7 @@ export interface SafePlanningCtx {
   planType?: string;
   reportText?: string | null;
   land_tax_notice?: LandTaxNotice | null;
+  land_value_search?: LandValueSearch | null;
   case_documents?: CaseDocumentSummary[];
 }
 
@@ -63,6 +65,7 @@ export function buildSafePlanningCtx(ctx: SupportingEvidenceContext): SafePlanni
     planType: ctx.meta.planType ?? undefined,
     reportText: ctx.reportText?.slice(0, 10000),
     land_tax_notice: ctx.landTaxNotice,
+    land_value_search: ctx.landValueSearch,
     case_documents: ctx.caseDocuments,
   };
 }
@@ -91,9 +94,20 @@ interface RawReportData {
   };
   comparables?: Array<{
     ref: string; address: string; date: string; zone: string; comparison: string;
-    price?: number; price_display?: string; price_suffix?: string; highlight?: string;
+    // Real contract-of-sale transaction amount. Force-overwritten server-side from the actual
+    // DB purchase_price for any row matched by `ref` — see overrideComparableSalePrice(). The
+    // model may still populate these, but they are never trusted for the final render.
+    sale_price?: number; sale_price_display?: string;
+    // Derived/adjusted figure (bare-land-value estimate after stripping improvements, time,
+    // size, constraint adjustments etc.) — structurally distinct from sale_price above.
+    adjusted_value?: number; adjusted_value_display?: string;
+    highlight?: string;
     area_sqm?: number; area_display?: string;
     rate_per_sqm?: number; rate_display?: string;
+    // Set true (and copy the exact reason string given in the prompt table) for any comparable
+    // the system already excluded from the headline median — quarantine status is also
+    // force-enforced server-side, this is just for the model to render a footnote/flag.
+    quarantined?: boolean; quarantine_reason?: string;
   }>;
   residual?: { rows?: Array<{ label: string; value: string }> };
   weaknesses?: Array<{ n: string | number; weakness: string; evidence: string; argument: string }>;
@@ -207,7 +221,19 @@ export class ValuationReportService {
     // "Our Assessed Value" — computed from the same persisted comparable rows already fetched
     // above (never from the LLM's own echoed comparables[]), so re-running the report on the
     // same evidence always produces the same figure. No constraint-based adjustment is applied.
-    const comparableRates = comparables
+    //
+    // Defense-in-depth: this runs regardless of how the comparable entered the system (AI
+    // generation or manual create()), since this is the one place that sees every comparable
+    // for the case irrespective of entry path.
+    const { eligible: eligibleComparables, quarantined: quarantinedComparables } =
+      classifyComparablesForMedian(comparables);
+    const quarantineReasonByComparable = new Map(quarantinedComparables.map(q => [q.item, q.reason] as const));
+    // Stable "C1".."Cn" ref issued to the LLM for each fetched comparable (fetch order), so its
+    // echoed comparables[] rows can be matched back to the real DB record — see
+    // valuation-report-comparables.util.ts and buildRenderData below.
+    const comparableByRef = assignComparableRefs(comparables, quarantineReasonByComparable);
+
+    const comparableRates = eligibleComparables
       .map(c => (c.adjusted_rate_per_sqm != null ? Number(c.adjusted_rate_per_sqm) : null))
       .filter((r): r is number => r != null && isFinite(r));
     const comparablesMedianRatePerSqm = computeMedian(comparableRates);
@@ -260,7 +286,7 @@ export class ValuationReportService {
     };
 
     const skillContent = this.skillRegistry.getSkillContent('valuation-report');
-    const userMessage = this.buildUserMessage(disputeCase, comparables, evidenceIssues, objectionReasons, deterministicFacts, resolvedCtx);
+    const userMessage = this.buildUserMessage(disputeCase, comparableByRef, evidenceIssues, objectionReasons, deterministicFacts, resolvedCtx);
     const { score: evidenceStrengthScore, rationale: evidenceStrengthRationale } =
       calculateEvidenceStrengthScore(evidenceIssues, comparables, objectionReasons);
 
@@ -286,7 +312,7 @@ export class ValuationReportService {
 
     const raw = this.anthropicService.parseJsonObject<RawReportData>(result.text);
 
-    const renderData = this.buildRenderData(raw,deterministicFacts);
+    const renderData = this.buildRenderData(raw, deterministicFacts, comparableByRef);
 
     const html = nunjucks.renderString(skillFiles.template, renderData);
     this.assertNoLeftoverArtifacts(html, disputeCaseId);
@@ -333,7 +359,11 @@ export class ValuationReportService {
     return this.skillFiles;
   }
 
-  private buildRenderData(raw: RawReportData, facts: DeterministicReportFacts): Record<string, unknown> {
+  private buildRenderData(
+    raw: RawReportData,
+    facts: DeterministicReportFacts,
+    comparableByRef: Map<string, ComparableRefMatch>,
+  ): Record<string, unknown> {
     // Never trust the LLM's echoed vg_recorded_value — source it from the real ValuationNotice
     // column. A genuine miss must render as "-", never as a literal (very wrong-looking) "$0".
     const vgValue = facts.vgAssessedLandValue;
@@ -382,13 +412,18 @@ export class ValuationReportService {
     } : undefined;
 
     const comparables = (raw.comparables ?? []).map(c => {
-      const priceBase = this.formatMoney(c.price ?? 0);
-      const priceSuffix = c.price_suffix ? ` ${c.price_suffix}` : '';
+      // The real transaction price is never trusted from the LLM's transcription — force it in
+      // from the DB for any row we can match back to a real comparable (same technique as the
+      // contended_value override above). Unmatched refs never render a fabricated price (see
+      // overrideComparableSalePrice's "-" fallback).
+      const overridden = overrideComparableSalePrice(c, comparableByRef);
+
+      const adjustedBase = this.formatMoneyOrDash(c.adjusted_value);
       const areaNum = c.area_sqm ?? 0;
-      const rateNum = c.rate_per_sqm ?? (c.price && areaNum ? Math.round(c.price / areaNum) : 0);
+      const rateNum = c.rate_per_sqm ?? (c.adjusted_value && areaNum ? Math.round(c.adjusted_value / areaNum) : 0);
       return {
-        ...c,
-        price_display: c.price_display ?? (priceBase + priceSuffix),
+        ...overridden,
+        adjusted_value_display: c.adjusted_value_display ?? adjustedBase,
         area_display: c.area_display ?? `${areaNum.toLocaleString('en-AU')} m²`,
         rate_display: c.rate_display ?? (rateNum ? `$${Math.round(rateNum).toLocaleString('en-AU')}` : ''),
         price_class: c.highlight === 'green' ? 'txt-green' : 'num',
@@ -434,7 +469,7 @@ export class ValuationReportService {
       { label: 'Owner (as notified)', value: facts.landTaxOwnerDisplay },
       { label: 'Property', value: facts.propertyAddress },
       { label: 'Property ID', value: facts.propertyPidDisplay },
-      { label: 'Site Area (cadastral - confirmed)', value: facts.siteAreaDisplay },
+      { label: 'Site Area (per Land Value Search — AI-extracted)', value: facts.siteAreaDisplay },
       { label: 'Zoning', value: facts.zoningDisplay },
       { label: 'Relevant Valuation Date', value: facts.valuationDateDisplay ?? '-' },
       { label: 'Land Tax Year', value: facts.landTaxYear != null ? String(facts.landTaxYear) : '-' },
@@ -526,9 +561,10 @@ export class ValuationReportService {
     return new Date(d).toLocaleDateString('en-AU', { day: 'numeric', month: 'long', year: 'numeric' });
   }
 
-  // land_area_eplanning_sqm is the NSW cadastre/DP-resolved area for ordinary single-lot
-  // properties; land_area_sqm is reserved for the rare AI-web-search multi-lot-amalgamation
-  // override (ai-property-search.service.ts). Prefer the cadastre value when both are present.
+  // land_area_eplanning_sqm is the area extracted from the subject's uploaded NSW Valuer General
+  // "Land Value Search" document (see PropertyContextService.gatherSharedContext /
+  // AiPropertySearchService.persistLandValueSearchDetails); land_area_sqm remains a manual/legacy
+  // override field. Prefer the document-derived value when both are present.
   private resolveSiteAreaSqm(prop: Property): number | null {
     return (Number(prop.land_area_eplanning_sqm) || null) ?? (Number(prop.land_area_sqm) || null);
   }
@@ -547,6 +583,13 @@ export class ValuationReportService {
     if (idx >= 0) {
       cloned[idx] = { ...cloned[idx], value };
     } else {
+      // Only a real risk when rows already existed but none matched the pattern — an unexpected
+      // LLM label phrasing means we're about to append a second, potentially-contradictory row
+      // about the same fact rather than cleanly replacing it. A completely empty `rows` (nothing
+      // to duplicate) is normal fill-in behavior and not logged.
+      if (cloned.length > 0) {
+        this.logger.warn(`overrideFactRow: no row matched ${labelPattern} among ${cloned.length} existing row(s) — appending fallback "${fallbackLabel}" instead of replacing.`);
+      }
       cloned.push({ label: fallbackLabel, value });
     }
     return cloned;
@@ -564,6 +607,9 @@ export class ValuationReportService {
     if (idx >= 0) {
       cloned[idx] = { ...cloned[idx], finding };
     } else {
+      if (cloned.length > 0) {
+        this.logger.warn(`overrideItemFindingRow: no row matched ${itemPattern} among ${cloned.length} existing row(s) — appending fallback "${fallbackItem}" instead of replacing.`);
+      }
       cloned.push({ item: fallbackItem, finding });
     }
     return cloned;
@@ -609,7 +655,7 @@ export class ValuationReportService {
 
   private buildUserMessage(
     disputeCase: DisputeCase,
-    comparables: ComparableSale[],
+    comparableByRef: Map<string, ComparableRefMatch>,
     evidenceIssues: DisputeEvidenceIssue[],
     objectionReasons: DisputeObjectionReason[],
     facts: DeterministicReportFacts,
@@ -636,7 +682,7 @@ export class ValuationReportService {
       `Address: ${prop.address}`,
       `Property ID: ${prop.pid ?? 'unknown'}`,
       `Lot/DP: ${prop.lot_dp ?? 'unknown'}`,
-      `Site area: ${siteAreaSqm ?? 'unknown'} m²${siteAreaSqm != null ? ' (resolved from NSW cadastre/DP — treat as confirmed)' : ' (not resolved — recommend verifying against the Deposited Plan before lodgement)'}`,
+      `Site area: ${siteAreaSqm ?? 'unknown'} m²${siteAreaSqm != null ? ' (from Land Value Search document — AI-extracted, confirm before relying on it)' : ' (not resolved — recommend verifying against the Deposited Plan before lodgement)'}`,
       `Zoning: ${prop.zoning ?? 'unknown'}`,
     ];
 
@@ -765,6 +811,29 @@ export class ValuationReportService {
       }
     }
 
+    const lvs = planningCtx?.land_value_search;
+    if (lvs) {
+      lines.push('', '## Land Value Search (Extracted)');
+      lines.push(
+        'AI-extracted from the uploaded NSW Valuer General Land Value Search document — this is ' +
+        'the authoritative source for the subject Site Area shown above; treat the fields below as ' +
+        'supplementary valuation-basis context, confirm before relying on any figure not already ' +
+        'cross-checked elsewhere in this report.',
+      );
+      if (lvs.lga) lines.push(`LGA: ${lvs.lga}`);
+      if (lvs.description_of_land) lines.push(`Description of land: ${lvs.description_of_land}`);
+      if (lvs.property_dimensions) lines.push(`Property dimensions: ${lvs.property_dimensions}`);
+      if (lvs.valuing_year) lines.push(`Valuing year: ${lvs.valuing_year}`);
+      if (lvs.date_valuation_made) lines.push(`Date valuation was made: ${lvs.date_valuation_made}`);
+      if (lvs.zoning_used_for_valuation) lines.push(`Zoning used for valuation: ${lvs.zoning_used_for_valuation}`);
+      if (lvs.land_value_authority) lines.push(`Land value authority: ${lvs.land_value_authority}`);
+      if (lvs.gross_land_value != null) lines.push(`Gross land value: $${lvs.gross_land_value.toLocaleString()}`);
+      if (lvs.division_3_and_4_allowances != null) lines.push(`Division 3 and 4 allowances: $${lvs.division_3_and_4_allowances.toLocaleString()}`);
+      if (lvs.net_land_value != null) lines.push(`Net land value: $${lvs.net_land_value.toLocaleString()}`);
+      if (lvs.land_value_basis) lines.push(`Land value basis: ${lvs.land_value_basis}`);
+      if (lvs.other_allowances_concessions) lines.push(`Other allowances/concessions: ${lvs.other_allowances_concessions}`);
+    }
+
     const tickedIssues = evidenceIssues.filter(e => e.is_tick);
     if (tickedIssues.length > 0) {
       lines.push('', '## Supporting Evidence Issues (ticked)');
@@ -774,16 +843,35 @@ export class ValuationReportService {
       }
     }
 
-    if (comparables.length > 0) {
+    if (comparableByRef.size > 0) {
       lines.push('', '## Comparable Sales (AI-Analysed)');
-      lines.push('| Address | Area m² | Zone | Adj. Land Value | $/m² | Contract Date |');
-      lines.push('|---|---|---|---|---|---|');
-      for (const c of comparables) {
+      lines.push(
+        'The "Ref" column is this system\'s stable identifier for each comparable sale — copy the exact ' +
+        'string (e.g. "C1") verbatim into comparables[].ref for any row you include from this table; never ' +
+        'invent your own ref labels, and never include a comparable not listed here. "Sale Price (actual)" ' +
+        'is the real contract-of-sale transaction amount — this is NOT the same figure as "Adj. Land Value" ' +
+        '(this firm\'s bare-land-value estimate after stripping improvements/adjusting for time, size, etc. ' +
+        '— see the nsw-land-tax-comparables skill). Never state one figure as if it were the other, and ' +
+        'never invent a sale price for a comparable — only use the exact figure given here.',
+      );
+      lines.push(
+        'Rows marked EXCLUDED in the Status column were already left out of this firm\'s own headline $/m² ' +
+        'median/contended-value calculation (part-interest sale or statistical-outlier rate) — the system ' +
+        'enforces this regardless of what you write. Still include these rows in comparables[] for ' +
+        'completeness/transparency (set comparables[].quarantined = true and copy the exact reason text ' +
+        'into comparables[].quarantine_reason verbatim), but do not cite their rate in the median arithmetic ' +
+        'you narrate in cpv.rate_analysis — only INCLUDED rows feed the median.',
+      );
+      lines.push('| Ref | Address | Area m² | Zone | Sale Price (actual) | Adj. Land Value | Adj. $/m² | Contract Date | Status |');
+      lines.push('|---|---|---|---|---|---|---|---|---|');
+      for (const [ref, { comparable: c, quarantineReason }] of comparableByRef) {
         const address = [c.property_house_number, c.property_street_name, c.property_locality].filter(Boolean).join(' ');
         const rate = c.adjusted_rate_per_sqm != null ? `$${Number(c.adjusted_rate_per_sqm).toFixed(0)}` : '';
         const date = c.contract_date?.toISOString().split('T')[0] ?? '';
-        const value = c.adjusted_land_value != null ? `$${Number(c.adjusted_land_value).toLocaleString()}` : '';
-        lines.push(`| ${address} | ${c.area ?? ''} | ${c.zoning ?? ''} | ${value} | ${rate} | ${date} |`);
+        const adjValue = c.adjusted_land_value != null ? `$${Number(c.adjusted_land_value).toLocaleString()}` : '';
+        const salePrice = c.purchase_price != null ? `$${Number(c.purchase_price).toLocaleString()}` : '';
+        const status = quarantineReason ? `EXCLUDED — ${quarantineReason}` : 'INCLUDED';
+        lines.push(`| ${ref} | ${address} | ${c.area ?? ''} | ${c.zoning ?? ''} | ${salePrice} | ${adjValue} | ${rate} | ${date} | ${status} |`);
       }
     }
 
