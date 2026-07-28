@@ -26,6 +26,11 @@ const PLANNING_AREA_KEYS = new Set([
   'shape_area_m2', 'Shape_Area', 'SHAPE_Area', 'area_m2', 'area', 'Area', 'SHAPE_Length',
 ]);
 
+// Shared between generate() (where the land-tax display strings are computed) and
+// buildUserMessage() (which needs to know whether a given display string is a real,
+// system-computed figure worth surfacing to Claude, or just this fallback placeholder).
+const LAND_TAX_UNCONFIRMED_FALLBACK = 'UNCONFIRMED — obtain from assessment notice';
+
 export interface SafePlanningCtx {
   council?: string[];
   warn?: Array<{ title?: string; layerRef?: string }>;
@@ -215,7 +220,7 @@ export class ValuationReportService {
     // stage — pin them here rather than letting the report LLM re-decide them every run.
     const ltn = resolvedCtx?.land_tax_notice ?? null;
     const landTaxCaveat = ' (AI-extracted — confirm before relying on it)';
-    const landTaxFallback = 'UNCONFIRMED — obtain from assessment notice';
+    const landTaxFallback = LAND_TAX_UNCONFIRMED_FALLBACK;
 
     // "Our Assessed Value" — computed from the same persisted comparable rows already fetched
     // above (never from the LLM's own echoed comparables[]), so re-running the report on the
@@ -330,9 +335,9 @@ export class ValuationReportService {
     }
 
     if (result.stopReason === 'max_tokens') {
-      this.logger.error(JSON.stringify({ context: 'ValuationReport.truncated', disputeCaseId, maxTokens: 32000 }));
+      this.logger.error(JSON.stringify({ context: 'ValuationReport.truncated', disputeCaseId, maxTokens: 64000 }));
       throw new ValuationReportFailedException(
-        'Valuation report response was truncated at the max_tokens limit (32000) — the report content is too large for the current limit; increase maxTokens or reduce section scope.',
+        'Valuation report response was truncated at the max_tokens limit (64000) — the report content is too large for the current limit; increase maxTokens or reduce section scope.',
       );
     }
     if (!result.text) throw new ValuationReportFailedException('Claude returned empty valuation report');
@@ -768,9 +773,15 @@ export class ValuationReportService {
       if (facts.landTaxYear != null) {
         lines.push(`System-computed land tax year: ${facts.landTaxYear} — copy this exact value into meta.land_tax_year; never derive a different year.`);
       }
+      if (facts.noticeIssueDateDisplay !== '-') {
+        lines.push(`System-computed notice issue date: ${facts.noticeIssueDateDisplay} — copy this exact string into statutory.basis's Notice Issue Date row; do not restate a different date.`);
+      }
       if (disputeCase.statutory_deadline) {
         lines.push(`Statutory deadline: ${new Date(disputeCase.statutory_deadline).toISOString().split('T')[0]}`);
         lines.push(`Report generation date (compare against the statutory deadline above — do not assume it is still open): ${new Date().toISOString().split('T')[0]}`);
+      }
+      if (facts.statutoryDeadlineDisplay !== '-') {
+        lines.push(`System-computed statutory objection deadline: ${facts.statutoryDeadlineDisplay} — copy this exact string into statutory.basis's Statutory Objection Deadline row, and use it wherever else the report states the deadline (Section 1, Section 10); never recalculate the 60-day rule yourself.`);
       }
       if (notice.assessed_land_value != null) {
         lines.push(`Assessed land value (current year): $${notice.assessed_land_value.toLocaleString()}`);
@@ -829,6 +840,24 @@ export class ValuationReportService {
       }
       if (ltn.payment_due_date) {
         lines.push(`Payment due date (AI-extracted — confirm before relying on it): ${ltn.payment_due_date}`);
+      }
+      // Same five figures, already pinned to a stable display string (with caveat) in
+      // deterministicFacts — copy these into statutory.assessment AND Section 7 instead of
+      // re-parsing the raw notice text above a second time; see data_schema.md/section_guide.md.
+      if (facts.landTaxPayableDisplay !== LAND_TAX_UNCONFIRMED_FALLBACK) {
+        lines.push(`System-computed land tax payable: ${facts.landTaxPayableDisplay} — copy this exact string into statutory.assessment's Land Tax Payable row and Section 7's current-position scenario.`);
+      }
+      if (facts.landTaxArrearsDisplay !== LAND_TAX_UNCONFIRMED_FALLBACK) {
+        lines.push(`System-computed arrears: ${facts.landTaxArrearsDisplay} — copy this exact string into statutory.assessment's Arrears row and Section 7's interest-arrears note.`);
+      }
+      if (facts.landTaxInterestDisplay !== LAND_TAX_UNCONFIRMED_FALLBACK) {
+        lines.push(`System-computed interest: ${facts.landTaxInterestDisplay} — copy this exact string into statutory.assessment's Interest row and Section 7's interest-arrears note.`);
+      }
+      if (facts.landTaxTotalPayableDisplay !== LAND_TAX_UNCONFIRMED_FALLBACK) {
+        lines.push(`System-computed total amount payable: ${facts.landTaxTotalPayableDisplay} — copy this exact string into statutory.assessment's Total Amount Payable row and Section 7's current-position scenario.`);
+      }
+      if (facts.landTaxDueDateDisplay !== LAND_TAX_UNCONFIRMED_FALLBACK) {
+        lines.push(`System-computed payment due date: ${facts.landTaxDueDateDisplay} — copy this exact string into statutory.assessment's Payment Due Date row and Section 7's callout.`);
       }
     }
 
