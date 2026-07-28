@@ -114,6 +114,7 @@ describe('ComparablesService — computeAdjustedFields (area_type + plausibility
     expect(result).toEqual({
       adjusted_rate_per_sqm: null, adjusted_land_value: null, suggested_land_value: null,
       explanation: null, improvement_confidence: null, time_band: null, zoning_confidence: null,
+      warning: null,
     });
     expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining('implausible adjusted rate'));
   });
@@ -191,6 +192,7 @@ describe('ComparablesService — computeAdjustedFields (area_type + plausibility
     expect(result).toEqual({
       adjusted_rate_per_sqm: null, adjusted_land_value: null, suggested_land_value: null,
       explanation: null, improvement_confidence: null, time_band: null, zoning_confidence: null,
+      warning: null,
     });
   });
 

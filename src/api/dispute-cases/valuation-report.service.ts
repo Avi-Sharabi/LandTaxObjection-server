@@ -2,7 +2,7 @@ import { promises as fs } from 'fs';
 import { join } from 'path';
 import { Injectable, Logger } from '@nestjs/common';
 import * as nunjucks from 'nunjucks';
-import { AnthropicService } from 'src/ai/anthropic.service';
+import { AnthropicService, AnthropicCallResult } from 'src/ai/anthropic.service';
 import { SkillRegistryService } from 'src/mcp/skill-registry.service';
 import { AzureBlobService } from 'src/common/azure-blob/azure-blob.service';
 import { AssessmentDocumentsService } from '../assessment-documents/assessment-documents.service';
@@ -284,11 +284,19 @@ export class ValuationReportService {
       varianceDisplay,
     };
 
+    // "Internal assessed value" is this firm's own computed figure (median comparable rate ×
+    // site area), not the VG's figure — see DeterministicReportFacts.contendedValue. Persisted
+    // here, before the Claude call below, because it's fully determined from DB data alone and
+    // never depends on (or gets overwritten by) the report-writing call succeeding — see
+    // buildRenderData, which force-overwrites Claude's own echoed contended_value with this same
+    // figure. A slow/failed report generation must never discard an already-known-correct number.
+    await this.repository.updateInternalAssessedValue(disputeCaseId, deterministicFacts.contendedValue);
+
     const skillContent = this.skillRegistry.getSkillContent('valuation-report');
     const userMessage = this.buildUserMessage(disputeCase, comparableByRef, evidenceIssues, objectionReasons, deterministicFacts, resolvedCtx);
 
     this.logger.log(JSON.stringify({ context: 'ValuationReport.calling_claude', disputeCaseId }));
-    const result = await this.anthropicService.call({
+    const anthropicCallOptions = {
       systemBlocks: [
         { text: skillContent, cached: true },
         { text: `# Data Schema — JSON output contract\n\n${skillFiles.dataSchema}`, cached: true },
@@ -297,7 +305,29 @@ export class ValuationReportService {
       userMessage,
       maxTokens: 64000,
       thinkingBudgetTokens: 4000,
-    });
+      // Generous headroom above the client's default 15-minute timeout — a real run of this call
+      // observed ~17 minutes for a large report before failing ("stream ended without producing a
+      // Message with role=assistant"), consistent with a connection being closed somewhere in the
+      // network path rather than the client's own timeout. Only widened for this call; every
+      // other AnthropicService.call() site keeps the default.
+      timeoutMs: 30 * 60 * 1000,
+    };
+    // One retry, scoped to this call only — a stream ending prematurely is plausibly a transient
+    // connection issue (see timeoutMs comment above), so a fresh connection on retry is worth
+    // trying before discarding ~20 minutes of work. Not retrying JSON parsing/truncation/PDF
+    // render/blob upload below — those are deterministic-enough failures where a blind retry
+    // would very likely just repeat the same outcome.
+    let result: AnthropicCallResult;
+    try {
+      result = await this.anthropicService.call(anthropicCallOptions);
+    } catch (err: unknown) {
+      this.logger.warn(JSON.stringify({
+        context: 'ValuationReport.claude_call_retrying',
+        disputeCaseId,
+        error: err instanceof Error ? err.message : String(err),
+      }));
+      result = await this.anthropicService.call(anthropicCallOptions);
+    }
 
     if (result.stopReason === 'max_tokens') {
       this.logger.error(JSON.stringify({ context: 'ValuationReport.truncated', disputeCaseId, maxTokens: 32000 }));
@@ -309,7 +339,6 @@ export class ValuationReportService {
 
     const raw = this.anthropicService.parseJsonObject<RawReportData>(result.text);
 
-    const internalAssessedValue = raw.valuation?.contended_value ?? null;
     const renderData = this.buildRenderData(raw, deterministicFacts, comparableByRef);
 
     const html = nunjucks.renderString(skillFiles.template, renderData);
@@ -330,9 +359,6 @@ export class ValuationReportService {
     );
 
     await this.repository.updateAnalysisReportPath(disputeCaseId, storedPath);
-    // "Internal assessed value" is this firm's own computed figure (median comparable rate ×
-    // site area), not the VG's figure — see DeterministicReportFacts.contendedValue.
-    await this.repository.updateInternalAssessedValue(disputeCaseId, deterministicFacts.contendedValue);
 
     this.logger.log(JSON.stringify({
       context: 'ValuationReport.complete',

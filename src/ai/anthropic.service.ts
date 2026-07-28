@@ -22,6 +22,11 @@ export interface AnthropicCallOptions {
   maxTokens?: number;
   thinkingBudgetTokens?: number;
   mcpServers?: boolean;
+  // Per-call override for the client-constructor's default timeout (below) — for callers whose
+  // generation is known to legitimately run longer than the default allows (e.g. a large
+  // maxTokens + thinking report). Left unset, every call keeps today's default; this never
+  // narrows the timeout, only widens it for the specific call that opts in.
+  timeoutMs?: number;
 }
 
 export interface AnthropicCallResult {
@@ -57,7 +62,7 @@ export class AnthropicService {
   }
 
   async call(options: AnthropicCallOptions): Promise<AnthropicCallResult> {
-    const { systemBlocks, userMessage, documents, maxTokens = 4000, thinkingBudgetTokens = 2000, mcpServers } = options;
+    const { systemBlocks, userMessage, documents, maxTokens = 4000, thinkingBudgetTokens = 2000, mcpServers, timeoutMs } = options;
 
     const system = systemBlocks.map((block) => ({
       type: 'text' as const,
@@ -83,17 +88,20 @@ export class AnthropicService {
     // connection sitting idle until a large max_tokens + thinking response is fully ready —
     // that idle-buffered pattern is what made long report-generation calls prone to being
     // reset by network intermediaries (e.g. the Azure AI gateway ANTHROPIC_API_URL points at).
-    const stream = this.client.beta.messages.stream({
-      model: ANTHROPIC_MODEL,
-      max_tokens: maxTokens,
-      system,
-      messages: [{ role: 'user', content: userContent }],
-      thinking: { type: 'enabled', budget_tokens: thinkingBudgetTokens },
-      betas: [...BETA_FLAGS],
-      ...(mcpUrl && mcpToken
-        ? { mcp_servers: [{ type: 'url' as const, url: mcpUrl, name: 'postgres', authorization_token: mcpToken }] }
-        : {}),
-    });
+    const stream = this.client.beta.messages.stream(
+      {
+        model: ANTHROPIC_MODEL,
+        max_tokens: maxTokens,
+        system,
+        messages: [{ role: 'user', content: userContent }],
+        thinking: { type: 'enabled', budget_tokens: thinkingBudgetTokens },
+        betas: [...BETA_FLAGS],
+        ...(mcpUrl && mcpToken
+          ? { mcp_servers: [{ type: 'url' as const, url: mcpUrl, name: 'postgres', authorization_token: mcpToken }] }
+          : {}),
+      },
+      timeoutMs != null ? { timeout: timeoutMs } : undefined,
+    );
 
     const message = await stream.finalMessage();
     const { stop_reason, content, usage } = message;

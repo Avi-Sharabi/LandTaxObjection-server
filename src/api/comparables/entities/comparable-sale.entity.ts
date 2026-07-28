@@ -136,6 +136,13 @@ export class ComparableSale {
   @Column({ type: 'text', nullable: true })
   size_tier: 'preferred' | 'widened' | 'extrapolated' | null;
 
+  // Structured, frontend-renderable caution — see 1784300000000-AddWarningToComparableSales /
+  // ComparablesService.computeAdjustedFields. Deliberately separate from `explanation` (a long
+  // human-readable narrative meant for the report/case file) so the UI can show this as its own
+  // badge/alert without parsing prose. Only ever set for a ranked-last-resort pick; null otherwise.
+  @Column({ type: 'text', nullable: true })
+  warning: string | null;
+
   // ── Relations ─────────────────────────────────────────────────────────────
 
   @ManyToOne(() => DisputeCase, (disputeCase) => disputeCase.comparables, {

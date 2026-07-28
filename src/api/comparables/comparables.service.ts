@@ -1702,6 +1702,11 @@ export class ComparablesService implements OnModuleInit {
     improvement_confidence: 'exact' | 'estimated' | null;
     time_band: 'fresh' | 'recent' | 'adjusted' | 'last_resort' | null;
     zoning_confidence: 'same_family' | 'different_class_last_resort' | null;
+    // Structured, frontend-renderable caution — kept separate from `explanation` (a long
+    // human-readable narrative meant for the report/case file) so a UI can show it as its own
+    // badge/alert without parsing prose. Only ever set for a ranked-last-resort pick (see
+    // selectRankedLastResortCandidates) — null for every other candidate.
+    warning: string | null;
   } {
     const purchasePrice = candidate.purchase_price != null ? Number(candidate.purchase_price) : null;
     let area = candidate.area != null ? Number(candidate.area) : null;
@@ -1713,7 +1718,7 @@ export class ComparablesService implements OnModuleInit {
     // live (a sale with contract_date: null was persisted and rendered as "fresh, nil adjustment").
     const contractDate = candidate.contract_date ? new Date(candidate.contract_date as string) : null;
     if (!purchasePrice || !area || !subject.landAreaSqm || !contractDate || isNaN(contractDate.getTime())) {
-      return { adjusted_rate_per_sqm: null, adjusted_land_value: null, suggested_land_value: null, explanation: null, improvement_confidence: null, time_band: null, zoning_confidence: null };
+      return { adjusted_rate_per_sqm: null, adjusted_land_value: null, suggested_land_value: null, explanation: null, improvement_confidence: null, time_band: null, zoning_confidence: null, warning: null };
     }
 
     // property_sales_raw.area_type is an authoritative 'H'/'M' flag on the source record —
@@ -1783,7 +1788,7 @@ export class ComparablesService implements OnModuleInit {
     // the LLM-selection path equally, since both funnel through this same function.
     if (adjusted_rate_per_sqm < vgRate * 0.01 || adjusted_rate_per_sqm > vgRate * 100) {
       this.logger.warn(`[GENERATE] Rejecting implausible adjusted rate $${adjusted_rate_per_sqm}/m² vs VG rate $${vgRate}/m² for candidate ${candidate.id} — likely a data-quality issue, not genuine evidence`);
-      return { adjusted_rate_per_sqm: null, adjusted_land_value: null, suggested_land_value: null, explanation: null, improvement_confidence: null, time_band: null, zoning_confidence: null };
+      return { adjusted_rate_per_sqm: null, adjusted_land_value: null, suggested_land_value: null, explanation: null, improvement_confidence: null, time_band: null, zoning_confidence: null, warning: null };
     }
 
     // Server-computed disclosure signal — never trusted from the LLM. 'same_family' covers both
@@ -1812,6 +1817,15 @@ export class ComparablesService implements OnModuleInit {
     const areaRatio = area / subject.landAreaSqm;
     const withinNormalTolerance = zoning_confidence === 'same_family'
       && areaRatio >= (1 - SIZE_BAND_TOLERANCE_FRACTION) && areaRatio <= (1 + SIZE_BAND_TOLERANCE_FRACTION);
+
+    // Structured caution for the frontend — see the `warning` field's doc comment above. Kept out
+    // of `explanation`'s prose entirely so a UI can render it as its own badge/alert rather than
+    // needing to parse it out of a paragraph.
+    const warning = rankedLastResort
+      ? (withinNormalTolerance
+        ? `Selected via ranked last-resort fallback — this comparable is within the report's standard size and zoning tolerances but wasn't picked up by automatic inclusion (which requires an exact zoning match) or the LLM selection step; included deterministically to help reach the minimum evidence requirement. A quick manual check is still recommended.`
+        : `Ranked last-resort match — no comparable sale was found within this report's standard size/zoning tolerances even after full geographic and time-period widening. This is the closest available match by combined size, zoning, distance and recency proximity, included so the objection isn't left without evidence. Manual valuer review is strongly recommended before relying on this comparable.`)
+      : null;
 
     const supportsObjection = adjusted_rate_per_sqm <= vgRate;
 
@@ -1848,11 +1862,6 @@ export class ComparablesService implements OnModuleInit {
 
     const explanation = [
       `${address} | ${candidate.zoning} | ${isVacant ? 'Vacant Land' : `Improved - ${candidate.primary_purpose}`}`,
-      rankedLastResort
-        ? withinNormalTolerance
-          ? `• ℹ SELECTED VIA RANKED LAST-RESORT FALLBACK — this comparable is within the report's standard size and zoning tolerances but wasn't picked up by automatic inclusion (which requires an exact zoning match) or the LLM selection step; included deterministically to help reach the minimum evidence requirement. A quick manual check is still recommended.`
-          : `• ⚠ RANKED LAST-RESORT MATCH — no comparable sale was found within this report's standard size/zoning tolerances even after full geographic and time-period widening. This is the closest available match by combined size, zoning, distance and recency proximity, included so the objection isn't left without evidence. Manual valuer review is strongly recommended before relying on this comparable.`
-        : null,
       similarityLine,
       `• Sale: ${saleDateStr} — $${purchasePrice.toLocaleString()} (${area}m²)`,
       isCompatibleZoning && zoningJustification ? `• Zoning justification: ${zoningJustification}` : null,
@@ -1878,7 +1887,7 @@ export class ComparablesService implements OnModuleInit {
       conclusionLine,
     ].filter(Boolean).join('\n');
 
-    return { adjusted_rate_per_sqm, adjusted_land_value, suggested_land_value, explanation, improvement_confidence, time_band, zoning_confidence };
+    return { adjusted_rate_per_sqm, adjusted_land_value, suggested_land_value, explanation, improvement_confidence, time_band, zoning_confidence, warning };
   }
 
   private async persistComparables(
@@ -1924,6 +1933,7 @@ export class ComparablesService implements OnModuleInit {
         explanation: (item.explanation as string) ?? null,
         improvement_confidence: (item.improvement_confidence as 'exact' | 'estimated') ?? null,
         size_tier: (item.size_tier as 'preferred' | 'widened' | 'extrapolated') ?? null,
+        warning: (item.warning as string) ?? null,
       }),
     );
 

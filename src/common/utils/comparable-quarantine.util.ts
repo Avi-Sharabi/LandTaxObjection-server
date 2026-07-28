@@ -3,15 +3,18 @@
  * - Part-interest sales (interest_of_sale_percent > 0) are excluded outright — a fractional
  *   interest transaction's price is not comparable to a whole-property arm's-length sale.
  *   NULL/0 is treated as full-interest (the overwhelming default in this data).
- * - 'extrapolated' comparables (ComparablesService.selectRankedLastResortCandidates — a
- *   deterministic last-resort pick outside the standard/widened size-band, included only because
- *   the case would otherwise fall short of MINIMUM_COMPARABLES) are excluded unconditionally,
- *   regardless of whether their adjusted rate happens to pass the IQR fence below — they're
- *   disclosed evidence, not confident evidence, and shouldn't anchor the "typical market rate"
- *   statistic just because their number looks unremarkable.
- * - Among the remaining full-interest, non-extrapolated, rated sales, statistical outliers are
- *   trimmed via a Tukey IQR fence (Q1 - 1.5*IQR .. Q3 + 1.5*IQR) — the standard, well-documented
- *   method for flagging extreme values without assuming a particular distribution shape.
+ * - Among the remaining full-interest, rated sales, statistical outliers are trimmed via a
+ *   Tukey IQR fence (Q1 - 1.5*IQR .. Q3 + 1.5*IQR) — the standard, well-documented method for
+ *   flagging extreme values without assuming a particular distribution shape.
+ *
+ * 'extrapolated' comparables (ComparablesService.selectRankedLastResortCandidates) are NOT
+ * treated specially here — they count toward the median/eligible set like any other full-interest,
+ * non-outlier comparable. Forcibly excluding them regardless of their actual rate was tried and
+ * reverted: for a case where they're the ONLY evidence available (a genuine size/zoning outlier
+ * subject with nothing closer in the market), that left the case with no assessed value at all,
+ * which is worse than a number derived from weaker-but-real evidence. The `warning` field on the
+ * comparable (see ComparablesService.computeAdjustedFields) still discloses the caveat for manual
+ * review — it just doesn't zero out the computation.
  *
  * Quarantined items are NOT dropped by this function — callers decide whether to still show
  * them (e.g. for report-body transparency) while excluding them from the median math.
@@ -19,7 +22,6 @@
 export interface QuarantinableComparable {
   interest_of_sale_percent: number | string | null;
   adjusted_rate_per_sqm: number | string | null;
-  size_tier?: 'preferred' | 'widened' | 'extrapolated' | null;
 }
 
 export interface QuarantinedItem<T> {
@@ -53,7 +55,6 @@ export function classifyComparablesForMedian<T extends QuarantinableComparable>(
   items: T[],
 ): ClassifyResult<T> {
   const partInterest: QuarantinedItem<T>[] = [];
-  const extrapolated: QuarantinedItem<T>[] = [];
   const fullInterest: T[] = [];
 
   for (const item of items) {
@@ -71,14 +72,6 @@ export function classifyComparablesForMedian<T extends QuarantinableComparable>(
         reason: `Part-interest sale (interest of sale = ${pct}%) — this transaction did not convey ` +
           `the whole/fee-simple interest, so its price is not directly comparable to a full-value ` +
           `sale; excluded from the headline $/m² calculation.`,
-      });
-    } else if (item.size_tier === 'extrapolated') {
-      extrapolated.push({
-        item,
-        reason: `Ranked last-resort match — this comparable falls outside the standard size/zoning ` +
-          `tolerances used elsewhere in this case and was included only because the automated ` +
-          `search still fell short of the minimum required comparables; excluded from the headline ` +
-          `$/m² calculation regardless of its own rate, and should be manually reviewed before relying on it.`,
       });
     } else {
       fullInterest.push(item);
@@ -102,7 +95,7 @@ export function classifyComparablesForMedian<T extends QuarantinableComparable>(
     // n<4: Q1/Q3 collapse toward the sample extremes and any fence computed from them is
     // arbitrary, not a meaningful statistical statement — skip statistical trimming entirely
     // rather than flag something on a coin-flip basis.
-    return { eligible: [...fullInterest], quarantined: [...partInterest, ...extrapolated] };
+    return { eligible: [...fullInterest], quarantined: partInterest };
   }
 
   const sortedRates = rated.map(r => r.rate).sort((a, b) => a - b);
@@ -113,7 +106,7 @@ export function classifyComparablesForMedian<T extends QuarantinableComparable>(
   if (iqr === 0) {
     // Degenerate fence (rated sales cluster on ~identical $/m²) — a zero-width IQR would flag
     // any nonzero deviation as an "outlier", which isn't meaningful with this little variance.
-    return { eligible: [...fullInterest], quarantined: [...partInterest, ...extrapolated] };
+    return { eligible: [...fullInterest], quarantined: partInterest };
   }
 
   const lowerFence = q1 - IQR_FENCE_MULTIPLIER * iqr;
@@ -134,5 +127,5 @@ export function classifyComparablesForMedian<T extends QuarantinableComparable>(
     }
   }
 
-  return { eligible, quarantined: [...partInterest, ...extrapolated, ...outliers] };
+  return { eligible, quarantined: [...partInterest, ...outliers] };
 }
