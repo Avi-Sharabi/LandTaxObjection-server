@@ -42,6 +42,7 @@ import { ObjectionReasonGeneratorService } from './objection-reason-generator.se
 import { AiPropertySearchService } from './ai-property-search.service';
 import { ValuationReportService } from './valuation-report.service';
 import { ValuationReportRepository } from './valuation-report.repository';
+import { EvidenceScoreService } from './evidence-score.service';
 import { ValuationCtxCacheService } from './valuation-ctx-cache.service';
 import { ComparableSale } from '../comparables/entities/comparable-sale.entity';
 import { DisputeEvidenceIssue } from '../supporting-evidence/entities/dispute-evidence-issue.entity';
@@ -87,6 +88,7 @@ import { DisputeEvidenceIssue } from '../supporting-evidence/entities/dispute-ev
     AiPropertySearchService,
     ValuationReportService,
     ValuationReportRepository,
+    EvidenceScoreService,
     ValuationCtxCacheService,
     DisputeIntakeOrchestrator,
     XpmClientHandler,

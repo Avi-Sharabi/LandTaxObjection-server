@@ -36,12 +36,28 @@ export class ValuationReportRepository {
     await this.disputeCaseRepo.update(id, { internal_assessed_value: value });
   }
 
+  // update(), not save(entity): the analyze-ai pipeline writes other columns on this row around the
+  // same time (markValuated, updateInternalAssessedValue), and a fetched-then-saved entity would
+  // clobber them.
+  async updateEvidenceScore(id: string, score: number | null, rationale: string | null): Promise<void> {
+    await this.disputeCaseRepo.update(id, {
+      evidence_strength_score: score,
+      evidence_strength_rationale: rationale,
+    });
+  }
+
   getComparables(disputeCaseId: string): Promise<ComparableSale[]> {
     return this.comparableSaleRepo.find({
       where: { dispute_case_id: disputeCaseId },
       order: { contract_date: 'DESC' },
       take: 10,
     });
+  }
+
+  // getComparables() samples only 10 rows, which is plenty for judging quality but would understate
+  // the total in a user-visible rationale ("3 of 10" on a case with 23 sales).
+  countComparables(disputeCaseId: string): Promise<number> {
+    return this.comparableSaleRepo.count({ where: { dispute_case_id: disputeCaseId } });
   }
 
   async getLatestEvidenceIssues(disputeCaseId: string): Promise<DisputeEvidenceIssue[]> {

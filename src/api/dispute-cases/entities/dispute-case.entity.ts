@@ -148,6 +148,9 @@ export class DisputeCase {
   @Column({ type: 'smallint', nullable: true })
   evidence_strength_score: number | null;
 
+  @Column({ type: 'text', nullable: true })
+  evidence_strength_rationale: string | null;
+
   @Column({ type: 'enum', enum: OutcomeResult, nullable: true })
   outcome: OutcomeResult | null;
 

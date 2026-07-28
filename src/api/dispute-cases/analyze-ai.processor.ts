@@ -18,6 +18,7 @@ import {
   buildSafePlanningCtx,
 } from './valuation-report.service';
 import { ValuationCtxCacheService } from './valuation-ctx-cache.service';
+import { EvidenceScoreService } from './evidence-score.service';
 import { DisputeAiSnapshot } from './entities/dispute-ai-snapshot.entity';
 import { DisputeCasesService } from './dispute-cases.service';
 import { parseNswAddressComponents } from 'src/common/utils/address-parser.util';
@@ -45,6 +46,7 @@ export class AnalyzeAiProcessor extends WorkerHost {
     private readonly objectionReasonGeneratorService: ObjectionReasonGeneratorService,
     private readonly aiPropertySearchService: AiPropertySearchService,
     private readonly valuationReportService: ValuationReportService,
+    private readonly evidenceScoreService: EvidenceScoreService,
     private readonly ctxCacheService: ValuationCtxCacheService,
     private readonly disputeCasesService: DisputeCasesService,
     @InjectRepository(DisputeAiSnapshot)
@@ -308,6 +310,37 @@ export class AnalyzeAiProcessor extends WorkerHost {
                 reportErr instanceof Error
                   ? reportErr.message
                   : String(reportErr),
+            }),
+          );
+        }
+
+        // Evidence strength score. Non-fatal, and deliberately a SIBLING of the report try/catch
+        // above rather than nested inside it: the score is computed from DB rows, not from the
+        // report, so a PDF/template failure must not suppress it. Runs last because the report is
+        // the expensive, valuable call — a 529 on the score must not burn a job retry the report
+        // needs. Guard E's condition governs it too: snapshot cases (Guards C/D) never persist
+        // comparables or evidence-issue rows, so scoring them would score an artificially empty set.
+        try {
+          const { score } = await this.evidenceScoreService.compute(
+            disputeCaseId,
+            'pipeline',
+          );
+          this.logger.log(
+            JSON.stringify({
+              context: 'ANALYZE_AI.evidence_score_done',
+              jobId: job.id,
+              disputeCaseId,
+              score,
+            }),
+          );
+        } catch (scoreErr: unknown) {
+          this.logger.error(
+            JSON.stringify({
+              context: 'ANALYZE_AI.evidence_score_failed',
+              jobId: job.id,
+              disputeCaseId,
+              error:
+                scoreErr instanceof Error ? scoreErr.message : String(scoreErr),
             }),
           );
         }

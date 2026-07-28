@@ -1,4 +1,4 @@
-import { IsString, IsUUID, IsOptional, IsEnum, IsDate, IsBoolean, IsNumber } from 'class-validator';
+import { IsString, IsUUID, IsOptional, IsEnum, IsDate, IsBoolean, IsNumber, IsInt, Min, Max } from 'class-validator';
 import { DisputeStatus, OutcomeResult, Jurisdiction } from '../entities/dispute-case.entity';
 import { Type } from 'class-transformer';
 
@@ -58,8 +58,13 @@ export class CreateDisputeCaseDto {
   @IsBoolean()
   flag_zoning?: boolean;
 
+  // Derived metric — normally written only by EvidenceScoreService. Bounded here because the column
+  // is a bare smallint with no CHECK constraint, so an out-of-range PATCH would reach Postgres and
+  // 500 with a 22003 numeric_value_out_of_range.
   @IsOptional()
-  @IsNumber()
+  @IsInt()
+  @Min(0)
+  @Max(100)
   evidence_strength_score?: number;
 
   @IsOptional()

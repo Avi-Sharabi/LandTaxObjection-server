@@ -48,6 +48,8 @@ import { ObjectionReasonGeneratorService } from './objection-reason-generator.se
 import { ObjectionReasonResponseDto } from './dto/objection-reason-response.dto';
 import { AnalyzeAiEnqueueResponseDto, AnalyzeAiQueueResponseDto, AnalyzeAiStatusResponseDto, BatchAnalyzeAiRequestDto, BatchAnalyzeAiResponseDto } from './dto/analyze-ai-response.dto';
 import { ValuationReportService } from './valuation-report.service';
+import { EvidenceScoreService } from './evidence-score.service';
+import { EvidenceScoreResponseDto } from './dto/evidence-score-response.dto';
 
 @ApiTags('dispute-cases')
 @Controller({
@@ -62,6 +64,7 @@ export class DisputeCasesController {
     private readonly supportingEvidenceQueueService: SupportingEvidenceQueueService,
     private readonly objectionReasonGeneratorService: ObjectionReasonGeneratorService,
     private readonly valuationReportService: ValuationReportService,
+    private readonly evidenceScoreService: EvidenceScoreService,
   ) {}
 
   /**
@@ -586,6 +589,32 @@ export class DisputeCasesController {
   ): Promise<{ status: string }> {
     await this.valuationReportService.generate(id);
     return { status: 'ok' };
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.INTERNAL_Assessor, UserRole.ACCOUNTANT)
+  @ApiBearerAuth()
+  @Post(':id/recompute-evidence-score')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Recompute the case-level evidence strength score',
+    description:
+      "Re-runs the dedicated Claude scoring call over the case's current comparable sales, ticked " +
+      'supporting-evidence issues and ticked objection grounds. Returns nulls — leaving any ' +
+      'previously stored score untouched — when the case has no scorable data or the scoring call fails.',
+  })
+  @ApiParam({ name: 'id', description: 'Dispute case UUID' })
+  @ApiResponse({ status: 200, type: EvidenceScoreResponseDto })
+  @ApiResponse({ status: 404, description: 'Dispute case not found' })
+  async recomputeEvidenceScore(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<EvidenceScoreResponseDto> {
+    const { score, rationale } = await this.evidenceScoreService.compute(id, 'manual');
+    return {
+      dispute_case_id: id,
+      evidence_strength_score: score,
+      evidence_strength_rationale: rationale,
+    };
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
