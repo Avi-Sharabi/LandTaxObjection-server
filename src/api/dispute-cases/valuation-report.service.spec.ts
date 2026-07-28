@@ -123,7 +123,7 @@ function makeServiceHarness() {
     ctxCacheService as unknown as ValuationCtxCacheService,
   );
 
-  return { service, repository, azureBlobService };
+  return { service, repository, azureBlobService, anthropicService, assessmentDocumentsService };
 }
 
 describe('ValuationReportService.generate — comparable median aggregation (Issue 6/7)', () => {
@@ -168,5 +168,53 @@ describe('ValuationReportService.generate — comparable median aggregation (Iss
     await service.generate(CASE_ID);
 
     expect(repository.updateInternalAssessedValue).toHaveBeenCalledWith(CASE_ID, null);
+  });
+});
+
+describe('ValuationReportService.generate — Claude call resilience', () => {
+  beforeEach(() => {
+    compId = 0;
+  });
+
+  it('retries the Claude call once on failure and completes successfully on the second attempt', async () => {
+    const { service, repository, azureBlobService, anthropicService } = makeServiceHarness();
+    repository.getComparables.mockResolvedValue([makeComparable({ adjusted_rate_per_sqm: 2000 })]);
+    anthropicService.call
+      .mockRejectedValueOnce(new Error('stream ended without producing a Message with role=assistant'))
+      .mockResolvedValueOnce({ text: '```json\n{}\n```', stopReason: 'end_turn', usage: {} });
+
+    await service.generate(CASE_ID);
+
+    expect(anthropicService.call).toHaveBeenCalledTimes(2);
+    // contendedValue = 2000 * 500 (SITE_AREA_SQM) — n=1 is below the IQR-trim sample size, so
+    // the single rated comparable is eligible outright (see comparable-quarantine.util.ts).
+    expect(repository.updateInternalAssessedValue).toHaveBeenCalledWith(CASE_ID, 2000 * SITE_AREA_SQM);
+    expect(azureBlobService.uploadFile).toHaveBeenCalled();
+  });
+
+  it('persists contendedValue before the Claude call and never produces a report when both attempts fail', async () => {
+    const { service, repository, azureBlobService, anthropicService, assessmentDocumentsService } = makeServiceHarness();
+    repository.getComparables.mockResolvedValue([makeComparable({ adjusted_rate_per_sqm: 2000 })]);
+    const claudeError = new Error('stream ended without producing a Message with role=assistant');
+    anthropicService.call.mockRejectedValue(claudeError);
+
+    await expect(service.generate(CASE_ID)).rejects.toThrow(claudeError.message);
+
+    expect(anthropicService.call).toHaveBeenCalledTimes(2);
+    expect(repository.updateInternalAssessedValue).toHaveBeenCalledWith(CASE_ID, 2000 * SITE_AREA_SQM);
+    expect(azureBlobService.uploadFile).not.toHaveBeenCalled();
+    expect(assessmentDocumentsService.createArtifactRecord).not.toHaveBeenCalled();
+    expect(repository.updateAnalysisReportPath).not.toHaveBeenCalled();
+  });
+
+  it('calls updateInternalAssessedValue before invoking the Claude API', async () => {
+    const { service, repository, anthropicService } = makeServiceHarness();
+    repository.getComparables.mockResolvedValue([makeComparable({ adjusted_rate_per_sqm: 2000 })]);
+
+    await service.generate(CASE_ID);
+
+    const persistOrder = repository.updateInternalAssessedValue.mock.invocationCallOrder[0];
+    const claudeCallOrder = anthropicService.call.mock.invocationCallOrder[0];
+    expect(persistOrder).toBeLessThan(claudeCallOrder);
   });
 });

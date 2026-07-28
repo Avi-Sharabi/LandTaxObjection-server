@@ -96,6 +96,12 @@ export interface InputComparable {
   analysed_land_value: number | null;
   rate_per_m2?: number;
   contract_date?: string;
+  // Only ever set for comparables sourced from ComparablesService.generateComparableSales (see
+  // ComparableSale.size_tier) — undefined for anything uploaded/pre-seeded. 'extrapolated' means
+  // this was a ranked-last-resort pick outside the standard size/zoning tolerances, included only
+  // to reach the minimum evidence requirement; Ground text generation should disclose this rather
+  // than cite it as if it were ordinary supporting evidence.
+  size_tier?: 'preferred' | 'widened' | 'extrapolated';
 }
 
 export interface BenchmarkReport {
