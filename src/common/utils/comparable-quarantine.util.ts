@@ -7,6 +7,15 @@
  *   Tukey IQR fence (Q1 - 1.5*IQR .. Q3 + 1.5*IQR) — the standard, well-documented method for
  *   flagging extreme values without assuming a particular distribution shape.
  *
+ * 'extrapolated' comparables (ComparablesService.selectRankedLastResortCandidates) are NOT
+ * treated specially here — they count toward the median/eligible set like any other full-interest,
+ * non-outlier comparable. Forcibly excluding them regardless of their actual rate was tried and
+ * reverted: for a case where they're the ONLY evidence available (a genuine size/zoning outlier
+ * subject with nothing closer in the market), that left the case with no assessed value at all,
+ * which is worse than a number derived from weaker-but-real evidence. The `warning` field on the
+ * comparable (see ComparablesService.computeAdjustedFields) still discloses the caveat for manual
+ * review — it just doesn't zero out the computation.
+ *
  * Quarantined items are NOT dropped by this function — callers decide whether to still show
  * them (e.g. for report-body transparency) while excluding them from the median math.
  */

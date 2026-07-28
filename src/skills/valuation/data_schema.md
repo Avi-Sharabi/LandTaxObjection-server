@@ -29,7 +29,7 @@ this). Do not paste untrusted HTML.
 | Key | Type | Notes |
 |---|---|---|
 | `meta` | object | Cover/title + dates. See below. |
-| `property` | object | `estate_name`, `lots_dps_short`, `area_sqm` (used for cover subtitle). |
+| `property` | object | `estate_name`, `lots_dps_short`, `area_sqm` (used for cover subtitle). `lots_dps_short` is server-overwritten from the same Lot/DP fact as `subject.identification`'s Lot/DP row whenever a real Lot/DP is on file — see `subject.identification` / `subject.attributes` below. |
 | `valuation` | object | `vg_recorded_value` (number) — drives every variance calc and the 5.1 header. |
 | `key_finding` | string | Cover green callout body. Do NOT include "KEY FINDING: " — the template prepends it automatically. |
 | `cover_facts` | — | **Fully system-generated — omit this key entirely.** The cover fact table (Owner, Property, Property ID, Site Area, Zoning, dates, VG/Our assessed values and implied rates, Variance, Land Tax Payable, Payment Due Date, Case Status) is built server-side from real case data, in a fixed row order, every time. Anything you provide under this key is ignored and replaced. |
@@ -127,6 +127,54 @@ included, never dropped** — same as every other row in this report — and sim
 `contended_value` is `"-"`. The Section 6.2 primary-ground narrative is the one exception: see
 `section_guide.md` for how to phrase that sentence when there's no figure to state.
 
+## `exec_summary`
+`intro` (string) + `rows` of `{item, finding}`. → Section 1.
+
+**The `exec_summary.rows` row whose `item` matches "Our Assessed Land Value" has its `finding`
+server-overwritten** with the same enforced `contended_value` figure (see "Server enforcement
+note" above) — regardless of what you write, so no effort is needed to get this cell's number
+exactly right. This does **not** relax `exec_summary.intro` (not overridden) — its own stated
+figure must still match `contended_value` exactly; see section_guide.md §1.
+
+## `statutory.basis` / `statutory.assessment`
+Each a list of `{label, value}` → Section 2.
+
+**`statutory.basis`'s "Notice Issue Date" and "Statutory Objection Deadline" rows are
+server-overwritten** regardless of what you write — same mechanism as `meta.valuation_date`
+above. The user message includes explicit `"System-computed notice issue date: ..."` and
+`"System-computed statutory objection deadline: ..."` lines sourced from the real valuation
+notice / case record. Copy those values verbatim into these two rows; do not (re)calculate the
+60-day deadline yourself for this table. **This does not remove the deadline from the rest of
+the report** — the same value is still required, unoverridden, in Section 1's lapsed/urgent
+exec-summary row and Section 10's action-plan deadline entries; use the system-computed value
+given in the user message there too, never your own recalculation.
+
+**`statutory.assessment`'s five rows (Land Tax Payable, Arrears, Interest, Total Amount
+Payable, Payment Due Date) are server-overwritten** regardless of what you write — the system
+already has these figures from an earlier, separate extraction of the same assessment notice.
+The user message includes explicit `"System-computed ..."` lines for all five — copy them
+verbatim; you do not need to re-parse the "Land Tax Notice (Extracted)" block for this table.
+**You still need the same five figures, correctly, in Section 7** (`financial_scenarios[]`'s
+current-position row and the interest-arrears note in `financial_callouts`) — those are not
+server-overwritten, so use the same system-computed values there too rather than re-deriving
+them from the raw notice text a second time.
+
+## `subject.identification` / `subject.attributes`
+Each a list of `{label, value}` → Section 3.1 / 3.2.
+
+**Six rows are server-overwritten** regardless of what you write: `subject.identification`'s
+Address, PID, Lot/DP, Site Area, and Owner on Notice rows, and `subject.attributes`'s Zoning
+row (and `property.lots_dps_short`, which mirrors the same Lot/DP fact — see above). All six
+values are already given to you directly under "## Property Identification" (and, for Owner,
+under "## Land Tax Notice (Extracted)") in the user message — there's no need to reformat or
+double-check them for these specific cells. **This does not relax the requirement elsewhere**:
+the same address, owner entity name, Lot/DP, and zoning are restated, unoverridden, in prose
+that ships as-is — the Section 9 narrative's opening sentence (which must open with the case's
+own entity name and lot/property — see section_guide.md §9) and the Section 4.1 HBU statement
+(which depends on the correct zoning). Use the exact values given in the user message there —
+never a different address/owner/lot-DP/zoning than what's given, even though the 3.1/3.2 table
+cells themselves don't need to match.
+
 ## `cpv` object
 - `section_title`, `intro`, `comp_title`, `comp_intro` — strings.
 - `methods`: list of `{name, value, suffix?, adopted?, var_class?}`.
@@ -135,6 +183,11 @@ included, never dropped** — same as every other row in this report — and sim
   - `adopted: true` renders the **navy** Method label + **green** value cell.
   - `var_class` overrides the auto colour (`v-strong` red / `v-mod` amber).
 - `extra_rows`: list of `{label, value, note}` — the non-method rows (implied rate, gross realisation).
+  **The "Firm's Assessed Value" `extra_rows` entry's `value` is server-overwritten** with the
+  same enforced `contended_value` figure (see "Server enforcement note" above) — don't spend
+  effort getting this cell's number right. Its `note` text is **not** overwritten — still write
+  a real explanatory note (e.g. "Based on the comparable evidence in this report; independent
+  CPV valuation will confirm or refine").
 - `comp_summary_row`: the navy summary row under the comparables (`ref, date, adjusted_value, area, zone, rate, comparison` — all strings here). This is a synthetic aggregate row, not a real comparable, so it has no `sale_price` — the template renders its Sale Price cell as a fixed `-`. The `ref` value (e.g. `"CPV ADOPTED RANGE"`) spans the # **and** Address columns (colspan=2 in the template); remaining fields map left-to-right to Date → Adjusted Value → Area m² → Zone → $/m² → CPV Comparison. `adjusted_value`, `rate`, and `comparison` all support `<br>`/`<strong>` for a stacked range + adopted-value display (e.g. `rate: "$3,034 – $3,640<br><strong>Adopted: $3,371</strong>"`) — `date`/`area`/`zone` are plain text only.
 - `rate_analysis`: string → blue analysis callout. Show the arithmetic behind the adopted rate,
   not just the conclusion: list each comparable's $/m² rate used and the computed median

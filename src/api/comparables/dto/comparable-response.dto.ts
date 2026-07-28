@@ -39,4 +39,6 @@ export class ComparableResponseDto {
   @Expose() @ApiProperty({ nullable: true, description: "This comparable's own land value adjusted for time only (no size adjustment) — the figure to enter for this comparable in the NSW valuation objection portal" }) suggested_land_value: number | null;
   @Expose() @ApiProperty({ nullable: true }) explanation: string | null;
   @Expose() @ApiProperty({ nullable: true, enum: ['exact', 'estimated'], description: "'exact' for vacant land (no improvement deduction needed); 'estimated' for improved sales using the flat 50% improvement-deduction estimate" }) improvement_confidence: 'exact' | 'estimated' | null;
+  @Expose() @ApiProperty({ nullable: true, enum: ['preferred', 'widened', 'extrapolated'], description: "How this comparable cleared the size-band gate — 'extrapolated' means it's a ranked-last-resort pick outside the standard/widened size tolerance" }) size_tier: 'preferred' | 'widened' | 'extrapolated' | null;
+  @Expose() @ApiProperty({ nullable: true, description: 'Structured caution for UI display (e.g. a badge/alert) — only set for a ranked-last-resort comparable; distinct from the free-text explanation field' }) warning: string | null;
 }
