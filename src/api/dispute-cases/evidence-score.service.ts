@@ -262,7 +262,7 @@ export class EvidenceScoreService {
   private async loadInputs(disputeCaseId: string): Promise<EvidenceScoreInputs> {
     const [disputeCase, comparables, issues, grounds] = await Promise.all([
       this.repository.findDisputeCaseWithRelations(disputeCaseId),
-      this.repository.getAllComparables(disputeCaseId),
+      this.repository.getComparables(disputeCaseId),
       this.repository.getLatestEvidenceIssues(disputeCaseId),
       // NOTE: MAX(run_id) can select a partially-inserted run if a manual recompute races an
       // in-flight objection-reason generation, which would score low. It self-heals on the next

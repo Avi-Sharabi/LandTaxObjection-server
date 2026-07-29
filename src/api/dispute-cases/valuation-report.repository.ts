@@ -19,7 +19,7 @@ export class ValuationReportRepository {
     private readonly comparableSaleRepo: Repository<ComparableSale>,
     @InjectRepository(DisputeEvidenceIssue)
     private readonly evidenceIssueRepo: Repository<DisputeEvidenceIssue>,
-  ) {}
+  ) { }
 
   findDisputeCaseWithRelations(id: string): Promise<DisputeCase | null> {
     return this.disputeCaseRepo.findOne({
@@ -54,19 +54,6 @@ export class ValuationReportRepository {
       where: { dispute_case_id: disputeCaseId },
       order: { contract_date: 'DESC' },
       take: 10,
-    });
-  }
-
-  // Every sale on file, unsampled. The evidence score judges the strength of the whole comparables
-  // set, so a 23-sale case must not have 13 of those sales invisible to it — and the IQR fence in
-  // classifyComparablesForMedian is only a meaningful statistical statement over the full
-  // population. Note this means the INCLUDED/EXCLUDED split the score reasons over can differ from
-  // the report's, which classifies over the 10-row sample above; that is intended — the score is
-  // judging the evidence, not reproducing the report.
-  getAllComparables(disputeCaseId: string): Promise<ComparableSale[]> {
-    return this.comparableSaleRepo.find({
-      where: { dispute_case_id: disputeCaseId },
-      order: { contract_date: 'DESC' },
     });
   }
 
