@@ -142,12 +142,25 @@ export class EvidenceScoreService {
   private readonly logger = new Logger(EvidenceScoreService.name);
 
   constructor(
+    // Supplies THREE of the four evidence groups, not just the case row — it injects four TypeORM
+    // repositories of its own (DisputeCase, ComparableSale, DisputeObjectionReason,
+    // DisputeEvidenceIssue), so there is no separate ComparablesService /
+    // ObjectionReasonGeneratorService / SupportingEvidenceService dependency here:
+    //   comparable sales           -> getAllComparables()
+    //   objection grounds (reasons) -> getLatestObjectionReasons()   [latest run, MAX(run_id)]
+    //   supporting evidence issues  -> getLatestEvidenceIssues()     [latest run, MAX(run_id)]
+    //   subject property + notice   -> findDisputeCaseWithRelations()
+    //   persistence                 -> updateEvidenceScore()
+    // Going via those feature services instead would LOSE signal: their response DTOs drop
+    // verification_status, and ObjectionReasonResponseDto also drops concession_classification.
     private readonly repository: ValuationReportRepository,
     private readonly anthropicService: AnthropicService,
     private readonly skillRegistry: SkillRegistryService,
-    private readonly ctxCache: ValuationCtxCacheService,
-    private readonly assessmentDocuments: AssessmentDocumentsService,
-    private readonly azureBlob: AzureBlobService,
+    // The fourth evidence group — uploaded documents — needs three collaborators, because
+    // assessment_documents is the one table ValuationReportRepository does not hold:
+    private readonly ctxCache: ValuationCtxCacheService, // cached document_type per document
+    private readonly assessmentDocuments: AssessmentDocumentsService, // the rows + file_path
+    private readonly azureBlob: AzureBlobService, // file_path -> PDF bytes
   ) {}
 
   /**
