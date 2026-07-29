@@ -46,6 +46,9 @@ export class ValuationReportRepository {
     });
   }
 
+  // Tabulation source for the valuation report body, which shows a representative sample rather
+  // than every sale on file. EvidenceScoreService deliberately does NOT use this — see
+  // getAllComparables() below.
   getComparables(disputeCaseId: string): Promise<ComparableSale[]> {
     return this.comparableSaleRepo.find({
       where: { dispute_case_id: disputeCaseId },
@@ -54,8 +57,23 @@ export class ValuationReportRepository {
     });
   }
 
-  // getComparables() samples only 10 rows, which is plenty for judging quality but would understate
-  // the total in a user-visible rationale ("3 of 10" on a case with 23 sales).
+  // Every sale on file, unsampled. The evidence score judges the strength of the whole comparables
+  // set, so a 23-sale case must not have 13 of those sales invisible to it — and the IQR fence in
+  // classifyComparablesForMedian is only a meaningful statistical statement over the full
+  // population. Note this means the INCLUDED/EXCLUDED split the score reasons over can differ from
+  // the report's, which classifies over the 10-row sample above; that is intended — the score is
+  // judging the evidence, not reproducing the report.
+  getAllComparables(disputeCaseId: string): Promise<ComparableSale[]> {
+    return this.comparableSaleRepo.find({
+      where: { dispute_case_id: disputeCaseId },
+      order: { contract_date: 'DESC' },
+    });
+  }
+
+  // Total on file without loading the rows. No caller today — EvidenceScoreService used it to
+  // report "3 of 23" while it only read a 10-row sample, and now reads every row via
+  // getAllComparables(), so the length is the count. Kept for callers that need the total on its
+  // own (a header count, a lodgement gate) without paying for the entities.
   countComparables(disputeCaseId: string): Promise<number> {
     return this.comparableSaleRepo.count({ where: { dispute_case_id: disputeCaseId } });
   }

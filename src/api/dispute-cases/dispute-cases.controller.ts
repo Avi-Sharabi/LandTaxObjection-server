@@ -592,7 +592,6 @@ export class DisputeCasesController {
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles(UserRole.INTERNAL_Assessor, UserRole.ACCOUNTANT)
   @ApiBearerAuth()
   @Post(':id/recompute-evidence-score')
   @HttpCode(200)
