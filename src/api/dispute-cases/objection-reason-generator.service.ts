@@ -266,7 +266,7 @@ export class ObjectionReasonGeneratorService {
 
     const g1 = grounds.find(g => g.groundNumber === 1);
     const g2 = grounds.find(g => g.groundNumber === 2);
-    const lotAreaForAutoTick = ctx.lotAreaM2 ?? ctx.meta.land_area_sqm;
+    const lotAreaForAutoTick = ctx.lotAreaM2;
     if (g1 && !g1.isTick && !(g2?.isTick) && ctx.inputComparables.length > 0 && lotAreaForAutoTick != null && lotAreaForAutoTick > 0) {
       g1.isTick = true;
       this.logger.log(`[OBJECTION] Ground 1 auto-ticked — ${ctx.inputComparables.length} comparable(s) in pipeline`);
@@ -495,14 +495,21 @@ export class ObjectionReasonGeneratorService {
     const comparableLines = ctx.inputComparables.slice(0, 5).map(c => {
       const rate = c.rate_per_m2 != null ? Number(c.rate_per_m2) : null;
       const valueStr = c.analysed_land_value != null ? `$${c.analysed_land_value.toLocaleString()}` : 'value unknown';
-      return `  ${c.address}: area ${c.area_m2} m², adjusted value ${valueStr}${rate != null && !isNaN(rate) ? `, $${rate.toFixed(0)}/m²` : ''}${c.contract_date ? `, sold ${c.contract_date}` : ''}`;
+      // 'extrapolated' comparables (ComparablesService.selectRankedLastResortCandidates) are
+      // disclosed evidence, not confident evidence — flagged here so ground text never cites one
+      // as if it were ordinary supporting evidence (see comparable-quarantine.util.ts for the
+      // equivalent disclosure in the valuation report's own comparables table).
+      const disclosure = c.size_tier === 'extrapolated'
+        ? ' [RANKED LAST-RESORT MATCH — outside standard size/zoning tolerance, cite with caution]'
+        : '';
+      return `  ${c.address}: area ${c.area_m2} m², adjusted value ${valueStr}${rate != null && !isNaN(rate) ? `, $${rate.toFixed(0)}/m²` : ''}${c.contract_date ? `, sold ${c.contract_date}` : ''}${disclosure}`;
     });
 
     switch (groundNumber) {
       case 1:
       case 2: {
         const assessedValue = ctx.meta.assessed_land_value;
-        const lotArea = ctx.lotAreaM2 ?? ctx.meta.land_area_sqm;
+        const lotArea = ctx.lotAreaM2;
         if (assessedValue != null) lines.push(`Assessed land value (notice): $${assessedValue.toLocaleString()}`);
         if (lotArea != null) lines.push(`Lot area: ${lotArea} m²`);
         if (assessedValue != null && lotArea != null && lotArea > 0) {
@@ -535,8 +542,7 @@ export class ObjectionReasonGeneratorService {
         break;
       }
       case 3: {
-        lines.push(`Lot area from cadastre/API: ${ctx.lotAreaM2 ?? 'unknown'} m²`);
-        lines.push(`Lot area from PDF report: ${ctx.meta.land_area_sqm ?? 'unknown'} m²`);
+        lines.push(`Lot area (from Land Value Search document): ${ctx.lotAreaM2 ?? 'unknown'} m²`);
         lines.push(`Lot: ${ctx.meta.lot ?? 'unknown'}, Plan: ${ctx.meta.planType} ${ctx.meta.plan ?? 'unknown'}`);
         break;
       }

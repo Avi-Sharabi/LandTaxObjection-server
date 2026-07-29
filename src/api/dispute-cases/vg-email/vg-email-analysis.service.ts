@@ -1,7 +1,7 @@
 import { Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
-import { isAxiosError } from 'axios';
+import { APIError } from '@anthropic-ai/sdk';
 import { SkillRegistryService } from 'src/mcp/skill-registry.service';
 import { AnthropicService } from 'src/ai/anthropic.service';
 import { DisputeCasesService } from '../dispute-cases.service';
@@ -166,8 +166,8 @@ export class VgEmailAnalysisService implements OnModuleInit {
         mcpServers: true,
       });
     } catch (err: unknown) {
-      if (isAxiosError(err)) {
-        const status = err.response?.status;
+      if (err instanceof APIError) {
+        const status = err.status;
         this.logger.error(
           `[VG-ANALYSIS] Anthropic API error status=${status} correlationId=${correlationId ?? '-'} — ${err.message}`,
         );
