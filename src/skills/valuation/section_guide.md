@@ -113,6 +113,10 @@ leaving it out; `key_finding` should note that no defensible figure could be est
 from comparable evidence and an independent CPV valuation is required, without stating a
 range or a number in its place.
 
+**The `exec_summary.rows` "Our Assessed Land Value" entry's `finding` is server-overwritten**
+(see data_schema.md) — the effort that matters is `exec_summary.intro`'s own stated figure
+(not overwritten), not this table cell.
+
 **Deadline/process status goes here once, not throughout.** If the objection window has
 lapsed, state it in exactly one place in this section (an amber/red exec-summary row) and
 in the Priority Action Plan (Section 10). Do not repeat it as a caveat inside Sections 2–7
@@ -146,6 +150,13 @@ of lodgement, not lodged by virtue of being written.
   notice didn't yield that field) — do not default to "UNCONFIRMED" when the
   data is actually present.
 
+**`statutory.basis`'s two date rows and `statutory.assessment`'s five figure rows are all
+server-overwritten** with values already computed/extracted by an earlier pipeline stage and
+given to you directly as `"System-computed ..."` lines in the user message — copy them verbatim
+rather than computing the 60-day deadline or re-parsing the "Land Tax Notice (Extracted)" block
+for these rows (see data_schema.md's `statutory.basis`/`statutory.assessment` note — this does
+not remove the same figures from Section 7 and the Priority Action Plan).
+
 ### Land tax calculation (reference only — supply figures, don't auto-compute)
 NSW land tax is marginal and year-specific. For a **special trust** the
 reference matter used a flat structure: `rate1 × (premium_threshold − threshold)
@@ -160,6 +171,13 @@ improvements, services, contamination, flood); 3.3 development approval (DA + s.
 modifications, CC, physical commencement, yield, QS cost); 3.4 planning proposal
 **only if one exists** — a refused rezoning is a strong s.6A ground, so capture
 the reference, decision, date, and the C4-as-at-valuation-date status.
+
+**The address, PID, Lot/DP, site area, owner, and zoning rows in 3.1/3.2 are server-overwritten**
+regardless of what you write (see data_schema.md). The same facts are given directly in the
+"## Property Identification" block of the user message — copy them there rather than
+reformatting for these cells. The same values are still required, correctly, in the Section 9
+narrative's opening sentence and the Section 4.1 HBU statement's zoning reference — those are
+not overwritten.
 
 ## Section 4 — HBU & Constraints
 4.1 states the legally permissible highest-and-best-use **as at the valuation
@@ -217,6 +235,9 @@ custom `section_title` once a real CPV report exists, naming the valuer/firm
   `value: "-"` and a note explaining why (e.g. "No comparable sale in this report supports a
   figure below the VG's assessed rate; an independent CPV valuation is required") — never skip
   the row.
+
+**The row's `value` is server-overwritten** with the same enforced `contended_value` figure —
+write a real `note`, but don't spend effort getting the `value` string itself exactly right.
 
 ## Section 6 — Weaknesses & Legal Grounds
 6.1 tabulates each VG weakness with Evidence and the Objection Argument.

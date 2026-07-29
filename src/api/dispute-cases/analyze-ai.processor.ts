@@ -99,10 +99,10 @@ export class AnalyzeAiProcessor extends WorkerHost {
         ));
         // Cache ctx so the regenerate-valuation-report endpoint can restore planning context without re-running the pipeline
         await this.ctxCacheService.save(disputeCaseId, ctx);
-        // Persist the resolved cadastre lot area so the report generator has it — previously this
-        // value was resolved successfully here but discarded before ever reaching the report.
-        if (ctx.lotAreaM2) {
-          await this.aiPropertySearchService.persistEplanningArea(disputeCaseId, ctx.lotAreaM2);
+        // Persist the Land Value Search document's fields so the report generator has them —
+        // this is now the sole source of subject land size (see property-context.service.ts).
+        if (ctx.landValueSearch) {
+          await this.aiPropertySearchService.persistLandValueSearchDetails(disputeCaseId, ctx.landValueSearch);
         }
       }
 
@@ -150,93 +150,99 @@ export class AnalyzeAiProcessor extends WorkerHost {
       } else {
         this.logger.log(
           JSON.stringify({
-            context: 'ANALYZE_AI.ai_property_search',
-            jobId: job.id,
-            disputeCaseId,
-          }),
-        );
-        const aiPropertyDetails =
-          await this.aiPropertySearchService.enrichPropertyFromWeb(
-            disputeCaseId,
-            address,
-            ctx.lotAreaM2 ?? undefined,
-          );
-
-        this.logger.log(
-          JSON.stringify({
             context: 'ANALYZE_AI.generating_comparables',
             jobId: job.id,
             disputeCaseId,
           }),
         );
-        const { suburb: parsedSuburb, postcode: parsedPostcode } =
-          parseNswAddressComponents(ctx.confirmedAddress);
-        if (!parsedSuburb || !parsedPostcode)
-          this.logger.warn(
+        // Non-fatal: a missing subject field (address/zoning/land area/valuation date can't be
+        // resolved) or an LLM hiccup here must not fail the whole ~20-minute analysis job — every
+        // step before this one (ABR lookup, planning-portal scraping, entity evidence) already
+        // succeeded and shouldn't be discarded over a problem confined to comparables. Downstream
+        // steps still run using whatever comparables (possibly none) made it into ctx.inputComparables
+        // — mirrors the same rationale as the valuation-report "Non-fatal" wrapper below.
+        try {
+          const { suburb: parsedSuburb, postcode: parsedPostcode } =
+            parseNswAddressComponents(ctx.confirmedAddress);
+          if (!parsedSuburb || !parsedPostcode)
+            this.logger.warn(
+              JSON.stringify({
+                context: 'ANALYZE_AI.addr_parse_failed',
+                jobId: job.id,
+                confirmedAddress: ctx.confirmedAddress,
+                parsedSuburb,
+                parsedPostcode,
+              }),
+            );
+          const zoningLayer = ctx.apiData.layers?.find(
+            (l) => l.layerName === 'Land Zoning Map',
+          );
+          const zoningCode = (zoningLayer?.results?.[0]?.['Zone'] ?? null) as
+            | string
+            | null;
+          const lotDp =
+            ctx.meta.lot && ctx.meta.plan
+              ? `Lot ${ctx.meta.lot} ${ctx.meta.planType} ${ctx.meta.plan}`
+              : undefined;
+          // Persist so the report generator has these too — same rationale as the Land Value
+          // Search persist above; previously both were resolved successfully here but discarded
+          // before ever reaching the report (only the one-off comparables DTO below ever saw them).
+          if (zoningCode || lotDp) {
+            await this.aiPropertySearchService.persistZoningAndLotDp(
+              disputeCaseId,
+              zoningCode,
+              lotDp ?? null,
+            );
+          }
+          await this.comparablesService.generateComparableSales(
+            {
+              dispute_case_id: disputeCaseId,
+              land_area_eplanning_sqm: ctx.lotAreaM2 ?? undefined,
+              suburb: parsedSuburb,
+              postcode: parsedPostcode,
+              zoning: zoningCode ?? undefined,
+              lot_dp: lotDp,
+              height_limit_m: ctx.meta.height_limit_m ?? undefined,
+              lat: ctx.lat ?? undefined,
+              lng: ctx.lng ?? undefined,
+            },
+            userId,
+          );
+
+          const dbSales =
+            await this.comparablesService.findRawByDisputeCaseId(disputeCaseId);
+          const mappedSales: InputComparable[] = dbSales
+            .filter((s) => s.adjusted_land_value != null && s.area != null)
+            .map((s) => ({
+              address: [
+                s.property_house_number,
+                s.property_street_name,
+                s.property_locality,
+              ]
+                .filter(Boolean)
+                .join(' '),
+              area_m2: s.area!,
+              zone: s.zoning ?? undefined,
+              analysed_land_value: s.adjusted_land_value!,
+              rate_per_m2: s.adjusted_rate_per_sqm ?? undefined,
+              contract_date:
+                s.contract_date?.toISOString().split('T')[0] ?? undefined,
+              size_tier: s.size_tier ?? undefined,
+            }));
+          ctx.inputComparables = [...mappedSales, ...ctx.inputComparables];
+        } catch (comparablesErr: unknown) {
+          this.logger.error(
             JSON.stringify({
-              context: 'ANALYZE_AI.addr_parse_failed',
+              context: 'ANALYZE_AI.comparables_failed',
               jobId: job.id,
-              confirmedAddress: ctx.confirmedAddress,
-              parsedSuburb,
-              parsedPostcode,
+              disputeCaseId,
+              error:
+                comparablesErr instanceof Error
+                  ? comparablesErr.message
+                  : String(comparablesErr),
             }),
           );
-        const zoningLayer = ctx.apiData.layers?.find(
-          (l) => l.layerName === 'Land Zoning Map',
-        );
-        const zoningCode = (zoningLayer?.results?.[0]?.['Zone'] ?? null) as
-          | string
-          | null;
-        const lotDp =
-          ctx.meta.lot && ctx.meta.plan
-            ? `Lot ${ctx.meta.lot} ${ctx.meta.planType} ${ctx.meta.plan}`
-            : undefined;
-        // Persist so the report generator has these too — same fix as the eplanning-area
-        // persist above; previously both were resolved successfully here but discarded before
-        // ever reaching the report (only the one-off comparables DTO below ever saw them).
-        if (zoningCode || lotDp) {
-          await this.aiPropertySearchService.persistZoningAndLotDp(
-            disputeCaseId,
-            zoningCode,
-            lotDp ?? null,
-          );
         }
-        await this.comparablesService.generateComparableSales(
-          {
-            dispute_case_id: disputeCaseId,
-            land_area_sqm: aiPropertyDetails?.land_area_sqm ?? undefined,
-            land_area_eplanning_sqm: ctx.lotAreaM2 ?? undefined,
-            suburb: parsedSuburb,
-            postcode: parsedPostcode,
-            zoning: zoningCode ?? undefined,
-            lot_dp: lotDp,
-            height_limit_m: ctx.meta.height_limit_m ?? undefined,
-            lat: ctx.lat ?? undefined,
-            lng: ctx.lng ?? undefined,
-          },
-          userId,
-        );
-
-        const dbSales =
-          await this.comparablesService.findRawByDisputeCaseId(disputeCaseId);
-        const mappedSales: InputComparable[] = dbSales
-          .filter((s) => s.adjusted_land_value != null && s.area != null)
-          .map((s) => ({
-            address: [
-              s.property_house_number,
-              s.property_street_name,
-              s.property_locality,
-            ]
-              .filter(Boolean)
-              .join(' '),
-            area_m2: s.area!,
-            zone: s.zoning ?? undefined,
-            analysed_land_value: s.adjusted_land_value!,
-            rate_per_m2: s.adjusted_rate_per_sqm ?? undefined,
-            contract_date:
-              s.contract_date?.toISOString().split('T')[0] ?? undefined,
-          }));
-        ctx.inputComparables = [...mappedSales, ...ctx.inputComparables];
       }
 
       // Guard D: skip supporting-evidence analysis for snapshot/test cases — the snapshot already

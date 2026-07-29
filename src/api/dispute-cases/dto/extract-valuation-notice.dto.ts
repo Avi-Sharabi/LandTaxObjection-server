@@ -25,7 +25,11 @@ export class ExtractedPropertyDto {
   @ApiProperty({ example: '100%' })
   ownership: string;
 
-  @ApiProperty({ example: '1,075,000', description: 'Comma-formatted, from the Average land value column' })
+  @ApiProperty({
+    example: '1,075,000',
+    description:
+      "Comma-formatted, the land value for this assessment's tax year (from the matching LAND VALUE(S) column)",
+  })
   assessedLandValue: string;
 }
 

@@ -18,8 +18,9 @@ import { XpmClientHandler } from './xpm-client.handler';
 import { PdfStorageHandler } from './pdf-storage.handler';
 import { AzureEmailService } from 'src/common/azure-email/azure-email.service';
 import { AccountantNotFoundException } from '../exceptions/accountant-not-found.exception';
+import { CaseReferenceGenerationFailedException } from '../exceptions/case-reference-generation-failed.exception';
 import { Client, ClientStatus } from '../../clients/entities/client.entity';
-import { parseNswAddressComponents } from 'src/common/utils/address-parser.util';
+import { resolveSuburbWithFallback } from 'src/common/utils/address-parser.util';
 
 interface PropertyFlags {
   flag_heritage: boolean;
@@ -168,10 +169,7 @@ export class DisputeIntakeOrchestrator {
     const property = this.propertiesRepository.create({
       client_id: clientId,
       address: prop.address,
-      suburb:
-        parseNswAddressComponents(prop.address).suburb ??
-        prop.address.split(',')[1]?.trim().toUpperCase() ??
-        '',
+      suburb: resolveSuburbWithFallback(prop.address),
       state: prop.state,
       postcode: '',
       pid: prop.pid,
@@ -201,10 +199,11 @@ export class DisputeIntakeOrchestrator {
 
   private static readonly MAX_CASE_REFERENCE_ATTEMPTS = 3;
 
-  // generateCaseReference() + createDisputeCase() need to be retried together: the reference is
-  // only a best-effort read of the current max, so two concurrent intake submissions can still
-  // compute the same next number. Retrying with a freshly generated reference on a unique-
-  // constraint collision closes that race without needing a DB-level lock.
+  // generateCaseReference() + createDisputeCase() are retried together as a belt-and-braces guard.
+  // The DB sequence backing generateCaseReference() already makes collisions practically impossible,
+  // so this should never fire in normal operation — it only covers the case where the sequence has
+  // drifted behind the rows actually in the table (e.g. references inserted outside the intake flow,
+  // or a restore that reloaded dispute_cases without re-running the sequence's setval).
   private async createDisputeCaseWithUniqueReference(
     client: Client,
     propertyId: string,
@@ -328,17 +327,24 @@ export class DisputeIntakeOrchestrator {
 
   private async generateCaseReference(): Promise<string> {
     const year = new Date().getFullYear();
-
-    // Based on the highest existing sequence number rather than a row count, so that
-    // deleting cases (soft via the UI, or hard via the retention cleanup task) can never
-    // free up a number that collides with a case reference still in use.
-    const result = await this.disputeCasesRepository
-      .createQueryBuilder('dc')
-      .withDeleted()
-      .select(`MAX(CAST(SUBSTRING(dc.case_reference FROM 'LTD-\\d{4}-(\\d{6})$') AS INTEGER))`, 'max')
-      .getRawOne<{ max: number | null }>();
-
-    const sequence = ((result?.max ?? 0) + 1).toString().padStart(6, '0');
+    // A DB sequence, not repository.count() + 1 or MAX(existing) + 1 — those reads are non-atomic
+    // (two concurrent intake requests can read the same value and mint duplicate case references).
+    // nextval also never reissues a number, so deleting cases — soft via the UI or the batch delete,
+    // or hard via the retention cleanup task — can't free up a reference still in use elsewhere.
+    let nextval: string;
+    try {
+      const rows = await this.disputeCasesRepository.query<Array<{ nextval: string }>>(
+        `SELECT nextval('dispute_case_reference_seq') AS nextval`,
+      );
+      nextval = rows[0].nextval;
+    } catch (e) {
+      // Log the raw driver/DB error server-side only — surfacing it to the client would leak
+      // internal detail (sequence/table names, connection errors) the exception filter forwards
+      // verbatim in the response body.
+      this.logger.error(`generateCaseReference failed: ${(e as Error).message}`);
+      throw new CaseReferenceGenerationFailedException();
+    }
+    const sequence = nextval.toString().padStart(6, '0');
     return `LTD-${year}-${sequence}`;
   }
 }
