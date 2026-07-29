@@ -1,11 +1,13 @@
 import { ApiProperty } from '@nestjs/swagger';
 import {
   IsDateString,
+  IsIn,
   IsNotEmpty,
   IsNumber,
   IsOptional,
   IsString,
   IsUUID,
+  Min,
 } from 'class-validator';
 
 export class CreateComparableDto {
@@ -133,6 +135,7 @@ export class CreateComparableDto {
   @ApiProperty({ example: 0.00, required: false, nullable: true })
   @IsOptional()
   @IsNumber()
+  @Min(0)
   interest_of_sale_percent?: number | null;
 
   @ApiProperty({ example: 'AT439913', required: false, nullable: true })
@@ -155,7 +158,7 @@ export class CreateComparableDto {
   @IsNumber()
   adjusted_land_value?: number | null;
 
-  @ApiProperty({ example: 3856554, required: false, nullable: true, description: 'Implied land value of the subject property derived from this comparable: adjusted_rate_per_sqm × subject land area' })
+  @ApiProperty({ example: 3856554, required: false, nullable: true, description: "This comparable's own land value adjusted for time only (no size adjustment) — the figure to enter for this comparable in the NSW valuation objection portal" })
   @IsOptional()
   @IsNumber()
   suggested_land_value?: number | null;
@@ -164,4 +167,9 @@ export class CreateComparableDto {
   @IsOptional()
   @IsString()
   explanation?: string | null;
+
+  @ApiProperty({ required: false, nullable: true, enum: ['exact', 'estimated'] })
+  @IsOptional()
+  @IsIn(['exact', 'estimated'])
+  improvement_confidence?: 'exact' | 'estimated' | null;
 }

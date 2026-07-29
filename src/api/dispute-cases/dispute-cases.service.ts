@@ -31,6 +31,7 @@ import { AnalysisReportResponseDto } from './dto/analysis-report-response.dto';
 import { ApprovalDocumentsResponseDto } from './dto/approval-documents-response.dto';
 import { DisputeCase, DisputeStatus } from './entities/dispute-case.entity';
 import { ValuationNotice } from '../valuation-notices/entities/valuation-notice.entity';
+import { getLandTaxYearFromValuationDate } from '../../common/utils/land-tax-year.util';
 import { LandTaxComputationService } from '../valuation/land-tax-computation.service';
 import { LandTaxResponseDto } from '../valuation/dto/land-tax-response.dto';
 import {
@@ -333,7 +334,7 @@ export class DisputeCasesService {
     const clientName = disputeCase.client.name;
     const propertyAddress = this.buildPropertyAddress(disputeCase.property);
     const taxYear = String(
-      new Date(disputeCase.valuation_notice.valuation_date).getFullYear(),
+      getLandTaxYearFromValuationDate(disputeCase.valuation_notice.valuation_date),
     );
 
     // Send email first — only persist state if the send succeeds.
@@ -456,7 +457,7 @@ export class DisputeCasesService {
 
     const propertyAddress = this.buildPropertyAddress(disputeCase.property);
     const taxYear = String(
-      new Date(disputeCase.valuation_notice.valuation_date).getFullYear(),
+      getLandTaxYearFromValuationDate(disputeCase.valuation_notice.valuation_date),
     );
 
     return {
@@ -1012,8 +1013,7 @@ export class DisputeCasesService {
     notice: ValuationNotice,
     feeSharePct: number,
   ): CalculateTaxDto {
-    // NSW: valuation date is 1 July of (tax_year − 1), so tax year = valuation year + 1
-    const taxYear = new Date(notice.valuation_date).getUTCFullYear() + 1;
+    const taxYear = getLandTaxYearFromValuationDate(notice.valuation_date);
 
     const dto: CalculateTaxDto = {
       tax_year: taxYear,
