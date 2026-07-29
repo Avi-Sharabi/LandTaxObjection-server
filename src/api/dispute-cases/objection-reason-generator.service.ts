@@ -495,7 +495,14 @@ export class ObjectionReasonGeneratorService {
     const comparableLines = ctx.inputComparables.slice(0, 5).map(c => {
       const rate = c.rate_per_m2 != null ? Number(c.rate_per_m2) : null;
       const valueStr = c.analysed_land_value != null ? `$${c.analysed_land_value.toLocaleString()}` : 'value unknown';
-      return `  ${c.address}: area ${c.area_m2} m², adjusted value ${valueStr}${rate != null && !isNaN(rate) ? `, $${rate.toFixed(0)}/m²` : ''}${c.contract_date ? `, sold ${c.contract_date}` : ''}`;
+      // 'extrapolated' comparables (ComparablesService.selectRankedLastResortCandidates) are
+      // disclosed evidence, not confident evidence — flagged here so ground text never cites one
+      // as if it were ordinary supporting evidence (see comparable-quarantine.util.ts for the
+      // equivalent disclosure in the valuation report's own comparables table).
+      const disclosure = c.size_tier === 'extrapolated'
+        ? ' [RANKED LAST-RESORT MATCH — outside standard size/zoning tolerance, cite with caution]'
+        : '';
+      return `  ${c.address}: area ${c.area_m2} m², adjusted value ${valueStr}${rate != null && !isNaN(rate) ? `, $${rate.toFixed(0)}/m²` : ''}${c.contract_date ? `, sold ${c.contract_date}` : ''}${disclosure}`;
     });
 
     switch (groundNumber) {

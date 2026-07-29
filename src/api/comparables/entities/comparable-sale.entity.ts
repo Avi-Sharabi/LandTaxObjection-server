@@ -123,6 +123,26 @@ export class ComparableSale {
   @Column({ type: 'text', nullable: true })
   improvement_confidence: 'exact' | 'estimated' | null;
 
+  // How this comparable cleared the size-band gate (see 1784200000000-AddSizeTierToComparableSales
+  // / ComparablesService.SIZE_BAND_TOLERANCE_FRACTION) — 'preferred': within the standard ±30%
+  // band. 'widened': outside ±30% but within the deterministic auto-include path's ±50% band.
+  // 'extrapolated': a ranked-last-resort pick (see selectRankedLastResortCandidates) outside even
+  // the widened band, or an otherwise-unresolved zoning/size mismatch — the whole reason this
+  // column exists is so classifyComparablesForMedian (comparable-quarantine.util.ts) can keep an
+  // 'extrapolated' pick out of the headline $/m² median regardless of whether its rate happens to
+  // pass the IQR outlier fence, and so the report/Ground text can disclose it honestly instead of
+  // silently rendering "INCLUDED". null for any comparable persisted before this column existed,
+  // or entered manually via create().
+  @Column({ type: 'text', nullable: true })
+  size_tier: 'preferred' | 'widened' | 'extrapolated' | null;
+
+  // Structured, frontend-renderable caution — see 1784300000000-AddWarningToComparableSales /
+  // ComparablesService.computeAdjustedFields. Deliberately separate from `explanation` (a long
+  // human-readable narrative meant for the report/case file) so the UI can show this as its own
+  // badge/alert without parsing prose. Only ever set for a ranked-last-resort pick; null otherwise.
+  @Column({ type: 'text', nullable: true })
+  warning: string | null;
+
   // ── Relations ─────────────────────────────────────────────────────────────
 
   @ManyToOne(() => DisputeCase, (disputeCase) => disputeCase.comparables, {
