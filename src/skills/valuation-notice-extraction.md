@@ -8,7 +8,7 @@ description: >
   land / property details from a land tax assessment. The skill reads the
   "Aggregated land" table(s) and returns an array of tax-year objects, one per
   table, each listing every property with its address, PID, state, ownership
-  percentage, and assessed (average) land value.
+  percentage, and assessed land value for that tax year.
 ---
 
 # NSW Land Tax Assessment Notice — Data Extractor
@@ -46,10 +46,17 @@ The table has these columns (left to right):
 | Land item no. | Land item and property ID | Notes | % Owned | Land Tax Taxable Value | Surcharge Taxable Value | LAND VALUE(S) — one column per year | **Average land value** |
 |---|---|---|---|---|---|---|---|
 
-⚠️ **Critical:** the value you want is the **rightmost column, "Average land
-value"** (labelled *"calculated from the land value(s)"*) — **not** the "Land Tax
-Taxable Value" column and **not** the individual per-year LAND VALUE(S) columns.
-These often look similar but can differ. Always take the **Average land value**.
+⚠️ **Critical:** the value you want is the **LAND VALUE(S) column whose year
+header matches this table's own `taxYear`** (the year you identified from the
+"assessment for the 20XX tax year…" line above the table). LAND VALUE(S) columns
+are listed in ascending chronological order ending at the assessed year, so this
+is always the **rightmost** LAND VALUE(S) column.
+
+**Not** the "Average land value" column and **not** the "Land Tax Taxable Value"
+column — both of those are tax-computation figures (a 3-year average used to
+calculate the land tax bill), not the Valuer General's determined land value for
+the assessed year. They often look similar to the correct value, and can even be
+identical, but can also diverge from it significantly.
 
 **Stop at the totals row.** Do **not** include the `Total aggregated land value`
 row — it is a sum, not a property.
@@ -66,7 +73,7 @@ For every property row in each table, extract:
 | `PID` | "Land item and property ID" — the `PID - NNNNNNN` line | Return **digits only**. Strip the `PID -` prefix and any spaces. |
 | `State` | Document type | Always `"NSW"` — this is a NSW Land Tax Assessment Notice. |
 | `ownership` | "% Owned" column | Format as a percentage string, e.g. `"100%"`. |
-| `assessedLandValue` | **"Average land value"** column | Normalise digit spacing; return as a comma-formatted string, e.g. `"1,075,000"`. |
+| `assessedLandValue` | **LAND VALUE(S) column matching this table's `taxYear`** (rightmost LAND VALUE(S) column) | Normalise digit spacing; return as a comma-formatted string, e.g. `"1,075,000"`. |
 
 ### Top-level fields (per tax-year object)
 
@@ -115,7 +122,7 @@ Aggregated land table (i.e. per tax year).
         "PID": "string (digits only)",
         "State": "NSW",
         "ownership": "string (e.g. \"100%\")",
-        "assessedLandValue": "string (comma-formatted, from Average land value column)"
+        "assessedLandValue": "string (comma-formatted, from the LAND VALUE(S) column matching this tax year)"
       }
     ]
   }
@@ -179,15 +186,54 @@ Output:
 ]
 ```
 
-Note how the 2025 table gives an average land value of `1,075,000` while the 2024
+Note how the 2025 table gives a land value of `1,075,000` while the 2024
 table gives `1,000,000` for the same properties — this is why each tax year is a
 separate object.
 
 ---
 
+## Worked Example (contrasting Average/Taxable Value vs. the correct column)
+
+Input: a Land Tax Assessment Notice for **CASTLE HILL GLEN PTY LTD ATF CASTLE
+HILL GLEN UNIT TRUST**, issued 24 February 2026, one Aggregated land table for
+the **2026 tax year**, one land item (PID `3701422`, 100% owned):
+
+| Notes | LAND VALUE(S) 2024 | LAND VALUE(S) 2025 | LAND VALUE(S) 2026 | Average land value | Land Tax Taxable Value |
+|---|---|---|---|---|---|
+| | 18,300,000 | 20,800,000 | 20,800,000 | 19,966,667 | 19,966,667 |
+
+The table's `taxYear` is `2026`, so the correct column is **LAND VALUE(S)
+2026 = `20,800,000`** — the rightmost LAND VALUE(S) column. Output:
+
+```json
+[
+  {
+    "issueDate": "2026-02-24",
+    "taxYear": "2026",
+    "properties": [
+      {
+        "address": "1020 MELIA CT CASTLE HILL",
+        "PID": "3701422",
+        "State": "NSW",
+        "ownership": "100%",
+        "assessedLandValue": "20,800,000"
+      }
+    ]
+  }
+]
+```
+
+⚠️ Note that both "Average land value" and "Land Tax Taxable Value" read
+`19,966,667` here — a different number from the correct `20,800,000`. Do not be
+fooled by them agreeing with each other; neither is the source column.
+
+---
+
 ## Key Reminders
 
-- **Average land value column only** — never the Taxable Value or per-year columns.
+- **LAND VALUE(S) column matching the table's tax year only** — never the
+  Average land value or Land Tax Taxable Value columns, even when they look
+  right.
 - **One object per tax year** — do not merge; values differ by year.
 - **PID = digits only** — strip the prefix, ignore OCR mangling (`PtD`, `P1D`).
 - **State is always `NSW`** for this document type.

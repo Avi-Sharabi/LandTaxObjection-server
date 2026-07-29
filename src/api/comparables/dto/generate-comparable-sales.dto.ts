@@ -56,13 +56,13 @@ export class GenerateComparableSalesDto {
   @IsString()
   pid?: string;
 
-  @ApiProperty({ example: 4022, required: false, nullable: true, description: 'Actual land area in m² — overrides property.land_area_sqm if provided' })
+  @ApiProperty({ example: 4022, required: false, nullable: true, description: 'Actual land area in m² — last-resort fallback used only when the property has no persisted land_area_eplanning_sqm or land_area_sqm on file' })
   @IsOptional()
   @Type(() => Number)
   @IsNumber()
   land_area_sqm?: number;
 
-  @ApiProperty({ example: 4022, required: false, nullable: true, description: 'ePlanning/cadastre lot area in m² — used only when property.land_area_sqm and land_area_sqm are both absent' })
+  @ApiProperty({ example: 4022, required: false, nullable: true, description: 'ePlanning/cadastre lot area in m² — last-resort fallback used only when no persisted property land area and no other override is available' })
   @IsOptional()
   @Type(() => Number)
   @IsNumber()

@@ -146,7 +146,7 @@ valuation date:
 | Taxing date | **Midnight 31 December** of the preceding year |
 | Land tax year | The calendar year the assessment covers |
 | Notice issue date | From the assessment notice |
-| **Objection deadline** | **60 days from the notice issue date** — calculate it and state it explicitly |
+| **Objection deadline** | **60 days from the notice issue date.** The user message gives you this pre-computed as "System-computed statutory objection deadline: ..." — copy it rather than calculating it yourself; state it wherever the report discusses timing. |
 | Payment due date | From the notice |
 
 The relevant-date rule is the backbone of the whole argument: zoning, DA status,
@@ -324,8 +324,9 @@ supporting grounds beneath it.
 - **Pay regardless of the objection.** Lodging an objection does **not** suspend
   the payment obligation. Interest accrues daily on overdue amounts. State this
   prominently and capture the early-payment discount if paid by the due date.
-- **The 60-day deadline is hard.** Calculate it from the notice date and state
-  it. If it has lapsed, do not assume the objection can still be lodged — flag
+- **The 60-day deadline is hard.** The user message gives you this pre-computed
+  ("System-computed statutory objection deadline: ...") — use that value rather
+  than recalculating it. If it has lapsed, do not assume the objection can still be lodged — flag
   the late-objection / extension question for direct confirmation with the VG,
   in the Executive Summary and Priority Action Plan only — never inside the
   Objection Narrative.

@@ -2,8 +2,18 @@ import { Injectable } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
+import Anthropic from '@anthropic-ai/sdk';
 
 export const ANTHROPIC_MODEL = 'claude-sonnet-4-6';
+
+// Sent on every call() request today via a manual `anthropic-beta` header; kept as the same
+// fixed set via the SDK's `betas` param so behavior (prompt caching, MCP, interleaved thinking)
+// is unchanged by the streaming migration below.
+const BETA_FLAGS = [
+  'mcp-client-2025-04-04',
+  'prompt-caching-2024-07-31',
+  'interleaved-thinking-2025-05-14',
+] as const;
 
 export interface AnthropicCallOptions {
   systemBlocks: { text: string; cached?: boolean }[];
@@ -12,6 +22,11 @@ export interface AnthropicCallOptions {
   maxTokens?: number;
   thinkingBudgetTokens?: number;
   mcpServers?: boolean;
+  // Per-call override for the client-constructor's default timeout (below) — for callers whose
+  // generation is known to legitimately run longer than the default allows (e.g. a large
+  // maxTokens + thinking report). Left unset, every call keeps today's default; this never
+  // narrows the timeout, only widens it for the specific call that opts in.
+  timeoutMs?: number;
 }
 
 export interface AnthropicCallResult {
@@ -25,33 +40,34 @@ export interface AnthropicCallResult {
   };
 }
 
-interface AnthropicApiResponse {
-  stop_reason: string;
-  content: { type: string; text?: string }[];
-  usage: {
-    input_tokens: number;
-    output_tokens: number;
-    cache_read_input_tokens?: number;
-    cache_creation_input_tokens?: number;
-  };
-}
-
 @Injectable()
 export class AnthropicService {
+  private readonly client: Anthropic;
+
   constructor(
     private readonly http: HttpService,
     private readonly config: ConfigService,
-  ) {}
+  ) {
+    const apiKey = this.config.getOrThrow<string>('ANTHROPIC_API_KEY');
+    // ANTHROPIC_API_URL is the full .../v1/messages endpoint (also used directly by
+    // callWithWebSearch below); the SDK wants just the base URL.
+    const baseURL = this.config.get<string>('ANTHROPIC_API_URL')?.replace(/\/v1\/messages\/?$/, '');
+    this.client = new Anthropic({
+      apiKey,
+      ...(baseURL ? { baseURL } : {}),
+      // Bumped above the SDK's 10-minute default as a safety margin for large max_tokens +
+      // extended-thinking report generations; maxRetries left at the SDK default (2).
+      timeout: 15 * 60 * 1000,
+    });
+  }
 
   async call(options: AnthropicCallOptions): Promise<AnthropicCallResult> {
-    const { systemBlocks, userMessage, documents, maxTokens = 4000, thinkingBudgetTokens = 2000, mcpServers } = options;
-
-    const betaHeader = 'mcp-client-2025-04-04,prompt-caching-2024-07-31,interleaved-thinking-2025-05-14';
+    const { systemBlocks, userMessage, documents, maxTokens = 4000, thinkingBudgetTokens = 2000, mcpServers, timeoutMs } = options;
 
     const system = systemBlocks.map((block) => ({
-      type: 'text',
+      type: 'text' as const,
       text: block.text,
-      ...(block.cached !== false ? { cache_control: { type: 'ephemeral' } } : {}),
+      ...(block.cached !== false ? { cache_control: { type: 'ephemeral' as const } } : {}),
     }));
 
     const mcpBaseUrl = mcpServers ? this.config.get<string>('MCP_PUBLIC_URL') : null;
@@ -61,49 +77,39 @@ export class AnthropicService {
     const userContent = documents?.length
       ? [
           ...documents.map((doc) => ({
-            type: 'document',
-            source: { type: 'base64', media_type: doc.mediaType ?? 'application/pdf', data: doc.base64 },
+            type: 'document' as const,
+            source: { type: 'base64' as const, media_type: (doc.mediaType ?? 'application/pdf') as 'application/pdf', data: doc.base64 },
           })),
-          { type: 'text', text: userMessage },
+          { type: 'text' as const, text: userMessage },
         ]
       : userMessage;
 
-    const body: Record<string, unknown> = {
-      model: ANTHROPIC_MODEL,
-      max_tokens: maxTokens,
-      system,
-      messages: [{ role: 'user', content: userContent }],
-    };
-
-    body['thinking'] = { type: 'enabled', budget_tokens: thinkingBudgetTokens };
-
-    if (mcpUrl && mcpToken) {
-      body['mcp_servers'] = [
-        { type: 'url', url: mcpUrl, name: 'postgres', authorization_token: mcpToken },
-      ];
-    }
-
-    const response = await firstValueFrom(
-      this.http.post<AnthropicApiResponse>(
-        this.config.getOrThrow<string>('ANTHROPIC_API_URL'),
-        body,
-        {
-          headers: {
-            'x-api-key': this.config.getOrThrow<string>('ANTHROPIC_API_KEY'),
-            'anthropic-version': '2023-06-01',
-            'anthropic-beta': betaHeader,
-            'Content-Type': 'application/json',
-          },
-        },
-      ),
+    // Streamed (not buffered) so bytes keep flowing for the whole generation instead of the
+    // connection sitting idle until a large max_tokens + thinking response is fully ready —
+    // that idle-buffered pattern is what made long report-generation calls prone to being
+    // reset by network intermediaries (e.g. the Azure AI gateway ANTHROPIC_API_URL points at).
+    const stream = this.client.beta.messages.stream(
+      {
+        model: ANTHROPIC_MODEL,
+        max_tokens: maxTokens,
+        system,
+        messages: [{ role: 'user', content: userContent }],
+        thinking: { type: 'enabled', budget_tokens: thinkingBudgetTokens },
+        betas: [...BETA_FLAGS],
+        ...(mcpUrl && mcpToken
+          ? { mcp_servers: [{ type: 'url' as const, url: mcpUrl, name: 'postgres', authorization_token: mcpToken }] }
+          : {}),
+      },
+      timeoutMs != null ? { timeout: timeoutMs } : undefined,
     );
 
-    const { stop_reason, content, usage } = response.data;
+    const message = await stream.finalMessage();
+    const { stop_reason, content, usage } = message;
     const textBlock = content?.findLast((b) => b.type === 'text');
 
     return {
-      text: textBlock?.text ?? '',
-      stopReason: stop_reason,
+      text: textBlock?.type === 'text' ? textBlock.text : '',
+      stopReason: stop_reason ?? '',
       usage: {
         inputTokens: usage?.input_tokens ?? 0,
         outputTokens: usage?.output_tokens ?? 0,

@@ -28,7 +28,6 @@ export interface ReportMeta {
   assessed_land_value: number | null;
   revenue_nsw_notice_date: string | null;
   fsr_from_pdf: number | null;
-  land_area_sqm: number | null;
   height_limit_m: number | null;
   concession_mentions: string[];
   heritage_mentions: string[];
@@ -43,6 +42,12 @@ export interface SupportingEvidenceContext {
   apiData: EplanningApiData;
   lat: number;
   lng: number;
+  // Sourced exclusively from an uploaded "NSW Valuer General — Land Value Search" document
+  // (landValueSearch.property_area_sqm below), extracted by
+  // PdfExtractorService.classifyAndExtractDocument. There is no ePlanning/cadastre/AI-web-search
+  // fallback — null means no such document was found on file for this case (comparables
+  // generation throws MissingLandAreaException in that case — see
+  // ComparablesService.resolveSubjectContext).
   lotAreaM2: number | null;
   meta: ReportMeta;
   spatialBase64: string | null;
@@ -51,6 +56,7 @@ export interface SupportingEvidenceContext {
   inputComparables: InputComparable[];
   inputBenchmarkReport: BenchmarkReport | null;
   landTaxNotice: LandTaxNotice | null;
+  landValueSearch: LandValueSearch | null;
   inputDocumentsText: string[];
   entityEvidence: EntityEvidence | null;
   evidenceResult: SupportingEvidenceResult | null;
@@ -90,6 +96,12 @@ export interface InputComparable {
   analysed_land_value: number | null;
   rate_per_m2?: number;
   contract_date?: string;
+  // Only ever set for comparables sourced from ComparablesService.generateComparableSales (see
+  // ComparableSale.size_tier) — undefined for anything uploaded/pre-seeded. 'extrapolated' means
+  // this was a ranked-last-resort pick outside the standard size/zoning tolerances, included only
+  // to reach the minimum evidence requirement; Ground text generation should disclose this rather
+  // than cite it as if it were ordinary supporting evidence.
+  size_tier?: 'preferred' | 'widened' | 'extrapolated';
 }
 
 export interface BenchmarkReport {
@@ -117,6 +129,30 @@ export interface LandTaxNotice {
   interest?: number | null;
   total_amount_payable?: number | null;
   payment_due_date?: string | null;
+}
+
+// AI-extracted from an uploaded NSW Valuer General "Land Value Search" document — the authoritative
+// source for subject land size (see SupportingEvidenceContext.lotAreaM2). Only property_area_sqm,
+// property_dimensions, and property_no are persisted onto Property (AiPropertySearchService
+// .persistLandValueSearchDetails); the remaining fields are carried here for report/evidence
+// generation prompts only, mirroring LandTaxNotice above.
+export interface LandValueSearch {
+  property_no: string | null;
+  lga: string | null;
+  address_of_property: string | null;
+  description_of_land: string | null;
+  property_area_sqm: number | null;
+  property_area_raw: string | null;
+  property_dimensions: string | null;
+  valuing_year: string | null;
+  date_valuation_made: string | null;
+  zoning_used_for_valuation: string | null;
+  land_value_authority: string | null;
+  gross_land_value: number | null;
+  division_3_and_4_allowances: number | null;
+  net_land_value: number | null;
+  land_value_basis: string | null;
+  other_allowances_concessions: string | null;
 }
 
 // Distinct from `confidence` (the model's self-assessed likelihood the underlying fact is true,
@@ -189,12 +225,4 @@ export interface EntityEvidence {
   groundLabels?: Record<string, string[]>;
   groundAnalysis: Record<string, string>;
   clientName: string;
-}
-
-export interface CadastreFeature {
-  lot: string | null;
-  plan: string | null;
-  planType: string;
-  areaM2: number | null;
-  cadId: string | null;
 }

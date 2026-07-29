@@ -20,8 +20,8 @@ export class SearchComparablesTool implements IMcpTool {
       zoning:       { type: 'string', description: 'Zoning code to filter by (e.g. E4, R2)' },
       date_from:    { type: 'string', description: 'Contract date from, YYYY-MM-DD' },
       date_to:      { type: 'string', description: 'Contract date to, YYYY-MM-DD' },
-      area_min_sqm: { type: 'number', description: 'Minimum land area in m² (areas < 100 in the table are in ha)' },
-      area_max_sqm: { type: 'number', description: 'Maximum land area in m² (areas < 100 in the table are in ha)' },
+      area_min_sqm: { type: 'number', description: "Minimum land area in m² (rows with area_type='H' store area in hectares, converted automatically)" },
+      area_max_sqm: { type: 'number', description: "Maximum land area in m² (rows with area_type='H' store area in hectares, converted automatically)" },
       limit:        { type: 'number', description: 'Max rows to return (default 50, max 200)' },
     },
   };
@@ -47,11 +47,11 @@ export class SearchComparablesTool implements IMcpTool {
     if (dto.date_from) { conditions.push(`contract_date >= $${idx++}`); params.push(dto.date_from); }
     if (dto.date_to)   { conditions.push(`contract_date <= $${idx++}`); params.push(dto.date_to); }
     if (dto.area_min_sqm != null) {
-      conditions.push(`(CASE WHEN area < 100 THEN area * 10000 ELSE area END) >= $${idx++}`);
+      conditions.push(`(CASE WHEN area_type = 'H' THEN area * 10000 ELSE area END) >= $${idx++}`);
       params.push(dto.area_min_sqm);
     }
     if (dto.area_max_sqm != null) {
-      conditions.push(`(CASE WHEN area < 100 THEN area * 10000 ELSE area END) <= $${idx++}`);
+      conditions.push(`(CASE WHEN area_type = 'H' THEN area * 10000 ELSE area END) <= $${idx++}`);
       params.push(dto.area_max_sqm);
     }
 
