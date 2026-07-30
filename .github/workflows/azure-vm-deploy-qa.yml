@@ -110,6 +110,7 @@ jobs:
   qa-login-smoke:
     needs: migrate
     runs-on: ubuntu-latest
+    environment: qa
     timeout-minutes: 5
     env:
       QA_FRONTEND_URL: https://qa.landtax.ymlgroup.com.au
