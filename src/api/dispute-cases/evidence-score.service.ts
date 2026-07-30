@@ -26,7 +26,21 @@ const THINKING_BUDGET_TOKENS = 4000;
 const SCORE_MIN = 0;
 const SCORE_MAX = 100; // also the smallint ceiling — see clampScore()
 
-const MAX_RATIONALE_CHARS = 500;
+// The rationale is now a four-line per-group breakdown, not one sentence: four labels plus four
+// <=200-char explanations. The skill caps the whole thing at 1000; this is the backstop above that,
+// set high enough that a conforming response is never truncated — a truncated rationale would lose
+// the Documents line entirely, which is the one a reviewer is most likely to be checking.
+const MAX_RATIONALE_CHARS = 1200;
+
+// The four fixed labels the rationale format requires, in order. Used only to detect a
+// non-conforming response and log it: a malformed rationale must never cost the case its score, but
+// it does mean the rubric has drifted and someone needs to know.
+const RATIONALE_LABELS = ['Comparables', 'Reason For Objection', 'Supporting Evidence', 'Documents'];
+
+// Captures the points off one rationale line, e.g. "(34) Comparables - ...". En/em dashes are
+// accepted as separators because a model that drifts to one would otherwise look like a total of
+// zero. Mirrors parseEvidenceRationale() on the frontend — keep the two in step.
+const RATIONALE_LINE = /^\(\s*(\d{1,3})\s*\)\s*(.+?)\s+[-–—]\s+(.*)$/;
 
 const UNVERIFIED = 'AI_DETECTED_UNVERIFIED';
 
@@ -460,27 +474,66 @@ export class EvidenceScoreService {
     return lines.join('\n');
   }
 
+  /**
+   * The subject the comparables are being compared TO. Without the locality the model cannot judge
+   * whether a sale is local to the subject, and without the two land values it cannot size the
+   * contended gap — both are rubric inputs, so omitting them silently disabled those rules and left
+   * the model to mine the attached notice PDF for figures already sitting in our own tables.
+   */
   private buildSubjectSection({ disputeCase }: EvidenceScoreInputs): string[] {
     const prop = disputeCase.property;
     const notice = disputeCase.valuation_notice;
 
+    // notice.* carry a numericTransformer and arrive as numbers; the dispute_cases columns do not,
+    // so node-postgres hands those back as strings.
+    const assessedLandValue =
+      notice?.assessed_land_value ?? this.toNumberOrNull(disputeCase.original_assessed_value);
+
     return [
       '',
       '## Subject property',
+      'The property the objection concerns — the subject every comparable sale is being compared to.',
+      '"assessed_land_value" is the VG figure under objection at the relevant valuation date;',
+      '"prior_land_value" is the previous year\'s figure, so the two together show the uplift the',
+      'client is reacting to. "contended_land_value" is THIS FIRM\'S OWN figure, computed as the',
+      'median comparable land rate x site area — it is derived from the comparable sales below and is',
+      'therefore NOT independent corroboration of them; do not count it twice. A contended value at or',
+      'above the assessed value undercuts a value-too-high objection outright.',
+      '"vg_recorded_area_sqm" is the area the VG has on record; "site_area_sqm" is the area we',
+      'resolved from the Land Value Search or manual entry. A material difference between the two is',
+      'itself evidence for an area or dimensions ground, independent of any sale.',
+      'Any of these may be null, which means not recorded — never zero.',
       '```json',
       JSON.stringify(
         {
+          address: prop?.address ?? null,
+          locality: prop?.suburb ?? null,
+          post_code: prop?.postcode ?? null,
+          state: prop?.state ?? null,
+          pid: prop?.pid ?? null,
+          lot_dp: prop?.lot_dp ?? null,
+          dimensions: prop?.dimensions ?? null,
           site_area_sqm: this.resolveSiteAreaSqm(prop),
+          vg_recorded_area_sqm: notice?.land_area_vg_sqm ?? null,
           zoning: prop?.zoning ?? null,
           relevant_valuation_date: notice?.valuation_date
             ? new Date(notice.valuation_date).toISOString().split('T')[0]
             : null,
+          assessed_land_value: assessedLandValue,
+          prior_land_value: notice?.prior_land_value ?? null,
+          contended_land_value: this.toNumberOrNull(disputeCase.internal_assessed_value),
         },
         null,
         2,
       ),
       '```',
     ];
+  }
+
+  private toNumberOrNull(value: number | string | null | undefined): number | null {
+    if (value === null || value === undefined) return null;
+    const n = Number(value);
+    return Number.isFinite(n) ? n : null;
   }
 
   // Mirrors ValuationReportService.resolveSiteAreaSqm: the Land Value Search extraction is the
@@ -651,8 +704,28 @@ export class EvidenceScoreService {
       '',
       'Judge the overall evidentiary strength of this case using the rubric in the skill above.',
       'Return a single JSON object with exactly the keys "evidence_strength_score" (integer 0-100) and',
-      '"rationale" (one sentence, max 300 characters). Wrap it in a ```json code fence and return only',
-      'the JSON — no other text or commentary.',
+      '"rationale". Wrap it in a ```json code fence and return only the JSON — no other text or',
+      'commentary.',
+      '',
+      '"rationale" is a single string of EXACTLY FOUR newline-separated lines, in this order, with',
+      'these labels spelled exactly as shown:',
+      '  (<points>) Comparables - <one sentence>',
+      '  (<points>) Reason For Objection - <one sentence>',
+      '  (<points>) Supporting Evidence - <one sentence>',
+      '  (<points>) Documents - <one sentence>',
+      'Each <points> is a non-negative integer in round brackets — never a range, a percentage or N/A.',
+      'Each sentence is at most 200 characters and names concrete specifics — counts, dates, rates,',
+      'instrument names, what is confirmed and what is outstanding.',
+      '',
+      'THE FOUR NUMBERS MUST ADD UP TO "evidence_strength_score" EXACTLY. Add them and check before',
+      'returning. Derive the score first, holistically, using the rubric\'s four steps, bands and',
+      'ceilings — then apportion that score across the four groups according to how much each',
+      'contributed. Do NOT score the groups independently and total them: the ceilings are properties',
+      'of the whole case, and corroboration between groups is worth more than the parts alone.',
+      'There are no per-group maximums. A group that contributed nothing takes (0), and its sentence',
+      'must say whether it was not needed for the ground pleaded or was needed and is missing — the',
+      'first costs the case nothing, since the points simply sit in the groups that earned them.',
+      '',
       'Remember: a missing dataset scores low for this case. Never rescale the remaining datasets to',
       'compensate, and never return null or a value outside 0-100.',
     ];
@@ -726,12 +799,80 @@ export class EvidenceScoreService {
     }
 
     const score = this.clampScore(Math.round(rawScore), disputeCaseId);
-    const rationale =
-      typeof record['rationale'] === 'string' && record['rationale'].trim() !== ''
-        ? this.truncate(record['rationale'].trim(), MAX_RATIONALE_CHARS)
-        : null;
+    const rationale = this.normaliseRationale(record['rationale'], disputeCaseId, score);
 
     return { score, rationale };
+  }
+
+  /**
+   * Coerces the rationale to the four-line per-group string the UI parses.
+   *
+   * Deliberately tolerant: the score is the load-bearing value, so a rationale that arrives in the
+   * wrong shape is logged and kept as-is rather than discarded — a reviewer reading a malformed
+   * breakdown is better served than one shown nothing. Models sometimes emit the four lines as a JSON
+   * array instead of a newline-joined string, so that form is accepted and joined.
+   */
+  private normaliseRationale(value: unknown, disputeCaseId: string, score: number): string | null {
+    const raw = Array.isArray(value)
+      ? value.filter((line): line is string => typeof line === 'string').join('\n')
+      : typeof value === 'string'
+        ? value
+        : '';
+
+    const text = raw.trim();
+    if (text === '') return null;
+
+    // Normalise escaped newlines: a model that writes "\\n" inside a JSON string yields a literal
+    // backslash-n here, which would render as one unbroken line in the dialog.
+    const normalised = text.replace(/\\n/g, '\n').trim();
+
+    const missing = RATIONALE_LABELS.filter((label) => !normalised.includes(label));
+    if (missing.length > 0) {
+      this.logger.warn(
+        JSON.stringify({
+          context: 'EvidenceScore.rationale_off_format',
+          disputeCaseId,
+          missingLabels: missing,
+          lineCount: normalised.split('\n').length,
+          rationale: normalised,
+        }),
+      );
+    }
+
+    this.checkRationaleSum(normalised, disputeCaseId, score);
+
+    return this.truncate(normalised, MAX_RATIONALE_CHARS);
+  }
+
+  /**
+   * The four per-group points are required to add up to the score, so a mismatch means the model
+   * broke a stated rule and the breakdown a reviewer reads no longer explains the headline.
+   *
+   * Logged, never corrected: with a mismatch there is no way to tell whether the score or the lines
+   * are wrong, and rewriting either would present a guess as the model's judgement. The score stays
+   * authoritative because it is what drives the KPI tile; the UI flags the discrepancy separately.
+   */
+  private checkRationaleSum(rationale: string, disputeCaseId: string, score: number): void {
+    const points: number[] = [];
+    for (const line of rationale.split('\n')) {
+      const match = RATIONALE_LINE.exec(line.trim());
+      if (match) points.push(Number(match[1]));
+    }
+
+    if (points.length !== RATIONALE_LABELS.length) return; // already reported as off-format
+
+    const sum = points.reduce((total, n) => total + n, 0);
+    if (sum !== score) {
+      this.logger.warn(
+        JSON.stringify({
+          context: 'EvidenceScore.rationale_sum_mismatch',
+          disputeCaseId,
+          score,
+          sum,
+          points,
+        }),
+      );
+    }
   }
 
   private coerceFiniteNumber(value: unknown): number | null {
