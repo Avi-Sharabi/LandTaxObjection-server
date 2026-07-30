@@ -1,0 +1,13 @@
+{
+  "name": "qa-login-smoke",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Standalone Puppeteer smoke check for the QA login flow — isolated from the main app's dependencies.",
+  "scripts": {
+    "test": "node qa-login-check.js"
+  },
+  "dependencies": {
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer": "^25.0.4"
+  }
+}
