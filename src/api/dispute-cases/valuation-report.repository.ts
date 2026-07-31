@@ -39,6 +39,9 @@ export class ValuationReportRepository {
   // update(), not save(entity): the analyze-ai pipeline writes other columns on this row around the
   // same time (markValuated, updateInternalAssessedValue), and a fetched-then-saved entity would
   // clobber them.
+  //
+  // `rationale` carries the per-group breakdown and the recommendations in one string — see
+  // EvidenceScoreService.serialiseRationale().
   async updateEvidenceScore(id: string, score: number | null, rationale: string | null): Promise<void> {
     await this.disputeCaseRepo.update(id, {
       evidence_strength_score: score,
@@ -54,6 +57,19 @@ export class ValuationReportRepository {
       where: { dispute_case_id: disputeCaseId },
       order: { contract_date: 'DESC' },
       take: 10,
+    });
+  }
+
+  // Every sale on file, unsampled, for EvidenceScoreService. The evidence score judges the strength
+  // of the whole comparables set, so a 23-sale case must not have 13 of those sales invisible to it
+  // — and the IQR fence in classifyComparablesForMedian is only a meaningful statistical statement
+  // over the full population. Now that the score also emits recommendations, a truncated set turns a
+  // reporting inaccuracy into wrong advice: "add two more comparable sales" on a case that already
+  // has twenty-three.
+  getAllComparables(disputeCaseId: string): Promise<ComparableSale[]> {
+    return this.comparableSaleRepo.find({
+      where: { dispute_case_id: disputeCaseId },
+      order: { contract_date: 'DESC' },
     });
   }
 

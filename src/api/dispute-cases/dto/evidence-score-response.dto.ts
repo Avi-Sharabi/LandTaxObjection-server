@@ -12,6 +12,15 @@ export class EvidenceScoreResponseDto {
   })
   evidence_strength_score: number | null;
 
-  @ApiPropertyOptional({ nullable: true, description: 'One-sentence explanation of the score.' })
+  @ApiPropertyOptional({
+    nullable: true,
+    description:
+      'Two sections in one string. First the per-group breakdown of the score: four newline-separated ' +
+      'lines, "(points) Label - explanation", whose points add up to evidence_strength_score. Then, ' +
+      'after a "Recommendations:" marker line, the evidence still to obtain — one line per item, ' +
+      '"[+points] Label - action", ordered largest gain first. The marker reads "Recommendations: ' +
+      'none" when a run found nothing material left to improve; its absence entirely means no run has ' +
+      'produced recommendations for this case, which is a different claim.',
+  })
   evidence_strength_rationale: string | null;
 }

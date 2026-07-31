@@ -57,6 +57,8 @@ export class DisputeCaseResponseDto {
   @ApiPropertyOptional()
   evidence_strength_score: number | null;
 
+  // Per-group breakdown of the score, then the recommendations after a "Recommendations:" marker line.
+  // See EvidenceScoreResponseDto for the format.
   @ApiPropertyOptional()
   evidence_strength_rationale: string | null;
 

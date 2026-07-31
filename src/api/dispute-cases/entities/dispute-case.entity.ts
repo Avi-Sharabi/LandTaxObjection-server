@@ -148,6 +148,9 @@ export class DisputeCase {
   @Column({ type: 'smallint', nullable: true })
   evidence_strength_score: number | null;
 
+  // Carries the four-line per-group breakdown AND, after a "Recommendations:" marker line, the
+  // evidence still to obtain. One column rather than two so the feature needed no migration; see
+  // EvidenceScoreService.serialiseRationale() for the exact format both ends parse.
   @Column({ type: 'text', nullable: true })
   evidence_strength_rationale: string | null;
 

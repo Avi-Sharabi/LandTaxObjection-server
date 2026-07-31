@@ -599,8 +599,9 @@ export class DisputeCasesController {
     summary: 'Recompute the case-level evidence strength score',
     description:
       "Re-runs the dedicated Claude scoring call over the case's current comparable sales, ticked " +
-      'supporting-evidence issues and ticked objection grounds. Returns nulls — leaving any ' +
-      'previously stored score untouched — when the case has no scorable data or the scoring call fails.',
+      'supporting-evidence issues and ticked objection grounds. The returned rationale carries both ' +
+      'the per-group breakdown and the recommendations for raising the score. Returns nulls — leaving ' +
+      'any previously stored score untouched — when the case has no scorable data or the call fails.',
   })
   @ApiParam({ name: 'id', description: 'Dispute case UUID' })
   @ApiResponse({ status: 200, type: EvidenceScoreResponseDto })
