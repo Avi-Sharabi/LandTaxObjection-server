@@ -43,6 +43,13 @@ import { AiPropertySearchService } from './ai-property-search.service';
 import { ValuationReportService } from './valuation-report.service';
 import { ValuationReportRepository } from './valuation-report.repository';
 import { EvidenceScoreService } from './evidence-score.service';
+import { EvidenceSnapshotService } from './evidence-snapshot.service';
+import { EvidenceScoreReportService } from './evidence-score-report.service';
+import { EvidenceScoreReportQueueService } from './evidence-score-report-queue.service';
+import {
+  EvidenceScoreReportProcessor,
+  EVIDENCE_SCORE_REPORT_QUEUE,
+} from './evidence-score-report.processor';
 import { ValuationCtxCacheService } from './valuation-ctx-cache.service';
 import { ComparableSale } from '../comparables/entities/comparable-sale.entity';
 import { DisputeEvidenceIssue } from '../supporting-evidence/entities/dispute-evidence-issue.entity';
@@ -56,6 +63,10 @@ import { DisputeEvidenceIssue } from '../supporting-evidence/entities/dispute-ev
     ComparablesModule,
     SupportingEvidenceModule,
     BullModule.registerQueue({ name: ANALYZE_AI_QUEUE }),
+    // Its own queue rather than a job type on ANALYZE_AI_QUEUE — see the note on
+    // EvidenceScoreReportProcessor: that queue is concurrency 1 holding the whole pipeline, and it
+    // already uses the dispute case id as its jobId, so the ids would collide.
+    BullModule.registerQueue({ name: EVIDENCE_SCORE_REPORT_QUEUE }),
     MsGraphModule,
     McpModule,
     AuditLogModule,
@@ -88,7 +99,12 @@ import { DisputeEvidenceIssue } from '../supporting-evidence/entities/dispute-ev
     AiPropertySearchService,
     ValuationReportService,
     ValuationReportRepository,
+    // Loads and serialises the evidence record once for both the score and the report that explains it.
+    EvidenceSnapshotService,
     EvidenceScoreService,
+    EvidenceScoreReportService,
+    EvidenceScoreReportQueueService,
+    EvidenceScoreReportProcessor,
     ValuationCtxCacheService,
     DisputeIntakeOrchestrator,
     XpmClientHandler,

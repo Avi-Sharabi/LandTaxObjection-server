@@ -15,6 +15,7 @@ import { getLandTaxYearFromValuationDate } from 'src/common/utils/land-tax-year.
 import { computeMedian } from 'src/common/utils/median.util';
 import { classifyComparablesForMedian } from 'src/common/utils/comparable-quarantine.util';
 import { assignComparableRefs, overrideComparableSalePrice, ComparableRefMatch } from './valuation-report-comparables.util';
+import { findLeftoverArtifact, renderHtmlToReportPdf } from './report-pdf.util';
 import { DisputeObjectionReason } from './entities/dispute-objection-reason.entity';
 import { DisputeEvidenceIssue } from '../supporting-evidence/entities/dispute-evidence-issue.entity';
 import { ValuationNotice } from '../valuation-notices/entities/valuation-notice.entity';
@@ -641,42 +642,25 @@ export class ValuationReportService {
     return cloned;
   }
 
-  // Defense-in-depth against both unresolved Nunjucks variables (a template bug) and
-  // LLM-output artifacts (e.g. a case's ground `analysis` text carrying an embedded
-  // instruction that talks the model into echoing placeholder tokens) — a report
-  // containing any of these must never reach a client.
-  private static readonly LEFTOVER_ARTIFACT_PATTERN =
-    /\[[A-Z_]+\]|\{\{.*?\}\}|\bTODO\b|\bTBD\b|\bXXX\b|lorem ipsum/i;
-
+  // The guard pattern itself lives in ./report-pdf.util so the Evidence Score Report cannot end up
+  // with a weaker copy of it. This method keeps the log context and the exception type, which are
+  // per-report.
   private assertNoLeftoverArtifacts(html: string, disputeCaseId: string): void {
-    const match = html.match(ValuationReportService.LEFTOVER_ARTIFACT_PATTERN);
-    if (!match) return;
+    const matched = findLeftoverArtifact(html);
+    if (!matched) return;
     this.logger.error(JSON.stringify({
       context: 'ValuationReport.leftover_artifact_detected',
       disputeCaseId,
-      matched: match[0],
+      matched,
     }));
     throw new ValuationReportFailedException(
       `Valuation report generation produced a leftover template/placeholder artifact ` +
-      `("${match[0]}") — refusing to deliver a report containing unresolved tokens.`,
+      `("${matched}") — refusing to deliver a report containing unresolved tokens.`,
     );
   }
 
   private async renderToPdf(html: string): Promise<Buffer> {
-    const browser = await this.puppeteerService.launchForPdf();
-    try {
-      const page = await browser.newPage();
-      await page.setContent(html, { waitUntil: 'load', timeout: 30000 });
-      const pdf = await page.pdf({
-        format: 'Letter',
-        printBackground: true,
-        margin: { top: '25mm', right: '19mm', bottom: '22mm', left: '19mm' },
-      });
-      await page.close().catch(() => {});
-      return Buffer.from(pdf);
-    } finally {
-      await browser.close().catch(() => {});
-    }
+    return renderHtmlToReportPdf(html, await this.puppeteerService.launchForPdf());
   }
 
   private buildUserMessage(

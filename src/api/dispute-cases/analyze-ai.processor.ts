@@ -19,6 +19,7 @@ import {
 } from './valuation-report.service';
 import { ValuationCtxCacheService } from './valuation-ctx-cache.service';
 import { EvidenceScoreService } from './evidence-score.service';
+import { EvidenceScoreReportService } from './evidence-score-report.service';
 import { DisputeAiSnapshot } from './entities/dispute-ai-snapshot.entity';
 import { DisputeCasesService } from './dispute-cases.service';
 import { parseNswAddressComponents } from 'src/common/utils/address-parser.util';
@@ -35,7 +36,12 @@ export interface AnalyzeAiJobResult {
   status: 'completed';
 }
 
-@Processor(ANALYZE_AI_QUEUE, { concurrency: 1, lockDuration: 1_800_000 })
+// lockDuration must outlast the worst legitimate run of everything below, because a lock that expires
+// mid-job is not a slow job — BullMQ marks it stalled and hands it to another worker, producing a
+// DUPLICATE pipeline run. 30 minutes was already exactly ValuationReportService's own Anthropic
+// timeoutMs with no margin for its retry, the Puppeteer render or the evidence score call; adding the
+// Evidence Score Report step (a 20-minute timeoutMs of its own) makes 90 minutes the honest figure.
+@Processor(ANALYZE_AI_QUEUE, { concurrency: 1, lockDuration: 5_400_000 })
 export class AnalyzeAiProcessor extends WorkerHost {
   private readonly logger = new Logger(AnalyzeAiProcessor.name);
 
@@ -47,6 +53,7 @@ export class AnalyzeAiProcessor extends WorkerHost {
     private readonly aiPropertySearchService: AiPropertySearchService,
     private readonly valuationReportService: ValuationReportService,
     private readonly evidenceScoreService: EvidenceScoreService,
+    private readonly evidenceScoreReportService: EvidenceScoreReportService,
     private readonly ctxCacheService: ValuationCtxCacheService,
     private readonly disputeCasesService: DisputeCasesService,
     @InjectRepository(DisputeAiSnapshot)
@@ -362,6 +369,37 @@ export class AnalyzeAiProcessor extends WorkerHost {
               disputeCaseId,
               error:
                 scoreErr instanceof Error ? scoreErr.message : String(scoreErr),
+            }),
+          );
+        }
+
+        // Evidence Score Report PDF. Runs AFTER the score above and never in parallel with it: the
+        // report reads the PERSISTED score, so starting it early would render the previous run's
+        // figure. Called directly rather than through EVIDENCE_SCORE_REPORT_QUEUE — this processor is
+        // already a background worker, and a second hop would add a second lock to get wrong.
+        //
+        // Non-fatal, and a SIBLING try/catch for the same reason as the score above. Sharper here: this
+        // job carries attempts: 3, so throwing would re-run the entire 30-60 minute pipeline — the
+        // ePlanning scrapes, comparable generation, the objection-reason browser run, the valuation
+        // report and the score — to retry a PDF render, and would mark a case `failed` in
+        // GET analyze-ai/queue that in fact succeeded at everything a user cares about.
+        try {
+          await this.evidenceScoreReportService.generate(disputeCaseId);
+          this.logger.log(
+            JSON.stringify({
+              context: 'ANALYZE_AI.evidence_score_report_done',
+              jobId: job.id,
+              disputeCaseId,
+            }),
+          );
+        } catch (reportErr: unknown) {
+          this.logger.error(
+            JSON.stringify({
+              context: 'ANALYZE_AI.evidence_score_report_failed',
+              jobId: job.id,
+              disputeCaseId,
+              error:
+                reportErr instanceof Error ? reportErr.message : String(reportErr),
             }),
           );
         }

@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{{ meta.headline_address | default("Evidence Score Report", true) }}</title>
+<style>
+/* ============================================================
+   NSW LAND TAX DISPUTE — EVIDENCE SCORE REPORT
+   Shares the design system of the objection/valuation report so the two read as
+   one family. Palette, type scale, table rules and status classes are identical;
+   the only additions are the score hero and the per-group share bars.
+     navy   #1F3864   steel blue #2E75B6
+     green  fill #E2EFDA  text #375623  border #70AD47
+     red    fill #FCE4D6  text #9C0006
+     amber  fill #FFF3CD  text #7B4F00
+     blue   fill #D6E4F0  text #1F3864
+     border #CCCCCC    body text #222222
+   ============================================================ */
+
+@page {
+  /* MUST match REPORT_PDF_OPTIONS in src/api/dispute-cases/report-pdf.util.ts —
+     Puppeteer's own options win, so a divergence means this rule is describing a
+     page that is not being produced. */
+  size: Letter;
+  margin: 25mm 19mm 22mm 19mm;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  font-family: Arial, "Liberation Sans", "Helvetica Neue", Helvetica, sans-serif;
+  font-size: 10.5pt;
+  line-height: 1.34;
+  color: #222222;
+}
+
+p { margin: 0 0 9pt 0; }
+strong, b { font-weight: 700; }
+
+/* ---------- COVER ---------- */
+.cover { page-break-after: always; }
+.cover-spacer { height: 5mm; }
+
+.title-banner {
+  background: #1F3864;
+  color: #ffffff;
+  text-align: center;
+  padding: 11pt 14pt 13pt 14pt;
+}
+.title-banner .t1 { font-size: 25pt; font-weight: 700; letter-spacing: .5pt; line-height: 1.12; }
+.title-banner .t2 { font-size: 16pt; font-weight: 700; line-height: 1.18; margin-top: 2pt; }
+.title-banner .t3 { font-size: 11.5pt; font-weight: 700; line-height: 1.2; margin-top: 2pt; }
+
+.cover-address {
+  color: #1F3864;
+  font-size: 17pt;
+  font-weight: 700;
+  text-align: center;
+  margin: 16pt 6pt 0 6pt;
+  line-height: 1.2;
+}
+.cover-sub {
+  color: #555555;
+  font-size: 11pt;
+  text-align: center;
+  margin-top: 9pt;
+}
+
+/* ---------- SCORE HERO ---------- */
+.score-hero {
+  margin: 15pt 0 4pt 0;
+  padding: 12pt 14pt;
+  background: #D6E4F0;
+  text-align: center;
+}
+.score-hero .figure { color: #1F3864; font-size: 34pt; font-weight: 700; line-height: 1.05; }
+.score-hero .band { color: #1F3864; font-size: 14pt; font-weight: 700; margin-top: 3pt; }
+.score-hero .range { color: #555555; font-size: 9.5pt; margin-top: 2pt; }
+.score-hero.unscored .figure { font-size: 20pt; }
+
+.band-meaning {
+  margin: 0 0 12pt 0;
+  padding: 8pt 11pt;
+  background: #F2F2F2;
+  border-left: 3pt solid #2E75B6;
+  font-size: 10pt;
+  line-height: 1.32;
+}
+
+/* ---------- CALLOUT BOXES ---------- */
+.callout {
+  margin: 14pt 0;
+  padding: 8pt 11pt;
+  font-size: 10pt;
+  line-height: 1.32;
+}
+.callout.green { background: #E2EFDA; color: #375623; border: 1px solid #70AD47; font-weight: 700; }
+.callout.red   { background: #FCE4D6; color: #9C0006; font-weight: 700; }
+.callout.blue  { background: #D6E4F0; color: #1F3864; }
+.callout.amber { background: #FFF3CD; color: #7B4F00; font-weight: 700; }
+.callout .lead { font-weight: 700; }
+
+/* ---------- FOOTER CONFIDENTIALITY BANNER ---------- */
+.conf-banner {
+  background: #D6E4F0;
+  color: #1F3864;
+  font-weight: 700;
+  font-size: 9.5pt;
+  text-align: center;
+  padding: 6pt 8pt;
+  margin-top: 16pt;
+}
+
+/* ---------- SECTION & SUBSECTION HEADERS ---------- */
+h2.section {
+  color: #1F3864;
+  font-size: 15pt;
+  font-weight: 700;
+  margin: 18pt 0 7pt 0;
+  padding-bottom: 4pt;
+  border-bottom: 1.4pt solid #1F3864;
+  page-break-after: avoid;
+}
+h3.subsection {
+  color: #2E75B6;
+  font-size: 12.5pt;
+  font-weight: 700;
+  margin: 16pt 0 6pt 0;
+  page-break-after: avoid;
+}
+h4.minor {
+  color: #222222;
+  font-size: 10.5pt;
+  font-weight: 700;
+  margin: 10pt 0 4pt 0;
+  page-break-after: avoid;
+}
+
+/* ---------- TABLES ---------- */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 4pt 0 8pt 0;
+  font-size: 9.7pt;
+}
+th, td {
+  border: 0.75pt solid #CCCCCC;
+  padding: 4.5pt 6.5pt;
+  text-align: left;
+  vertical-align: top;
+}
+thead th {
+  background: #1F3864;
+  color: #ffffff;
+  font-weight: 700;
+  font-size: 9.7pt;
+}
+/* repeat header row on each page for long tables */
+thead { display: table-header-group; }
+
+td.lbl, th.lbl {
+  background: #F2F2F2;
+  font-weight: 700;
+  color: #222222;
+  width: 33%;
+}
+.fact-table td:first-child { background: #F2F2F2; font-weight: 700; width: 33%; }
+
+.num   { font-weight: 700; color: #222222; }
+
+/* semantic conditional formatting */
+.v-strong { background: #FCE4D6; color: #9C0006; font-weight: 700; }
+.v-mod    { background: #FFF3CD; color: #7B4F00; font-weight: 700; }
+.v-pos    { background: #E2EFDA; color: #375623; font-weight: 700; }
+.txt-green { color: #375623; font-weight: 700; }
+.txt-red   { color: #9C0006; font-weight: 700; }
+.txt-amber { color: #7B4F00; font-weight: 700; }
+
+.emph-cell { background: #1F3864; color: #ffffff; font-weight: 700; }
+tr.emph-row td { background: #1F3864; color: #ffffff; font-weight: 700; }
+
+/* comparable sale excluded from the headline $/m² median (part-interest or statistical
+   outlier) — muted, not hidden, so the report stays transparent about what evidence existed */
+tr.quarantined-row td { background: #F2F2F2; color: #595959; }
+
+/* status pills (plain text) */
+.st-ok      { color: #375623; font-weight: 700; }
+.st-pending { color: #7B4F00; font-weight: 700; }
+.st-urgent  { color: #9C0006; font-weight: 700; }
+
+/* ---------- SHARE BARS (breakdown table) ---------- */
+.share-bar {
+  margin-top: 3pt;
+  height: 3pt;
+  background: #E7E7E7;
+}
+.share-fill { height: 3pt; background: #2E75B6; }
+
+ul.tight { margin: 4pt 0 9pt 0; padding-left: 18pt; }
+ul.tight li { margin-bottom: 3pt; }
+
+.note-strong { font-weight: 700; }
+.muted { color: #595959; }
+</style>
+</head>
+<body>
+
+{# =========================== MACROS =========================== #}
+{% macro fact_table(rows) -%}
+{% if rows and rows.length -%}
+<table class="fact-table">
+  {% for r in rows %}
+  <tr>
+    <td>{{ r.label | default("-", true) }}</td>
+    <td>{{ r.value | default("-", true) | safe }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{%- else -%}
+<p>-</p>
+{%- endif %}
+{%- endmacro %}
+
+{% macro callout(text, kind) -%}
+<div class="callout {{ kind }}">{{ text | safe }}</div>
+{%- endmacro %}
+
+{% macro bullets(items) -%}
+{% if items and items.length -%}
+<ul class="tight">
+  {% for i in items %}<li>{{ i | safe }}</li>{% endfor %}
+</ul>
+{%- else -%}
+<p class="muted">None identified.</p>
+{%- endif %}
+{%- endmacro %}
+
+{# =========================== COVER =========================== #}
+<div class="cover">
+  <div class="cover-spacer"></div>
+  <div class="title-banner">
+    <div class="t1">{{ meta.title_line1 | default("NSW LAND TAX DISPUTE", true) }}</div>
+    <div class="t2">{{ meta.title_line2 | default("EVIDENCE SCORE REPORT", true) }}</div>
+    {% if meta.title_line3 %}<div class="t3">{{ meta.title_line3 }}</div>{% endif %}
+  </div>
+
+  <div class="cover-address">{{ meta.headline_address | default("-", true) }}</div>
+  <div class="cover-sub">Report date: {{ meta.report_date | default("-", true) }} | Case reference: {{ meta.case_reference | default("-", true) }}</div>
+
+  <div class="score-hero{{ ' unscored' if score.not_scorable else '' }}">
+    <div class="figure">{{ score.display | default("-", true) }}</div>
+    <div class="band">{{ score.band_label | default("-", true) }}</div>
+    {% if score.band_range_display %}<div class="range">Band range {{ score.band_range_display }}</div>{% endif %}
+  </div>
+
+  {% if key_finding %}{{ callout("KEY FINDING: " + key_finding, "green") }}{% endif %}
+
+  {{ fact_table(cover_facts) }}
+
+  {% if meta.confidentiality %}<div class="conf-banner">{{ meta.confidentiality }}</div>{% endif %}
+</div>
+
+{# =========================== 1. SCORE DASHBOARD =========================== #}
+<h2 class="section">1. {{ "EVIDENCE ASSESSMENT — NOT YET SCORABLE" if score.not_scorable else "SCORE DASHBOARD" }}</h2>
+
+{% if dashboard.intro %}<p>{{ dashboard.intro | safe }}</p>{% endif %}
+
+{% if score.not_scorable %}
+  {{ callout(score.not_scorable_lead, "amber") }}
+  <h3 class="subsection">1.1 Prerequisites for an Evidence Score</h3>
+  <p>An evidence strength score is only meaningful once there is material to assess. At least one of the following must be present on the case.</p>
+  {% if prerequisites and prerequisites.length %}
+  <table>
+    <thead><tr><th style="width:46%">Prerequisite</th><th style="width:27%">Currently on file</th><th>Status</th></tr></thead>
+    <tbody>
+    {% for p in prerequisites %}
+      <tr>
+        <td class="lbl">{{ p.clause | default("-", true) }}</td>
+        <td>{{ p.current | default("-", true) }}</td>
+        <td class="{{ p.status_class | default('') }}">{{ p.status | default("-", true) }}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p>-</p>
+  {% endif %}
+{% else %}
+  <div class="band-meaning">
+    <span class="note-strong">{{ score.band_label | default("-", true) }} ({{ score.band_range_display | default("-", true) }}):</span>
+    {{ score.band_description | default("-", true) }}
+  </div>
+
+  <h3 class="subsection">1.1 Breakdown by Evidence Group</h3>
+  {% if dashboard.rows and dashboard.rows.length %}
+  <table>
+    <thead><tr>
+      <th style="width:20%">Evidence Group</th><th style="width:9%">Points</th>
+      <th style="width:16%">Share of Score</th><th>What the Evidence Shows</th>
+    </tr></thead>
+    <tbody>
+    {% for r in dashboard.rows %}
+      <tr>
+        <td class="lbl">{{ r.label | default("-", true) }}</td>
+        <td class="{{ r.points_class | default('num') }}">{{ r.points_display | default("-", true) }}</td>
+        <td>
+          {{ r.share_display | default("-", true) }}
+          <div class="share-bar"><div class="share-fill" style="width:{{ r.share_pct | default(0) }}%"></div></div>
+        </td>
+        <td>{{ r.explanation | default("-", true) | safe }}</td>
+      </tr>
+    {% endfor %}
+      <tr class="emph-row">
+        <td>Total</td><td>{{ dashboard.total_display | default("-", true) }}</td>
+        <td colspan="2">Overall evidence strength score: {{ score.display | default("-", true) }}</td>
+      </tr>
+    </tbody>
+  </table>
+  {% if dashboard.sum_mismatch %}
+    {{ callout(dashboard.sum_mismatch_note, "amber") }}
+  {% endif %}
+  {% elif dashboard.prose %}
+  <p>{{ dashboard.prose | safe }}</p>
+  {% else %}
+  <p>-</p>
+  {% endif %}
+
+  {% if dashboard.commentary %}
+  <h3 class="subsection">1.2 Reading the Breakdown</h3>
+  <p>{{ dashboard.commentary | safe }}</p>
+  {% endif %}
+{% endif %}
+
+{# =========================== 2. WHAT THIS SCORE MEANS =========================== #}
+<h2 class="section">2. WHAT THIS SCORE MEANS</h2>
+{% if band_narrative.what_it_means and band_narrative.what_it_means.length %}
+  {% for para in band_narrative.what_it_means %}<p>{{ para | safe }}</p>{% endfor %}
+{% else %}
+<p>-</p>
+{% endif %}
+
+<h3 class="subsection">2.1 What This Score Does Not Measure</h3>
+{{ bullets(band_narrative.out_of_scope) }}
+
+{# =========================== 3. EVIDENCE INVENTORY =========================== #}
+<h2 class="section">3. EVIDENCE INVENTORY</h2>
+
+<h3 class="subsection">3.1 Comparable Sales</h3>
+{% if inventory.comparables_note %}<p>{{ inventory.comparables_note | safe }}</p>{% endif %}
+{% if inventory.comparables and inventory.comparables.length %}
+<table>
+  <thead><tr>
+    <th style="width:5%">Ref</th><th style="width:23%">Address</th><th style="width:9%">Area m²</th>
+    <th style="width:8%">Zone</th><th style="width:11%">Sale Price</th><th style="width:11%">Adj. Land Value</th>
+    <th style="width:9%">Adj. $/m²</th><th style="width:9%">Contract</th><th>Status</th>
+  </tr></thead>
+  <tbody>
+  {% for c in inventory.comparables %}
+    <tr class="{{ c.row_class | default('') }}">
+      <td class="num">{{ c.ref | default("-", true) }}</td>
+      <td>{{ c.address | default("-", true) }}</td>
+      <td>{{ c.area_display | default("-", true) }}</td>
+      <td>{{ c.zone | default("-", true) }}</td>
+      <td>{{ c.sale_price_display | default("-", true) }}</td>
+      <td>{{ c.adjusted_value_display | default("-", true) }}</td>
+      <td class="num">{{ c.rate_display | default("-", true) }}</td>
+      <td>{{ c.date | default("-", true) }}</td>
+      <td class="{{ c.status_class | default('') }}">{{ c.status | default("-", true) }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>{{ inventory.comparables_fallback | default("-", true) }}</p>
+{% endif %}
+
+<h3 class="subsection">3.2 Objection Grounds</h3>
+{% if inventory.grounds_note %}<p>{{ inventory.grounds_note | safe }}</p>{% endif %}
+{% if inventory.grounds and inventory.grounds.length %}
+<table>
+  <thead><tr>
+    <th style="width:7%">Ground</th><th style="width:29%">Basis</th><th style="width:10%">Selected</th>
+    <th style="width:22%">Verification</th><th>Notes</th>
+  </tr></thead>
+  <tbody>
+  {% for g in inventory.grounds %}
+    <tr>
+      <td class="num">{{ g.ground_number | default("-", true) }}</td>
+      <td>{{ g.label | default("-", true) }}</td>
+      <td>{{ g.selected | default("-", true) }}</td>
+      <td class="{{ g.verification_class | default('') }}">{{ g.verification_display | default("-", true) }}</td>
+      <td>{{ g.note | default("-", true) | safe }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>{{ inventory.grounds_fallback | default("-", true) }}</p>
+{% endif %}
+
+<h3 class="subsection">3.3 Supporting Evidence Issues</h3>
+{% if inventory.issues_note %}<p>{{ inventory.issues_note | safe }}</p>{% endif %}
+{% if inventory.issues and inventory.issues.length %}
+<table>
+  <thead><tr>
+    <th style="width:26%">Issue</th><th style="width:14%">Confidence</th>
+    <th style="width:24%">Verification</th><th>Documents Still To Obtain</th>
+  </tr></thead>
+  <tbody>
+  {% for i in inventory.issues %}
+    <tr>
+      <td class="lbl">{{ i.issue_type | default("-", true) }}</td>
+      <td>{{ i.confidence_display | default("-", true) }}</td>
+      <td class="{{ i.verification_class | default('') }}">{{ i.verification_display | default("-", true) }}</td>
+      <td>{{ i.documents_to_obtain | default("-", true) | safe }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>{{ inventory.issues_fallback | default("-", true) }}</p>
+{% endif %}
+
+<h3 class="subsection">3.4 Source Documents</h3>
+{% if inventory.documents_note %}<p>{{ inventory.documents_note | safe }}</p>{% endif %}
+{% if inventory.documents and inventory.documents.length %}
+<table>
+  <thead><tr><th style="width:42%">Document</th><th style="width:20%">Status</th><th>Note</th></tr></thead>
+  <tbody>
+  {% for d in inventory.documents %}
+    <tr>
+      <td class="lbl">{{ d.name | default("-", true) }}</td>
+      <td class="{{ d.status_class | default('') }}">{{ d.status | default("-", true) }}</td>
+      <td>{{ d.reason | default("-", true) }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>{{ inventory.documents_fallback | default("-", true) }}</p>
+{% endif %}
+
+{# =========================== 4-7. GROUP DEEP DIVES =========================== #}
+{% for g in group_deep_dives %}
+<h2 class="section">{{ loop.index + 3 }}. {{ g.heading | default("-", true) }}</h2>
+<div class="band-meaning">
+  <span class="note-strong">Contribution to score:</span> {{ g.points_display | default("-", true) }}
+  {% if g.share_display %} ({{ g.share_display }} of the score){% endif %}
+</div>
+{% if g.points_narrative %}<p>{{ g.points_narrative | safe }}</p>{% else %}<p>-</p>{% endif %}
+
+<h4 class="minor">What is working</h4>
+{{ bullets(g.strengths) }}
+
+<h4 class="minor">What is weak or unverified</h4>
+{{ bullets(g.weaknesses) }}
+
+<h4 class="minor">What would change this</h4>
+<p>{{ g.what_would_change_it | default("-", true) | safe }}</p>
+{% endfor %}
+
+{# =========================== 8. GAP ANALYSIS =========================== #}
+<h2 class="section">8. {{ "WHAT IS ABSENT" if score.not_scorable else "GAP ANALYSIS — WHY POINTS WERE NOT AWARDED" }}</h2>
+{% if gap_analysis and gap_analysis.length %}
+<table>
+  <thead><tr>
+    <th style="width:16%">Group</th><th style="width:28%">What Is Missing</th>
+    <th>Why It Matters To The Ground Pleaded</th><th style="width:17%">Severity</th>
+  </tr></thead>
+  <tbody>
+  {% for gap in gap_analysis %}
+    <tr>
+      <td class="lbl">{{ gap.group | default("-", true) }}</td>
+      <td>{{ gap.missing | default("-", true) | safe }}</td>
+      <td>{{ gap.why_it_matters | default("-", true) | safe }}</td>
+      <td class="{{ gap.severity_class | default('') }}">{{ gap.severity | default("-", true) }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p>No material evidentiary gap was identified for this case.</p>
+{% endif %}
+
+{# =========================== 9. UPLIFT ROADMAP =========================== #}
+<h2 class="section">9. {{ "WHAT TO GATHER FIRST" if score.not_scorable else "HOW TO RAISE THIS SCORE" }}</h2>
+{% if roadmap and roadmap.length %}
+<table>
+  <thead><tr>
+    <th style="width:6%">#</th><th style="width:26%">Action</th><th style="width:9%">Est. Lift</th>
+    <th style="width:16%">Group</th><th style="width:22%">How To Obtain It</th><th>What It Would Establish</th>
+  </tr></thead>
+  <tbody>
+  {% for r in roadmap %}
+    <tr>
+      <td class="num">{{ r.priority | default("-", true) }}</td>
+      <td>{{ r.action | default("-", true) | safe }}</td>
+      <td class="v-pos">{{ r.lift_display | default("-", true) }}</td>
+      <td>{{ r.group | default("-", true) }}</td>
+      <td>{{ r.how | default("-", true) | safe }}</td>
+      <td>{{ r.establishes | default("-", true) | safe }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{{ callout(roadmap_disclaimer, "blue") }}
+{% else %}
+<p>{{ roadmap_empty_note | default("-", true) | safe }}</p>
+{% endif %}
+
+{# =========================== 10. PROJECTED POSITION =========================== #}
+<h2 class="section">10. PROJECTED POSITION</h2>
+{% if not score.not_scorable and projected.rows and projected.rows.length %}
+{{ fact_table(projected.rows) }}
+{% endif %}
+<p>{{ projected.narrative | default("-", true) | safe }}</p>
+
+{# =========================== 11. BASIS AND LIMITATIONS =========================== #}
+<h2 class="section">11. BASIS AND LIMITATIONS</h2>
+{% if disclaimer_paragraphs and disclaimer_paragraphs.length %}
+  {% for para in disclaimer_paragraphs %}<p>{{ para | safe }}</p>{% endfor %}
+{% else %}
+<p>-</p>
+{% endif %}
+
+{% if meta.confidentiality %}<div class="conf-banner">{{ meta.confidentiality }}</div>{% endif %}
+
+</body>
+</html>

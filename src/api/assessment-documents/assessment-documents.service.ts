@@ -162,6 +162,51 @@ export class AssessmentDocumentsService {
     );
   }
 
+  /**
+   * Idempotent variant of createArtifactRecord() for a pipeline artifact that gets REGENERATED for
+   * the same case: one row per (dispute_case_id, document_name), with its file_path repointed at the
+   * newest blob.
+   *
+   * createArtifactRecord() appends unconditionally, which is right for per-run evidence artefacts —
+   * each screenshot and per-issue evidence PDF is a distinct document, and its returned id is wired
+   * into that run's dispute_evidence_issues / dispute_objection_reasons rows — and wrong for a report
+   * a user regenerates on demand: every press of the button would add another identical row to the
+   * Documents tab, with nothing in the list telling the reader which one is current.
+   *
+   * Matched on document_name, not file_path: the blob path is deterministic
+   * (analysis-reports/<caseId>/<name>.pdf) and uploadFile() overwrites in place, so the path is
+   * identical across regenerations and cannot distinguish them.
+   *
+   * Not a DB-level upsert: assessment_documents has no unique index on
+   * (dispute_case_id, document_name), and adding one would fail against the duplicate rows this
+   * method exists to stop creating. Two genuinely concurrent regenerations could therefore still both
+   * insert — cosmetic rather than wrong, since both write the same name and the same path, and every
+   * caller is already serialised (one click at a time; the report queue runs at concurrency 1).
+   *
+   * created_at ASC so a case that already carries duplicates converges on the OLDEST row instead of
+   * ping-ponging between them, and update() rather than save() so that created_at survives:
+   * findDocumentsForCase orders created_at DESC, and bumping it would reshuffle the Documents tab on
+   * every regeneration.
+   */
+  async upsertArtifactRecord(
+    clientId: string,
+    documentName: string,
+    filePath: string,
+    disputeCaseId: string,
+  ): Promise<AssessmentDocument> {
+    const existing = await this.assessmentDocumentsRepository.findOne({
+      where: { dispute_case_id: disputeCaseId, document_name: documentName },
+      order: { created_at: 'ASC' },
+    });
+
+    if (!existing) {
+      return this.createArtifactRecord(clientId, documentName, filePath, disputeCaseId);
+    }
+
+    await this.assessmentDocumentsRepository.update(existing.id, { file_path: filePath });
+    return { ...existing, file_path: filePath };
+  }
+
   async findForCase(
     disputeCaseId: string,
     extraDocumentId?: string | null,

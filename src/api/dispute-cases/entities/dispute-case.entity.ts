@@ -202,6 +202,12 @@ export class DisputeCase {
   @Column({ type: 'text', nullable: true })
   analysis_report_blob_path: string | null;
 
+  // Sibling of analysis_report_blob_path: the Evidence Score Report PDF, which explains
+  // evidence_strength_score and how to raise it. Null until the analyze-ai pipeline or a manual
+  // recompute has produced one. See EvidenceScoreReportService.
+  @Column({ type: 'text', nullable: true })
+  evidence_report_blob_path: string | null;
+
   @Column({ type: 'numeric', precision: 15, scale: 2, nullable: true })
   internal_assessed_value: number | null;
 

@@ -32,6 +32,13 @@ export class ValuationReportRepository {
     await this.disputeCaseRepo.update(id, { analysis_report_blob_path: blobPath });
   }
 
+  // Same update()-not-save() reasoning as updateEvidenceScore() below: the evidence-score-report job
+  // and a concurrent analyze-ai run both write columns on this row, and a fetched-then-saved entity
+  // would clobber the other's writes.
+  async updateEvidenceReportPath(id: string, blobPath: string): Promise<void> {
+    await this.disputeCaseRepo.update(id, { evidence_report_blob_path: blobPath });
+  }
+
   async updateInternalAssessedValue(id: string, value: number | null): Promise<void> {
     await this.disputeCaseRepo.update(id, { internal_assessed_value: value });
   }

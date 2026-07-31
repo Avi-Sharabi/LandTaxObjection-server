@@ -9,6 +9,7 @@ import {
   Delete,
   UseGuards,
   HttpCode,
+  Logger,
   Query,
   Version,
   ParseUUIDPipe,
@@ -50,6 +51,8 @@ import { AnalyzeAiEnqueueResponseDto, AnalyzeAiQueueResponseDto, AnalyzeAiStatus
 import { ValuationReportService } from './valuation-report.service';
 import { EvidenceScoreService } from './evidence-score.service';
 import { EvidenceScoreResponseDto } from './dto/evidence-score-response.dto';
+import { EvidenceScoreReportQueueService } from './evidence-score-report-queue.service';
+import { EvidenceScoreReportStatusDto } from './dto/evidence-score-report-status.dto';
 
 @ApiTags('dispute-cases')
 @Controller({
@@ -57,6 +60,8 @@ import { EvidenceScoreResponseDto } from './dto/evidence-score-response.dto';
   version: '1',
 })
 export class DisputeCasesController {
+  private readonly logger = new Logger(DisputeCasesController.name);
+
   constructor(
     private readonly disputeCasesService: DisputeCasesService,
     private readonly vgResponseMonitorScheduler: VGResponseMonitorScheduler,
@@ -65,6 +70,7 @@ export class DisputeCasesController {
     private readonly objectionReasonGeneratorService: ObjectionReasonGeneratorService,
     private readonly valuationReportService: ValuationReportService,
     private readonly evidenceScoreService: EvidenceScoreService,
+    private readonly evidenceScoreReportQueueService: EvidenceScoreReportQueueService,
   ) {}
 
   /**
@@ -601,7 +607,9 @@ export class DisputeCasesController {
       "Re-runs the dedicated Claude scoring call over the case's current comparable sales, ticked " +
       'supporting-evidence issues and ticked objection grounds. The returned rationale carries both ' +
       'the per-group breakdown and the recommendations for raising the score. Returns nulls — leaving ' +
-      'any previously stored score untouched — when the case has no scorable data or the call fails.',
+      'any previously stored score untouched — when the case has no scorable data or the call fails. ' +
+      'Also queues regeneration of the Evidence Score Report PDF, which appears in the case documents ' +
+      'list when it completes; poll GET /:id/evidence-score-report/status for that.',
   })
   @ApiParam({ name: 'id', description: 'Dispute case UUID' })
   @ApiResponse({ status: 200, type: EvidenceScoreResponseDto })
@@ -610,11 +618,53 @@ export class DisputeCasesController {
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<EvidenceScoreResponseDto> {
     const { score, rationale } = await this.evidenceScoreService.compute(id, 'manual');
+
+    // Enqueued AFTER compute() has returned, never in parallel with it: the report reads the
+    // PERSISTED score (see EvidenceScoreReportService.generate), so starting it early would render the
+    // previous run's figure. Enqueued even when `score` is null, because a null return does not mean
+    // the case has no score — compute() also returns null on a transient failure, leaving a
+    // previously-good persisted score in place that the report should still explain.
+    //
+    // Wrapped: the score is already written by this point, so a queue outage must not turn a recompute
+    // that genuinely succeeded into a 500.
+    let jobId: string | null = null;
+    try {
+      ({ jobId } = await this.evidenceScoreReportQueueService.enqueue(id));
+    } catch (err: unknown) {
+      this.logger.error(
+        JSON.stringify({
+          context: 'RecomputeEvidenceScore.report_enqueue_failed',
+          disputeCaseId: id,
+          error: err instanceof Error ? err.message : String(err),
+        }),
+      );
+    }
+
     return {
       dispute_case_id: id,
       evidence_strength_score: score,
       evidence_strength_rationale: rationale,
+      evidence_report_queued: jobId !== null,
+      evidence_report_job_id: jobId,
     };
+  }
+
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @ApiBearerAuth()
+  @Get(':id/evidence-score-report/status')
+  @ApiOperation({
+    summary: 'Get Evidence Score Report generation status',
+    description:
+      'Status of the latest Evidence Score Report generation job for this case. Returns status "none" ' +
+      'rather than 404 when no job exists, so a client can poll it unconditionally. The finished PDF ' +
+      'is retrieved from GET /assessment-documents?dispute_case_id={id} like any other case document.',
+  })
+  @ApiParam({ name: 'id', description: 'Dispute case UUID' })
+  @ApiResponse({ status: 200, type: EvidenceScoreReportStatusDto })
+  async evidenceScoreReportStatus(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<EvidenceScoreReportStatusDto> {
+    return this.evidenceScoreReportQueueService.getJobStatus(id);
   }
 
   @UseGuards(JwtAuthGuard, RolesGuard)
