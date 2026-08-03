@@ -5,6 +5,7 @@ import { PropertySalesConfig } from './property-sales.config';
 import { ArchiveStoreService } from './storage/archive-store.service';
 import { PsiBrowserService } from './shared/psi-browser.service';
 import { SourceDiscoveryService } from './discovery/source-discovery.service';
+import { PropertySalesDownloadService } from './property-sales-download.service';
 
 // KAN-241: NSW Property Sales weekly archive download.
 // Providers are added incrementally through the ticket's implementation
@@ -12,6 +13,12 @@ import { SourceDiscoveryService } from './discovery/source-discovery.service';
 // build/boot-verified in isolation) before any logic landed.
 @Module({
   imports: [ConfigModule],
-  providers: [PropertySalesConfig, ArchiveStoreService, PsiBrowserService, SourceDiscoveryService],
+  providers: [
+    PropertySalesConfig,
+    ArchiveStoreService,
+    PsiBrowserService,
+    SourceDiscoveryService,
+    PropertySalesDownloadService,
+  ],
 })
 export class PropertySalesModule {}
