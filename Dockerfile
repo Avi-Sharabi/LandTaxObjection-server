@@ -55,6 +55,13 @@ RUN PUPPETEER_SKIP_DOWNLOAD=1 npm ci --omit=dev
 # Create cache dir owned by node, then install Chrome as that user
 RUN mkdir -p /home/node/.cache/puppeteer \
     && chown -R node:node /home/node/.cache
+
+# KAN-241: local-disk root for downloaded NSW property-sales weekly
+# archives. Mount a host volume at this path in production/QA (see the
+# azure-vm-deploy-*.yml workflows) — without it, downloaded archives live
+# in the container's writable layer and are lost on every redeploy.
+RUN mkdir -p /data/psi-archives && chown -R node:node /data/psi-archives
+
 USER node
 RUN npx puppeteer browsers install chrome
 USER root

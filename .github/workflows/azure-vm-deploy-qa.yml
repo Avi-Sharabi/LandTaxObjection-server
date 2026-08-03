@@ -71,12 +71,19 @@ jobs:
             sudo touch /var/log/app/ormlogs.log
             sudo chmod 666 /var/log/app/ormlogs.log
 
+            # KAN-241: persist downloaded NSW property-sales archives across
+            # redeploys — without this volume they live in the container's
+            # writable layer and are lost every time this workflow runs.
+            sudo mkdir -p /var/lib/psi-archives
+            sudo chmod 777 /var/lib/psi-archives
+
             docker run -d \
               --name app \
               --restart always \
               -p 3000:3000 \
               --env-file /etc/app.env \
               -v /var/log/app/ormlogs.log:/app/ormlogs.log \
+              -v /var/lib/psi-archives:/data/psi-archives \
               "$IMAGE"
 
   migrate:

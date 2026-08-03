@@ -52,6 +52,36 @@ $ docker run -p 10000:10000 mcr.microsoft.com/azure-storage/azurite
 $ docker compose up -d
 ```
 
+## NSW Property Sales ingestion (KAN-241)
+
+Weekly-archive download for the NSW Valuer General's bulk Property Sales
+Information feed — `src/api/property-sales/`. Discovers every advertised
+weekly `.zip` (Puppeteer, headless + stealth), skips anything already held
+(ledger table `property_sales_archives`, keyed on source URL), and downloads
+the rest oldest-first to local disk. Download only — nothing here reads or
+writes `property_sales_raw`; a later ticket (KAN-242) parses and loads what
+this one downloads.
+
+**Disabled by default everywhere.** Set `PSI_DOWNLOAD_ENABLED=true` plus an
+absolute `PSI_ARCHIVE_ROOT` to turn it on. See
+`src/api/property-sales/property-sales.config.ts` for the full list of
+`PSI_*` env vars and their defaults (cron schedules, timeouts, size limits,
+retention policy). Both cron schedules
+(`PSI_DOWNLOAD_CRON_SCHEDULE`/`PSI_RETENTION_CRON_SCHEDULE`) accept any cron
+expression — use a short interval like `*/5 * * * *` for testing, then move
+to the weekly default.
+
+Admin-only endpoints (JWT + `admin` role), under `/api/v1/property-sales/`:
+`POST /downloads` (trigger a sweep — supports `dryRun`), `GET
+/downloads/:jobId/status`, `GET /archives` (paginated ledger listing), `POST
+/retention/run`.
+
+**Do not enable `PSI_DOWNLOAD_ENABLED` on the App Service QA target**
+(`azure-app-service-qa.yml`) — its filesystem is ephemeral, so downloaded
+archives would vanish on every restart. The VM-based `qa` and `prod`
+deploys (`azure-vm-deploy-*.yml`) mount a persistent host volume at
+`/data/psi-archives` for exactly this reason.
+
 ## Run tests
 
 ```bash
