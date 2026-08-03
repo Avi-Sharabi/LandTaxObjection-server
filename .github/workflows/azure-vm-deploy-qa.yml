@@ -110,15 +110,16 @@ jobs:
           DB_SSL:      ${{ github.ref == 'refs/heads/main' && secrets.DB_SSL_PROD      || github.ref == 'refs/heads/qa' && secrets.DB_SSL_QA      || secrets.DB_SSL_DEV }}
         run: npm run migration:run
 
-  qa-login-smoke:
+  qa-regression-smoke:
     needs: migrate
     runs-on: ubuntu-latest
     environment: qa
-    timeout-minutes: 5
+    timeout-minutes: 30
     env:
-      QA_FRONTEND_URL: https://qa.landtax.ymlgroup.com.au
-      QA_TEST_EMAIL: pol.imbing@ymlgroup.com.au
-      QA_TEST_PASSWORD: ${{ secrets.QA_TEST_PASSWORD }}
+      BASE_URL: https://qa.landtax.ymlgroup.com.au
+      LOGIN_EMAIL: pol.imbing@ymlgroup.com.au
+      LOGIN_PASSWORD: ${{ secrets.QA_TEST_PASSWORD }}
+      CI: true
     steps:
       - uses: actions/checkout@v4
 
@@ -132,6 +133,6 @@ jobs:
         working-directory: test/qa-smoke
         run: npm ci
 
-      - name: Run QA login smoke test (Puppeteer)
+      - name: Run QA regression suite (Puppeteer)
         working-directory: test/qa-smoke
         run: npm test
