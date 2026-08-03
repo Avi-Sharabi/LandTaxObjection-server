@@ -74,10 +74,13 @@ jobs:
             docker run -d \
               --name app \
               --restart always \
+              --log-opt max-size=10m \
+              --log-opt max-file=3 \
               -p 3000:3000 \
               --env-file /etc/app.env \
               -v /var/log/app/ormlogs.log:/app/ormlogs.log \
               "$IMAGE"
+            docker image prune -af --filter "until=24h" || true
 
   migrate:
     needs: deploy
