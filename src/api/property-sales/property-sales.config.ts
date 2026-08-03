@@ -165,6 +165,12 @@ export class PropertySalesConfig {
    * guarantee KAN-242's hand-off depends on.
    */
   readonly retentionAllowUnloaded: boolean;
+  /** Only consulted when retentionAllowUnloaded is true. */
+  readonly retentionUnloadedDays: number;
+  /** How long a quarantined file may sit in <archiveRoot>/quarantine before retention removes it. */
+  readonly quarantineRetentionDays: number;
+  /** How old an orphaned <archiveRoot>/staging/<runId>/ directory must be before retention reaps it. */
+  readonly stagingMaxAgeHours: number;
 
   constructor(config: ConfigService) {
     this.enabled = readBool(config, 'PSI_DOWNLOAD_ENABLED', false);
@@ -208,6 +214,9 @@ export class PropertySalesConfig {
     this.retentionDryRun = readBool(config, 'PSI_RETENTION_DRY_RUN', true);
     this.retentionDays = readInt(config, 'PSI_RETENTION_DAYS', 30, { min: 0, max: 3_650 });
     this.retentionAllowUnloaded = readBool(config, 'PSI_RETENTION_ALLOW_UNLOADED', false);
+    this.retentionUnloadedDays = readInt(config, 'PSI_RETENTION_UNLOADED_DAYS', 180, { min: 0, max: 3_650 });
+    this.quarantineRetentionDays = readInt(config, 'PSI_QUARANTINE_RETENTION_DAYS', 90, { min: 0, max: 3_650 });
+    this.stagingMaxAgeHours = readInt(config, 'PSI_STAGING_MAX_AGE_HOURS', 24, { min: 1, max: 720 });
   }
 
   private requireArchiveRoot(): string {

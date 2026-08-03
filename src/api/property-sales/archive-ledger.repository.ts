@@ -202,3 +202,63 @@ export async function reclaimStaleDownloading(
   );
   return rows.length;
 }
+
+export interface RetentionCandidate {
+  readonly id: string;
+  readonly sourceUrl: string;
+  readonly localPath: string;
+}
+
+/**
+ * Archives KAN-242 has finished with — `status='loaded'` past the
+ * configured retention window. This is the ONLY set retention deletes by
+ * default: a `downloaded` (not yet `loaded`) row is never selected here
+ * regardless of age, which is what makes retention a safe no-op for as
+ * long as KAN-242 does not exist yet.
+ */
+export async function findRetiredLoadedArchives(
+  queryRunner: QueryRunner,
+  retentionDays: number,
+): Promise<readonly RetentionCandidate[]> {
+  const rows: Array<{ id: string; source_url: string; local_path: string }> = await queryRunner.query(
+    `SELECT id, source_url, local_path
+     FROM property_sales_archives
+     WHERE status = 'loaded'
+       AND loaded_at < now() - ($1::int * interval '1 day')
+       AND local_path IS NOT NULL`,
+    [retentionDays],
+  );
+  return rows.map((r) => ({ id: r.id, sourceUrl: r.source_url, localPath: r.local_path }));
+}
+
+/**
+ * The `PSI_RETENTION_ALLOW_UNLOADED` escape hatch: `downloaded` archives
+ * old enough that an operator has decided disk pressure outweighs waiting
+ * for KAN-242. Only ever consulted when that flag is explicitly true —
+ * the caller (PropertySalesRetentionService) is responsible for that gate
+ * and for logging a warning naming every file this selects.
+ */
+export async function findAgedUnloadedArchives(
+  queryRunner: QueryRunner,
+  unloadedDays: number,
+): Promise<readonly RetentionCandidate[]> {
+  const rows: Array<{ id: string; source_url: string; local_path: string }> = await queryRunner.query(
+    `SELECT id, source_url, local_path
+     FROM property_sales_archives
+     WHERE status = 'downloaded'
+       AND downloaded_at < now() - ($1::int * interval '1 day')
+       AND local_path IS NOT NULL`,
+    [unloadedDays],
+  );
+  return rows.map((r) => ({ id: r.id, sourceUrl: r.source_url, localPath: r.local_path }));
+}
+
+/** Records that retention removed this archive's file. Idempotent to call twice. */
+export async function markDeleted(queryRunner: QueryRunner, id: string): Promise<void> {
+  await queryRunner.query(
+    `UPDATE property_sales_archives
+     SET status = 'deleted', deleted_at = now(), local_path = NULL
+     WHERE id = $1`,
+    [id],
+  );
+}
