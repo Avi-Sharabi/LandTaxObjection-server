@@ -82,6 +82,12 @@ describe('TC-DASH: Dashboard — E2E', () => {
   describe('Happy Path', () => {
 
     test('TC-DASH-001: authenticated user lands on Dashboard after login', async () => {
+      // Must not assume the browser is already logged out — Jest's test-sequencer order
+      // is cache-dependent (duration when warm, file size when cold), so this file can run
+      // directly after cases.v2.test.js, which leaves a real authenticated session behind.
+      // Without clearing it, navigating to /login just redirects straight back to the
+      // dashboard (PublicRoute), and the email input this test waits for never renders.
+      await clearSession();
       await loginPage.open();
       await loginPage.login(EMAIL, PASSWORD);
       await loginPage.waitForSuccessfulLogin();
