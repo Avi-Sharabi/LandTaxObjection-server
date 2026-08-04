@@ -22,7 +22,7 @@ class FailureReporter {
     this._outputFile = (options && options.outputFile) || path.join(__dirname, 'failed-tests.txt');
   }
 
-  onRunComplete(contexts, results) {
+  async onRunComplete(contexts, results) {
     const lines = [];
     lines.push(`Test run: ${new Date().toISOString()}`);
     lines.push(`Total: ${results.numTotalTests} | Passed: ${results.numPassedTests} | Failed: ${results.numFailedTests} | Skipped: ${results.numPendingTests}`);
@@ -72,7 +72,18 @@ class FailureReporter {
 
     // Also print the same report to the console, after Jest's own summary — so it's
     // visible directly in the terminal without having to open failed-tests.txt separately.
-    process.stdout.write(`\n=== ${path.basename(this._outputFile)} ===\n${report}\n`);
+    //
+    // jest.config.js sets forceExit: true (needed because Puppeteer's browser connection
+    // keeps a handle open that would otherwise hang Jest indefinitely). Jest calls
+    // process.exit() right after this hook resolves — and when stdout is piped rather than
+    // a real TTY (exactly what GitHub Actions' log capture does), Node does not guarantee a
+    // synchronous write has actually flushed before the process is torn down. Waiting for
+    // the write's own callback here forces Jest (which awaits onRunComplete) to hold off
+    // force-exiting until the output has genuinely been flushed, so it can't get silently
+    // truncated in CI the way it could before this fix.
+    await new Promise(resolve => {
+      process.stdout.write(`\n=== ${path.basename(this._outputFile)} ===\n${report}\n`, resolve);
+    });
   }
 }
 

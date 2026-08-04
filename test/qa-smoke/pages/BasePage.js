@@ -11,13 +11,16 @@ class BasePage {
     await this.page.goto(`${process.env.BASE_URL}${path}`, { waitUntil: 'domcontentloaded', timeout: 45000 });
   }
 
+  // Bumped from 15000: this staging environment occasionally takes longer than 15s to
+  // render a field/button under load — the same class of slowness already documented and
+  // worked around elsewhere in this suite (e.g. ClientDetailPage's action-button wait).
   async waitAndClick(selector) {
-    await this.page.waitForSelector(selector, { visible: true, timeout: 15000 });
+    await this.page.waitForSelector(selector, { visible: true, timeout: 30000 });
     await this.page.click(selector);
   }
 
   async waitAndType(selector, text) {
-    await this.page.waitForSelector(selector, { visible: true, timeout: 15000 });
+    await this.page.waitForSelector(selector, { visible: true, timeout: 30000 });
     await this.page.click(selector, { clickCount: 3 });
     await this.page.type(selector, text);
   }

@@ -35,8 +35,9 @@ describe('TC-LOGIN: Login page — E2E', () => {
     await page.setRequestInterception(false).catch(() => {});
 
     // Wipe all session state so every test starts unauthenticated
-    const cookies = await page.cookies();
-    if (cookies.length) await page.deleteCookie(...cookies);
+    const cdpSession = await page.target().createCDPSession();
+    await cdpSession.send('Network.clearBrowserCookies');
+    await cdpSession.detach().catch(() => {});
     await page.evaluate(() => {
       try { localStorage.clear(); } catch (e) { /* storage may not be accessible pre-navigation */ }
       try { sessionStorage.clear(); } catch (e) {}

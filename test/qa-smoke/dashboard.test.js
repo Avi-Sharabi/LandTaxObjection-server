@@ -28,8 +28,9 @@ jest.retryTimes(1, { logErrorsBeforeRetry: true });
 // ── Shared helpers ────────────────────────────────────────────────────────────
 
 async function clearSession() {
-  const cookies = await page.cookies();
-  if (cookies.length) await page.deleteCookie(...cookies);
+  const cdpSession = await page.target().createCDPSession();
+  await cdpSession.send('Network.clearBrowserCookies');
+  await cdpSession.detach().catch(() => {});
   await page.evaluate(() => {
     try { localStorage.clear(); } catch (e) {}
     try { sessionStorage.clear(); } catch (e) {}
@@ -437,7 +438,9 @@ describe('TC-DASH: Dashboard — E2E', () => {
         waitUntil: 'domcontentloaded',
         timeout: 20000,
       });
-      await wait(2000);
+      // The auth check that triggers this redirect can be asynchronous — poll for it
+      // instead of a blind sleep, which risks checking the URL too early.
+      await page.waitForFunction(() => window.location.pathname.includes('/login'), { timeout: 10000 }).catch(() => {});
 
       const url = await page.url();
       console.info('[TC-DASH-013] URL after direct unauthenticated access:', url);
@@ -496,7 +499,7 @@ describe('TC-DASH: Dashboard — E2E', () => {
 
       // Attempt to interact — reload the dashboard URL to trigger auth check
       await page.reload({ waitUntil: 'domcontentloaded', timeout: 20000 });
-      await wait(2000);
+      await page.waitForFunction(() => window.location.pathname.includes('/login'), { timeout: 10000 }).catch(() => {});
 
       const url = await page.url();
       console.info('[TC-DASH-015] URL after session invalidation + reload:', url);

@@ -38,8 +38,9 @@ async function waitFor(check, { timeout = 5000, interval = 250 } = {}) {
 // over from a prior test's login makes /login auto-redirect before the form renders.
 
 async function clearSession() {
-  const cookies = await page.cookies();
-  if (cookies.length) await page.deleteCookie(...cookies);
+  const cdpSession = await page.target().createCDPSession();
+  await cdpSession.send('Network.clearBrowserCookies');
+  await cdpSession.detach().catch(() => {});
   await page.evaluate(() => {
     try { localStorage.clear(); } catch (e) {}
     try { sessionStorage.clear(); } catch (e) {}
@@ -470,8 +471,9 @@ describe('TC-CASE: Cases List Page — E2E', () => {
   describe('Negative — Cases List', () => {
 
     test('TC-CASE-013: unauthenticated user is redirected away from Cases page', async () => {
-      const cookies = await page.cookies();
-      if (cookies.length) await page.deleteCookie(...cookies);
+      const cdpSession = await page.target().createCDPSession();
+      await cdpSession.send('Network.clearBrowserCookies');
+      await cdpSession.detach().catch(() => {});
       await page.evaluate(() => {
         try { localStorage.clear(); } catch (e) {}
         try { sessionStorage.clear(); } catch (e) {}
@@ -481,7 +483,9 @@ describe('TC-CASE: Cases List Page — E2E', () => {
         waitUntil: 'domcontentloaded',
         timeout: 20000,
       });
-      await wait(2000);
+      // The auth check that triggers this redirect can be asynchronous — poll for it
+      // instead of a blind sleep, which risks checking the URL too early.
+      await page.waitForFunction(() => window.location.pathname.includes('/login'), { timeout: 10000 }).catch(() => {});
 
       const url = await page.url();
       expect(url).toContain('/login');
@@ -617,15 +621,16 @@ describe('TC-CASE: Cases List Page — E2E', () => {
     test('TC-CASE-026: session expiry redirects user to login', async () => {
       await loginAndGoToCases();
 
-      const cookies = await page.cookies();
-      if (cookies.length) await page.deleteCookie(...cookies);
+      const cdpSession = await page.target().createCDPSession();
+      await cdpSession.send('Network.clearBrowserCookies');
+      await cdpSession.detach().catch(() => {});
       await page.evaluate(() => {
         try { localStorage.clear(); } catch (e) {}
         try { sessionStorage.clear(); } catch (e) {}
       });
 
       await page.reload({ waitUntil: 'domcontentloaded', timeout: 20000 });
-      await wait(2000);
+      await page.waitForFunction(() => window.location.pathname.includes('/login'), { timeout: 10000 }).catch(() => {});
 
       const url = await page.url();
       expect(url).toContain('/login');

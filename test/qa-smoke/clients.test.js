@@ -309,15 +309,19 @@ describe('TC-CLT: Clients Section — E2E', () => {
 
     test('TC-CLT-012: unauthenticated user is redirected away from /accountant/client', async () => {
       // Clear session
-      const cookies = await page.cookies();
-      if (cookies.length) await page.deleteCookie(...cookies);
+      const cdpSession = await page.target().createCDPSession();
+      await cdpSession.send('Network.clearBrowserCookies');
+      await cdpSession.detach().catch(() => {});
       await page.evaluate(() => {
         try { localStorage.clear(); } catch (e) {}
         try { sessionStorage.clear(); } catch (e) {}
       });
 
       await page.goto(`${process.env.BASE_URL}/accountant/client`, { waitUntil: 'domcontentloaded', timeout: 20000 });
-      await wait(2000);
+      // The auth check that triggers this redirect can be asynchronous (e.g. validates the
+      // token via an API call) — poll for it instead of a blind sleep, which risks checking
+      // the URL before a slower-than-usual redirect has actually fired.
+      await page.waitForFunction(() => window.location.pathname.includes('/login'), { timeout: 10000 }).catch(() => {});
 
       const url = await page.url();
       expect(url).toContain('/login');
@@ -565,8 +569,9 @@ describe('TC-CLT: Clients Section — E2E', () => {
       await loginAndGoToClients();
 
       // Simulate expiry by clearing cookies and storage mid-session
-      const cookies = await page.cookies();
-      if (cookies.length) await page.deleteCookie(...cookies);
+      const cdpSession = await page.target().createCDPSession();
+      await cdpSession.send('Network.clearBrowserCookies');
+      await cdpSession.detach().catch(() => {});
       await page.evaluate(() => {
         try { localStorage.clear(); } catch (e) {}
         try { sessionStorage.clear(); } catch (e) {}
@@ -574,7 +579,7 @@ describe('TC-CLT: Clients Section — E2E', () => {
 
       // Trigger a navigation that checks auth
       await page.reload({ waitUntil: 'domcontentloaded', timeout: 20000 });
-      await wait(2000);
+      await page.waitForFunction(() => window.location.pathname.includes('/login'), { timeout: 10000 }).catch(() => {});
 
       const url = await page.url();
       expect(url).toContain('/login');

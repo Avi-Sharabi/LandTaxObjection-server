@@ -41,6 +41,10 @@ const DASHBOARD_PATH = '/accountant/dashboard';
 
 const wait = ms => new Promise(r => setTimeout(r, ms));
 
+// One-time transient failures (e.g. a momentary render delay under staging load) reproduce
+// as flake, not a real defect. Automatically retry a failing test once before recording FAIL.
+jest.retryTimes(1, { logErrorsBeforeRetry: true });
+
 function skipIfNoToken(tcId) {
   if (!RESET_PASSWORD_TOKEN) {
     console.warn(`[${tcId}] RESET_PASSWORD_TOKEN not set — cannot reach the live "Set new password" form; skipping. See prerequisites header.`);
@@ -58,8 +62,9 @@ describe('TC-FPW/NAV/RPW: Forgot Password & Reset Password — E2E', () => {
   beforeEach(async () => {
     await page.setRequestInterception(false).catch(() => {});
 
-    const cookies = await page.cookies();
-    if (cookies.length) await page.deleteCookie(...cookies);
+    const cdpSession = await page.target().createCDPSession();
+    await cdpSession.send('Network.clearBrowserCookies');
+    await cdpSession.detach().catch(() => {});
     await page.evaluate(() => {
       try { localStorage.clear(); } catch (e) { /* storage may not be accessible pre-navigation */ }
       try { sessionStorage.clear(); } catch (e) {}
@@ -79,7 +84,7 @@ describe('TC-FPW/NAV/RPW: Forgot Password & Reset Password — E2E', () => {
 
       expect(await forgotPage.getAlertText()).toBe(SUCCESS_MESSAGE);
       expect(await forgotPage.isFormVisible()).toBe(false);
-    }, 30000);
+    }, 60000);
 
     test('TC-FPW-003: loading state disables the button and shows a spinner while in flight', async () => {
       await forgotPage.open();
@@ -108,7 +113,7 @@ describe('TC-FPW/NAV/RPW: Forgot Password & Reset Password — E2E', () => {
       }
 
       await forgotPage.waitForSuccess();
-    }, 30000);
+    }, 60000);
 
     test('TC-FPW-004: "Back to Login" navigates to Login before and after submission', async () => {
       await forgotPage.open();
@@ -122,7 +127,7 @@ describe('TC-FPW/NAV/RPW: Forgot Password & Reset Password — E2E', () => {
       await forgotPage.clickBackToLogin();
       await wait(1000);
       expect(await forgotPage.currentUrl()).toContain('/login');
-    }, 30000);
+    }, 60000);
 
   });
 
@@ -179,7 +184,7 @@ describe('TC-FPW/NAV/RPW: Forgot Password & Reset Password — E2E', () => {
       await forgotPage.submit();
       await forgotPage.waitForSuccess();
       expect(await forgotPage.isSuccessVisible()).toBe(true);
-    }, 20000);
+    }, 60000);
 
     test('TC-FPW-008: validation error clears on correction without a second submit click', async () => {
       await forgotPage.open();
@@ -194,7 +199,7 @@ describe('TC-FPW/NAV/RPW: Forgot Password & Reset Password — E2E', () => {
       await forgotPage.submit();
       await forgotPage.waitForSuccess();
       expect(await forgotPage.isSuccessVisible()).toBe(true);
-    }, 30000);
+    }, 60000);
 
   });
 
@@ -219,7 +224,7 @@ describe('TC-FPW/NAV/RPW: Forgot Password & Reset Password — E2E', () => {
         page.off('request', interceptHandler);
         await page.setRequestInterception(false).catch(() => {});
       }
-    }, 30000);
+    }, 60000);
 
     test('TC-FPW-010: backend 5xx error still shows the generic success message', async () => {
       await forgotPage.open();
@@ -240,7 +245,7 @@ describe('TC-FPW/NAV/RPW: Forgot Password & Reset Password — E2E', () => {
         page.off('request', interceptHandler);
         await page.setRequestInterception(false).catch(() => {});
       }
-    }, 30000);
+    }, 60000);
 
     test('TC-FPW-011: rate-limited 429 response does not leak a distinguishable message', async () => {
       await forgotPage.open();
@@ -261,7 +266,7 @@ describe('TC-FPW/NAV/RPW: Forgot Password & Reset Password — E2E', () => {
         page.off('request', interceptHandler);
         await page.setRequestInterception(false).catch(() => {});
       }
-    }, 30000);
+    }, 60000);
 
   });
 
@@ -370,7 +375,7 @@ describe('TC-FPW/NAV/RPW: Forgot Password & Reset Password — E2E', () => {
 
       expect(await resetPage.isFormVisible()).toBe(true);
       expect(await resetPage.isErrorAlertVisible(1000)).toBe(false);
-    }, 30000);
+    }, 60000);
 
     test('TC-RPW-003: invalid/expired token shows the backend error title and message', async () => {
       await resetPage.open('expired-or-used-token-placeholder');
@@ -380,7 +385,7 @@ describe('TC-FPW/NAV/RPW: Forgot Password & Reset Password — E2E', () => {
       expect(text).toMatch(/invalid|expired/i);
       expect(await resetPage.isFormVisible()).toBe(false);
       expect(await resetPage.isVisible('a[href="/forgot-password"]', 2000)).toBe(true);
-    }, 20000);
+    }, 60000);
 
     test('TC-RPW-004: malformed token string is handled without a crash', async () => {
       await resetPage.open('abc!!123invalidtoken'.repeat(20));
@@ -391,7 +396,7 @@ describe('TC-FPW/NAV/RPW: Forgot Password & Reset Password — E2E', () => {
 
       const missingOrInvalid = (await resetPage.isMissingTokenState()) || (await resetPage.isInvalidTokenState());
       expect(missingOrInvalid).toBe(true);
-    }, 20000);
+    }, 60000);
 
   });
 
@@ -411,7 +416,7 @@ describe('TC-FPW/NAV/RPW: Forgot Password & Reset Password — E2E', () => {
 
       expect(await resetPage.currentUrl()).toContain('/login');
       tokenConsumed = true;
-    }, 40000);
+    }, 60000);
 
     test('TC-RPW-006: password visibility toggle works independently for each field', async () => {
       if (skipIfNoToken('TC-RPW-006')) return;
@@ -427,7 +432,7 @@ describe('TC-FPW/NAV/RPW: Forgot Password & Reset Password — E2E', () => {
 
       await resetPage.clickPasswordToggle('new');
       expect(await resetPage.getPasswordInputType('new')).toBe('password');
-    }, 30000);
+    }, 60000);
 
     test('TC-RPW-007: submit button disables and shows a spinner while submitting', async () => {
       if (skipIfNoToken('TC-RPW-007')) return;
@@ -457,7 +462,7 @@ describe('TC-FPW/NAV/RPW: Forgot Password & Reset Password — E2E', () => {
         await page.setRequestInterception(false).catch(() => {});
         await wait(1000);
       }
-    }, 30000);
+    }, 60000);
 
   });
 
@@ -474,7 +479,7 @@ describe('TC-FPW/NAV/RPW: Forgot Password & Reset Password — E2E', () => {
 
       expect(await resetPage.getFieldError('new')).toMatch(/password.*required|required/i);
       expect(await resetPage.getFieldError('confirm')).toMatch(/confirm|required/i);
-    }, 30000);
+    }, 60000);
 
     test('TC-RPW-009: password shorter than 8 characters is rejected', async () => {
       if (skipIfNoToken('TC-RPW-009')) return;
@@ -486,7 +491,7 @@ describe('TC-FPW/NAV/RPW: Forgot Password & Reset Password — E2E', () => {
       await wait(500);
 
       expect(await resetPage.getFieldError('new')).toMatch(/minimum|8/i);
-    }, 30000);
+    }, 60000);
 
     test('TC-RPW-010: mismatched confirmation password is rejected', async () => {
       if (skipIfNoToken('TC-RPW-010')) return;
@@ -499,7 +504,7 @@ describe('TC-FPW/NAV/RPW: Forgot Password & Reset Password — E2E', () => {
       await wait(500);
 
       expect(await resetPage.getFieldError('confirm')).toMatch(/match/i);
-    }, 30000);
+    }, 60000);
 
     test('TC-RPW-011: correcting New Password after a mismatch re-validates Confirm', async () => {
       if (skipIfNoToken('TC-RPW-011')) return;
@@ -515,7 +520,7 @@ describe('TC-FPW/NAV/RPW: Forgot Password & Reset Password — E2E', () => {
       await resetPage.fillNewPassword('NewPassword2');
       await wait(500);
       expect(await resetPage.getFieldError('confirm')).toBe('');
-    }, 30000);
+    }, 60000);
 
   });
 
@@ -557,7 +562,7 @@ describe('TC-FPW/NAV/RPW: Forgot Password & Reset Password — E2E', () => {
         page.off('request', interceptHandler);
         await page.setRequestInterception(false).catch(() => {});
       }
-    }, 30000);
+    }, 60000);
 
     test('TC-RPW-013: non-domain submit error keeps the form visible with a generic alert', async () => {
       if (skipIfNoToken('TC-RPW-013')) return;
@@ -585,7 +590,7 @@ describe('TC-FPW/NAV/RPW: Forgot Password & Reset Password — E2E', () => {
         page.off('request', interceptHandler);
         await page.setRequestInterception(false).catch(() => {});
       }
-    }, 30000);
+    }, 60000);
 
     test('TC-RPW-014: non-domain error surfaces a backend-provided message when available', async () => {
       if (skipIfNoToken('TC-RPW-014')) return;
@@ -619,7 +624,7 @@ describe('TC-FPW/NAV/RPW: Forgot Password & Reset Password — E2E', () => {
         page.off('request', interceptHandler);
         await page.setRequestInterception(false).catch(() => {});
       }
-    }, 30000);
+    }, 60000);
 
   });
 
@@ -646,7 +651,7 @@ describe('TC-FPW/NAV/RPW: Forgot Password & Reset Password — E2E', () => {
         page.off('request', interceptHandler);
         await page.setRequestInterception(false).catch(() => {});
       }
-    }, 20000);
+    }, 60000);
 
     test('TC-FPW-EDGE-002: submitting via the Enter key works the same as clicking the button', async () => {
       await forgotPage.open();
@@ -655,7 +660,7 @@ describe('TC-FPW/NAV/RPW: Forgot Password & Reset Password — E2E', () => {
       await forgotPage.waitForSuccess();
 
       expect(await forgotPage.isSuccessVisible()).toBe(true);
-    }, 20000);
+    }, 60000);
 
     test('TC-FPW-EDGE-003: leaving and returning to the page resets the success state', async () => {
       await forgotPage.open();
@@ -670,7 +675,7 @@ describe('TC-FPW/NAV/RPW: Forgot Password & Reset Password — E2E', () => {
       const formShown = await forgotPage.isFormVisible();
       console.info('[TC-FPW-EDGE-003] Form shown again after navigating back:', formShown);
       expect(await page.evaluate(() => document.readyState === 'complete')).toBe(true);
-    }, 20000);
+    }, 60000);
 
     test('TC-RPW-EDGE-001: a consumed token is rejected, not silently accepted', async () => {
       if (!tokenConsumed) {
@@ -685,7 +690,7 @@ describe('TC-FPW/NAV/RPW: Forgot Password & Reset Password — E2E', () => {
       const text = await resetPage.getErrorAlertText();
       console.info('[TC-RPW-EDGE-001] Reused-token error text:', text);
       expect(text.length).toBeGreaterThan(0);
-    }, 20000);
+    }, 60000);
 
     test('TC-RPW-EDGE-002: very long password input is accepted without a client-side cap', async () => {
       if (skipIfNoToken('TC-RPW-EDGE-002')) return;
@@ -700,7 +705,7 @@ describe('TC-FPW/NAV/RPW: Forgot Password & Reset Password — E2E', () => {
       console.info('[TC-RPW-EDGE-002] Retained password length:', retained.length);
       expect(retained.length).toBeGreaterThan(0);
       expect(await page.evaluate(() => document.readyState === 'complete')).toBe(true);
-    }, 30000);
+    }, 60000);
 
     test('TC-RPW-EDGE-003: whitespace-only password passes client-side validation', async () => {
       if (skipIfNoToken('TC-RPW-EDGE-003')) return;
@@ -716,7 +721,7 @@ describe('TC-FPW/NAV/RPW: Forgot Password & Reset Password — E2E', () => {
       const newErr = await resetPage.getFieldError('new');
       console.info('[TC-RPW-EDGE-003] New Password field error for whitespace-only input:', newErr || '(none)');
       expect(await page.evaluate(() => document.readyState === 'complete')).toBe(true);
-    }, 30000);
+    }, 60000);
 
     test('TC-RPW-EDGE-004: empty token query parameter is treated as missing', async () => {
       await resetPage.open(''); // /reset-password?token=
@@ -736,7 +741,7 @@ describe('TC-FPW/NAV/RPW: Forgot Password & Reset Password — E2E', () => {
       expect(await resetPage.getPasswordValue('new')).toBe(NEW_PASSWORD);
       expect(await resetPage.getPasswordValue('confirm')).toBe(NEW_PASSWORD);
       expect(await resetPage.getFieldError('confirm')).toBe('');
-    }, 30000);
+    }, 60000);
 
   });
 

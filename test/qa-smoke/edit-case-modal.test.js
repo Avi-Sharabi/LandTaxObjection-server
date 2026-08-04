@@ -25,8 +25,9 @@ jest.retryTimes(1, { logErrorsBeforeRetry: true });
 // ── Per-test isolation ────────────────────────────────────────────────────────
 
 async function clearSession() {
-  const cookies = await page.cookies();
-  if (cookies.length) await page.deleteCookie(...cookies);
+  const cdpSession = await page.target().createCDPSession();
+  await cdpSession.send('Network.clearBrowserCookies');
+  await cdpSession.detach().catch(() => {});
   await page.evaluate(() => {
     try { localStorage.clear(); } catch (e) {}
     try { sessionStorage.clear(); } catch (e) {}
