@@ -18,6 +18,7 @@ import { ValuationModule } from './valuation/valuation.module';
 import { AuthModule } from './auth/auth.module';
 import { ObjectionPackageModule } from './objection-package/objection-package.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { PropertySalesModule } from './property-sales/property-sales.module';
 
 @Module({
   imports: [
@@ -40,6 +41,7 @@ import { NotificationsModule } from './notifications/notifications.module';
     DisputeLegalGroundsModule,
     ObjectionPackageModule,
     NotificationsModule,
+    PropertySalesModule,
   ],
 })
 export class APIModule {}

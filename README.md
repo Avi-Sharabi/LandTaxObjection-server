@@ -52,6 +52,47 @@ $ docker run -p 10000:10000 mcr.microsoft.com/azure-storage/azurite
 $ docker compose up -d
 ```
 
+## NSW Property Sales ingestion (KAN-241)
+
+Weekly ingestion pipeline for the NSW Valuer General's bulk Property Sales
+Information feed — `src/api/property-sales/`. One linear sweep per cron
+tick: read `property_sales_raw` for the latest data already held → discover
+every advertised weekly `.zip` (Puppeteer, headless + stealth) → download
+whatever is newer, oldest-first → unzip the `.dat` entries → parse them
+(record-type filtering plus an optional content-exclusion filter). Downloaded
+archives live in an OS temp directory for the lifetime of one sweep and are
+removed when it finishes, whether it succeeded or not — there is no ledger
+table, no queue, and no persistent archive storage.
+
+**Stops before any database write.** Nothing here inserts into
+`property_sales_raw` — a later ticket (KAN-242) does that, plus a migration
+fixing that table's `dealing_number` unique constraint (it silently drops
+~2.3% of every week's sales; see the migration note in KAN-242). Until
+KAN-242 lands, nothing advances the watermark this pipeline reads, so a
+sweep re-downloads and re-parses the same archives every run — harmless
+while the feature is disabled by default, but worth knowing if you enable it
+for a soak test.
+
+**Disabled by default everywhere.** Set `PSI_DOWNLOAD_ENABLED=true` to turn
+it on — no other configuration is required. See
+`src/api/property-sales/property-sales.config.ts` for the full list of
+`PSI_*` env vars and their defaults (cron schedule, timeouts, size limits,
+zip-bomb ceilings). `PSI_CRON_SCHEDULE` accepts any cron expression — use a
+short interval like `*/10 * * * *` for local testing, then move to the
+weekly default (`0 3 * * 1`).
+
+The content-level exclusion filter (`PSI_EXCLUDE_SALE_CODES` /
+`PSI_EXCLUDE_ZONINGS`, both comma-separated and empty by default) is a
+seam, not a business rule: a full scan of the current real weekly archive
+and all historical comparable-sales-data CSVs found no `sale_code` field
+ever equal to `"B"`, so "exclude rows with value B" as literally described
+does not match this field. Confirm the intended rule before setting either
+var — doing so is then an env-var change, not a code change.
+
+No admin REST surface and no BullMQ queue — this is a single cron-triggered
+sweep per environment, and the service's own in-process flag is what stops
+two ticks overlapping.
+
 ## Run tests
 
 ```bash
