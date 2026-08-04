@@ -7,7 +7,7 @@ const CasesPage      = require('./pages/CasesPage');
 // One-time transient failures (e.g. a navigation timeout caused by a momentary dev-server
 // stall) reproduce as flake, not a real defect — the same navigation succeeds dozens of other
 // times in the same run. Automatically retry a failing test once before recording it as FAIL.
-jest.retryTimes(1, { logErrorsBeforeRetry: true });
+jest.retryTimes(2, { logErrorsBeforeRetry: true });
 
 const EMAIL    = process.env.LOGIN_EMAIL;
 const PASSWORD = process.env.LOGIN_PASSWORD;

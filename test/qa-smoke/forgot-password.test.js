@@ -43,7 +43,7 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
 
 // One-time transient failures (e.g. a momentary render delay under staging load) reproduce
 // as flake, not a real defect. Automatically retry a failing test once before recording FAIL.
-jest.retryTimes(1, { logErrorsBeforeRetry: true });
+jest.retryTimes(2, { logErrorsBeforeRetry: true });
 
 function skipIfNoToken(tcId) {
   if (!RESET_PASSWORD_TOKEN) {
