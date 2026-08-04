@@ -114,7 +114,7 @@ jobs:
     needs: migrate
     runs-on: ubuntu-latest
     environment: qa
-    timeout-minutes: 30
+    timeout-minutes: 40
     env:
       BASE_URL: https://qa.landtax.ymlgroup.com.au
       LOGIN_EMAIL: pol.imbing@ymlgroup.com.au
