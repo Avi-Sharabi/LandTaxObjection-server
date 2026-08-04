@@ -171,11 +171,7 @@ describe('TC-ECM: Edit Case Modal — E2E', () => {
 
     test('TC-ECM-001: modal opens with title "Edit Case"', async () => {
       const { detailPage, opened } = await openCaseAndModal();
-      if (!opened) {
-        console.warn('[TC-ECM-001] Staging limitation: modal did not open');
-        expect(true).toBe(true);
-        return;
-      }
+      expect(opened).toBe(true);
 
       const title = await detailPage.getEditModalTitle();
       console.info('[TC-ECM-001] Modal title:', title);
@@ -186,11 +182,7 @@ describe('TC-ECM: Edit Case Modal — E2E', () => {
 
     test('TC-ECM-002: backdrop click does not close the modal', async () => {
       const { detailPage, opened } = await openCaseAndModal();
-      if (!opened) {
-        console.warn('[TC-ECM-002] Staging limitation: modal did not open');
-        expect(true).toBe(true);
-        return;
-      }
+      expect(opened).toBe(true);
 
       await detailPage.clickBackdrop();
       const stillOpen = await detailPage.isEditModalOpen();
@@ -201,11 +193,7 @@ describe('TC-ECM: Edit Case Modal — E2E', () => {
 
     test('TC-ECM-003: cancel button closes modal and resets form state', async () => {
       const { detailPage, opened } = await openCaseAndModal();
-      if (!opened) {
-        console.warn('[TC-ECM-003] Staging limitation: modal did not open');
-        expect(true).toBe(true);
-        return;
-      }
+      expect(opened).toBe(true);
 
       const originalNotes = await detailPage.getDialogInputValue('notes');
 
@@ -230,11 +218,7 @@ describe('TC-ECM: Edit Case Modal — E2E', () => {
 
     test('TC-ECM-004: Cancel and Save buttons are disabled while saving', async () => {
       const { detailPage, opened } = await openCaseAndModal();
-      if (!opened) {
-        console.warn('[TC-ECM-004] Staging limitation: modal did not open');
-        expect(true).toBe(true);
-        return;
-      }
+      expect(opened).toBe(true);
 
       let cdp;
       try {
@@ -302,11 +286,7 @@ describe('TC-ECM: Edit Case Modal — E2E', () => {
 
     test('TC-ECM-006: form renders without a visible skeleton once loaded', async () => {
       const { detailPage, opened } = await openCaseAndModal();
-      if (!opened) {
-        console.warn('[TC-ECM-006] Staging limitation: modal did not open');
-        expect(true).toBe(true);
-        return;
-      }
+      expect(opened).toBe(true);
 
       const skeletonCount = await detailPage.getLoadingSkeletonCount();
       console.info('[TC-ECM-006] Skeleton count after load:', skeletonCount);
@@ -317,11 +297,7 @@ describe('TC-ECM: Edit Case Modal — E2E', () => {
 
     test('TC-ECM-007: form pre-fills fields from the resolved case', async () => {
       const { detailPage, opened } = await openCaseAndModal();
-      if (!opened) {
-        console.warn('[TC-ECM-007] Staging limitation: modal did not open');
-        expect(true).toBe(true);
-        return;
-      }
+      expect(opened).toBe(true);
 
       const assessedVal = await detailPage.getDialogInputValue('assessed');
       const addressVal  = await detailPage.getDialogInputValue('address');
@@ -341,11 +317,7 @@ describe('TC-ECM: Edit Case Modal — E2E', () => {
 
     test('TC-ECM-008: Statutory Deadline accepts a valid date', async () => {
       const { detailPage, opened } = await openCaseAndModal();
-      if (!opened) {
-        console.warn('[TC-ECM-008] Staging limitation: modal did not open');
-        expect(true).toBe(true);
-        return;
-      }
+      expect(opened).toBe(true);
 
       await detailPage.setDialogField('statutory deadline', '2026-12-31');
       await wait(300);
@@ -363,11 +335,7 @@ describe('TC-ECM: Edit Case Modal — E2E', () => {
 
     test('TC-ECM-009: financial fields accept numeric input', async () => {
       const { detailPage, opened } = await openCaseAndModal();
-      if (!opened) {
-        console.warn('[TC-ECM-009] Staging limitation: modal did not open');
-        expect(true).toBe(true);
-        return;
-      }
+      expect(opened).toBe(true);
 
       await detailPage.fillEditForm({ assessedValue: 500000, finalAgreedValue: 450000, invoiceAmount: 2500 });
       await wait(300);
@@ -390,11 +358,7 @@ describe('TC-ECM: Edit Case Modal — E2E', () => {
 
     test('TC-ECM-011: Assigned Accountant dropdown lists Unassigned plus users', async () => {
       const { detailPage, opened } = await openCaseAndModal();
-      if (!opened) {
-        console.warn('[TC-ECM-011] Staging limitation: modal did not open');
-        expect(true).toBe(true);
-        return;
-      }
+      expect(opened).toBe(true);
 
       await detailPage.openDialogSelect('accountant');
       const options = await detailPage.getDialogSelectOptions();
@@ -421,11 +385,7 @@ describe('TC-ECM: Edit Case Modal — E2E', () => {
       // that "Unassigned" always renders as an option and the dropdown never crashes,
       // which is what matters for a real accountant with a small/large user list.
       const { detailPage, opened } = await openCaseAndModal();
-      if (!opened) {
-        console.warn('[TC-ECM-012] Staging limitation: modal did not open');
-        expect(true).toBe(true);
-        return;
-      }
+      expect(opened).toBe(true);
 
       await detailPage.openDialogSelect('accountant');
       const options = await detailPage.getDialogSelectOptions();
@@ -451,11 +411,7 @@ describe('TC-ECM: Edit Case Modal — E2E', () => {
 
     test('TC-ECM-013: Address is editable', async () => {
       const { detailPage, opened } = await openCaseAndModal();
-      if (!opened) {
-        console.warn('[TC-ECM-013] Staging limitation: modal did not open');
-        expect(true).toBe(true);
-        return;
-      }
+      expect(opened).toBe(true);
 
       await detailPage.typeIntoDialogField('address', '42 Test Street');
       await wait(300);
@@ -473,11 +429,7 @@ describe('TC-ECM: Edit Case Modal — E2E', () => {
 
     test('TC-ECM-014: PID, Zoning, Lot/DP, Dimensions accept free text', async () => {
       const { detailPage, opened } = await openCaseAndModal();
-      if (!opened) {
-        console.warn('[TC-ECM-014] Staging limitation: modal did not open');
-        expect(true).toBe(true);
-        return;
-      }
+      expect(opened).toBe(true);
 
       await detailPage.fillEditForm({
         pid: 'PID-12345',
@@ -500,11 +452,7 @@ describe('TC-ECM: Edit Case Modal — E2E', () => {
 
     test('TC-ECM-016: Land Area and Height Limit accept non-negative numbers', async () => {
       const { detailPage, opened } = await openCaseAndModal();
-      if (!opened) {
-        console.warn('[TC-ECM-016] Staging limitation: modal did not open');
-        expect(true).toBe(true);
-        return;
-      }
+      expect(opened).toBe(true);
 
       await detailPage.fillEditForm({ landArea: 450.5, heightLimit: 10 });
       await wait(300);
@@ -526,11 +474,7 @@ describe('TC-ECM: Edit Case Modal — E2E', () => {
 
     test('TC-ECM-017: State pre-fills on open', async () => {
       const { detailPage, opened } = await openCaseAndModal(CASE_REF_PRIMARY);
-      if (!opened) {
-        console.warn('[TC-ECM-017] Staging limitation: modal did not open');
-        expect(true).toBe(true);
-        return;
-      }
+      expect(opened).toBe(true);
 
       const stateVal = await detailPage.getDialogSelectRenderedValue('state', 0);
       console.info('[TC-ECM-017] State value on open:', stateVal);
@@ -548,11 +492,7 @@ describe('TC-ECM: Edit Case Modal — E2E', () => {
 
     test('TC-ECM-018: State renderValue shows state code only', async () => {
       const { detailPage, opened } = await openCaseAndModal();
-      if (!opened) {
-        console.warn('[TC-ECM-018] Staging limitation: modal did not open');
-        expect(true).toBe(true);
-        return;
-      }
+      expect(opened).toBe(true);
 
       await detailPage.openDialogSelect('state', 0);
       const options = await detailPage.getDialogSelectOptions();
@@ -570,11 +510,7 @@ describe('TC-ECM: Edit Case Modal — E2E', () => {
 
     test('TC-ECM-019: State placeholder when unset shows "Select"', async () => {
       const { detailPage, opened } = await openCaseAndModal(CASE_REF_SECONDARY);
-      if (!opened) {
-        console.warn('[TC-ECM-019] Staging limitation: modal did not open');
-        expect(true).toBe(true);
-        return;
-      }
+      expect(opened).toBe(true);
 
       const stateVal = await detailPage.getDialogSelectRenderedValue('state', 0);
       console.info('[TC-ECM-019] State value:', stateVal);
@@ -590,11 +526,7 @@ describe('TC-ECM: Edit Case Modal — E2E', () => {
 
     test('TC-ECM-020: Changing state clears City and Postcode', async () => {
       const { detailPage, opened } = await openCaseAndModal();
-      if (!opened) {
-        console.warn('[TC-ECM-020] Staging limitation: modal did not open');
-        expect(true).toBe(true);
-        return;
-      }
+      expect(opened).toBe(true);
 
       await detailPage.openDialogSelect('state', 0);
       const stateOpts = await detailPage.getDialogSelectOptions();
@@ -628,11 +560,7 @@ describe('TC-ECM: Edit Case Modal — E2E', () => {
 
     test('TC-ECM-021: City dropdown disabled until state is selected', async () => {
       const { detailPage, opened } = await openCaseAndModal(CASE_REF_SECONDARY);
-      if (!opened) {
-        console.warn('[TC-ECM-021] Staging limitation: modal did not open');
-        expect(true).toBe(true);
-        return;
-      }
+      expect(opened).toBe(true);
 
       const stateVal = await detailPage.getDialogSelectRenderedValue('state', 0);
       if (stateVal && stateVal.trim().length > 0 && !/select/i.test(stateVal)) {
@@ -648,11 +576,7 @@ describe('TC-ECM: Edit Case Modal — E2E', () => {
 
     test('TC-ECM-022: City dropdown shows loading state while fetching', async () => {
       const { detailPage, opened } = await openCaseAndModal();
-      if (!opened) {
-        console.warn('[TC-ECM-022] Staging limitation: modal did not open');
-        expect(true).toBe(true);
-        return;
-      }
+      expect(opened).toBe(true);
 
       let cdp;
       try {
@@ -679,11 +603,7 @@ describe('TC-ECM: Edit Case Modal — E2E', () => {
 
     test('TC-ECM-023: Selecting a city auto-fills Postcode', async () => {
       const { detailPage, opened } = await openCaseAndModal();
-      if (!opened) {
-        console.warn('[TC-ECM-023] Staging limitation: modal did not open');
-        expect(true).toBe(true);
-        return;
-      }
+      expect(opened).toBe(true);
 
       await detailPage.openDialogSelect('state', 0);
       const stateOpts = await detailPage.getDialogSelectOptions();
@@ -716,11 +636,7 @@ describe('TC-ECM: Edit Case Modal — E2E', () => {
 
     test('TC-ECM-024: city with no matching postcode leaves Postcode empty (no crash)', async () => {
       const { detailPage, opened } = await openCaseAndModal();
-      if (!opened) {
-        console.warn('[TC-ECM-024] Staging limitation: modal did not open');
-        expect(true).toBe(true);
-        return;
-      }
+      expect(opened).toBe(true);
 
       await detailPage.openDialogSelect('state', 0);
       const stateOpts = await detailPage.getDialogSelectOptions();
@@ -756,11 +672,7 @@ describe('TC-ECM: Edit Case Modal — E2E', () => {
 
     test('TC-ECM-025: Postcode field is readonly', async () => {
       const { detailPage, opened } = await openCaseAndModal();
-      if (!opened) {
-        console.warn('[TC-ECM-025] Staging limitation: modal did not open');
-        expect(true).toBe(true);
-        return;
-      }
+      expect(opened).toBe(true);
 
       const isReadonly = await detailPage.isDialogInputReadonly('postcode', 0);
       console.info('[TC-ECM-025] Postcode readonly:', isReadonly);
@@ -776,11 +688,7 @@ describe('TC-ECM: Edit Case Modal — E2E', () => {
 
     test('TC-ECM-026: Save Changes submits the form', async () => {
       const { detailPage, opened } = await openCaseAndModal();
-      if (!opened) {
-        console.warn('[TC-ECM-026] Staging limitation: modal did not open');
-        expect(true).toBe(true);
-        return;
-      }
+      expect(opened).toBe(true);
 
       const originalNotes = await detailPage.getDialogInputValue('notes');
       if (originalNotes) await detailPage.fillEditForm({ notes: originalNotes });
@@ -791,19 +699,14 @@ describe('TC-ECM: Edit Case Modal — E2E', () => {
       const successMsg    = await detailPage.getSuccessMessage();
       console.info('[TC-ECM-026] Modal closed after save:', isModalClosed, 'Success message:', successMsg);
 
-      if (!isModalClosed) console.warn('[TC-ECM-026] Known staging limitation: modal did not close after save');
-      expect(await page.evaluate(() => document.readyState === 'complete')).toBe(true);
+      expect(isModalClosed).toBe(true);
 
       await closeModalIfOpen(detailPage);
     }, 60000);
 
     test('TC-ECM-028: Save fails server-side', async () => {
       const { detailPage, opened } = await openCaseAndModal();
-      if (!opened) {
-        console.warn('[TC-ECM-028] Staging limitation: modal did not open');
-        expect(true).toBe(true);
-        return;
-      }
+      expect(opened).toBe(true);
 
       await page.setRequestInterception(true);
       const onReq = req => {
@@ -847,11 +750,7 @@ describe('TC-ECM: Edit Case Modal — E2E', () => {
 
     test('TC-ECM-EDGE-002: rapid state toggling (NSW -> VIC -> NSW) leaves no stale data', async () => {
       const { detailPage, opened } = await openCaseAndModal();
-      if (!opened) {
-        console.warn('[TC-ECM-EDGE-002] Staging limitation: modal did not open');
-        expect(true).toBe(true);
-        return;
-      }
+      expect(opened).toBe(true);
 
       let cdp;
       try {
@@ -921,11 +820,7 @@ describe('TC-ECM: Edit Case Modal — E2E', () => {
       // confirm the renderValue fallback path (`val` when no AU_STATES match) doesn't
       // throw for whatever code the currently-open case actually has.
       const { detailPage, opened } = await openCaseAndModal();
-      if (!opened) {
-        console.warn('[TC-ECM-EDGE-004] Staging limitation: modal did not open');
-        expect(true).toBe(true);
-        return;
-      }
+      expect(opened).toBe(true);
 
       const stateVal = await detailPage.getDialogSelectRenderedValue('state', 0);
       console.info('[TC-ECM-EDGE-004] Rendered state value:', stateVal);
@@ -949,20 +844,12 @@ describe('TC-ECM: Edit Case Modal — E2E', () => {
 
     test('TC-ECM-EDGE-007: reopening modal for a different case shows no bleed-through', async () => {
       const first = await openCaseAndModal(CASE_REF_PRIMARY);
-      if (!first.opened) {
-        console.warn('[TC-ECM-EDGE-007] Staging limitation: modal did not open for first case');
-        expect(true).toBe(true);
-        return;
-      }
+      expect(first.opened).toBe(true);
       const firstNotes = await first.detailPage.getDialogInputValue('notes');
       await first.detailPage.cancelEditForm();
 
       const second = await reopenCaseAndModal(CASE_REF_SECONDARY, { exclude: [first.caseRef] });
-      if (!second.opened) {
-        console.warn('[TC-ECM-EDGE-007] Staging limitation: modal did not open for second case');
-        expect(true).toBe(true);
-        return;
-      }
+      expect(second.opened).toBe(true);
       const secondNotes = await second.detailPage.getDialogInputValue('notes');
       console.info('[TC-ECM-EDGE-007] Notes — first case:', firstNotes, 'second case:', secondNotes);
 
@@ -982,11 +869,7 @@ describe('TC-ECM: Edit Case Modal — E2E', () => {
 
     test('TC-ECM-NEG-007: statutory deadline at historical/far-future extremes', async () => {
       const { detailPage, opened } = await openCaseAndModal();
-      if (!opened) {
-        console.warn('[TC-ECM-NEG-007] Staging limitation: modal did not open');
-        expect(true).toBe(true);
-        return;
-      }
+      expect(opened).toBe(true);
 
       await detailPage.setDialogField('statutory deadline', '1900-01-01');
       await wait(300);
@@ -1005,11 +888,7 @@ describe('TC-ECM: Edit Case Modal — E2E', () => {
 
     test('TC-ECM-NEG-008: invalid date string does not crash the date field', async () => {
       const { detailPage, opened } = await openCaseAndModal();
-      if (!opened) {
-        console.warn('[TC-ECM-NEG-008] Staging limitation: modal did not open');
-        expect(true).toBe(true);
-        return;
-      }
+      expect(opened).toBe(true);
 
       const before = await detailPage.getDialogInputValue('statutory deadline');
       await detailPage.setDialogField('statutory deadline', '2025-13-40');
@@ -1025,11 +904,7 @@ describe('TC-ECM: Edit Case Modal — E2E', () => {
 
     test('TC-ECM-NEG-012: Save clicked with no changes', async () => {
       const { detailPage, opened } = await openCaseAndModal();
-      if (!opened) {
-        console.warn('[TC-ECM-NEG-012] Staging limitation: modal did not open');
-        expect(true).toBe(true);
-        return;
-      }
+      expect(opened).toBe(true);
 
       await detailPage.submitEditForm();
       await wait(1000);
@@ -1043,11 +918,7 @@ describe('TC-ECM: Edit Case Modal — E2E', () => {
 
     test('TC-ECM-NEG-013: double-clicking Save does not fire duplicate submissions', async () => {
       const { detailPage, opened } = await openCaseAndModal();
-      if (!opened) {
-        console.warn('[TC-ECM-NEG-013] Staging limitation: modal did not open');
-        expect(true).toBe(true);
-        return;
-      }
+      expect(opened).toBe(true);
 
       let submitCount = 0;
       await page.setRequestInterception(true);
@@ -1090,11 +961,7 @@ describe('TC-ECM: Edit Case Modal — E2E', () => {
 
     test('TC-ECM-NEG-014: network failure mid-save leaves the modal recoverable', async () => {
       const { detailPage, opened } = await openCaseAndModal();
-      if (!opened) {
-        console.warn('[TC-ECM-NEG-014] Staging limitation: modal did not open');
-        expect(true).toBe(true);
-        return;
-      }
+      expect(opened).toBe(true);
 
       await page.setOfflineMode(true);
       try {

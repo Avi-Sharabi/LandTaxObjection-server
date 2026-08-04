@@ -3,6 +3,18 @@
 const fs = require('fs');
 const path = require('path');
 
+// Formats a count breakdown the same way Jest's own console summary does: only
+// non-zero segments shown, in "failed, skipped, todo, passed, total" order.
+function summarizeCounts(failed, pending, passed, total, todo = 0) {
+  const parts = [];
+  if (failed > 0) parts.push(`${failed} failed`);
+  if (pending > 0) parts.push(`${pending} skipped`);
+  if (todo > 0) parts.push(`${todo} todo`);
+  parts.push(`${passed} passed`);
+  parts.push(`${total} total`);
+  return parts.join(', ');
+}
+
 // Writes a plain-text summary of failed tests after the run, so a failure can be
 // scanned without scrolling back through the full console output.
 class FailureReporter {
@@ -36,7 +48,31 @@ class FailureReporter {
       }
     }
 
-    fs.writeFileSync(this._outputFile, lines.join('\n'), 'utf8');
+    // Jest-native-style aggregate summary (matches the block Jest itself prints to the
+    // console), so the same clean report also carries the familiar totals at a glance.
+    // Note: the "estimated Ns" figure Jest sometimes shows is its own internal cache-based
+    // heuristic — not derivable from the reporter's results object, so it's omitted here.
+    const suiteSummary = summarizeCounts(
+      results.numFailedTestSuites, results.numPendingTestSuites,
+      results.numPassedTestSuites, results.numTotalTestSuites
+    );
+    const testSummary = summarizeCounts(
+      results.numFailedTests, results.numPendingTests,
+      results.numPassedTests, results.numTotalTests, results.numTodoTests
+    );
+    const elapsedSeconds = ((Date.now() - results.startTime) / 1000).toFixed(3);
+
+    lines.push(`Test Suites: ${suiteSummary}`);
+    lines.push(`Tests:       ${testSummary}`);
+    lines.push(`Snapshots:   ${results.snapshot.total} total`);
+    lines.push(`Time:        ${elapsedSeconds} s`);
+
+    const report = lines.join('\n');
+    fs.writeFileSync(this._outputFile, report, 'utf8');
+
+    // Also print the same report to the console, after Jest's own summary — so it's
+    // visible directly in the terminal without having to open failed-tests.txt separately.
+    process.stdout.write(`\n=== ${path.basename(this._outputFile)} ===\n${report}\n`);
   }
 }
 

@@ -276,17 +276,12 @@ describe('TC-CLT: Clients Section — E2E', () => {
 
       await clientsPage.clickNewClient();
 
-      // KNOWN STAGING LIMITATION: "New Client" button does not open a form on staging.
-      // The form never opens (no dialog, no right-side drawer, no navigation) even after 12s.
-      // This may be a permissions issue (Accountant role cannot create clients) or incomplete feature.
       const formVisible = await page.evaluate(() =>
         !!(document.querySelector('[role="dialog"]') ||
            document.querySelector('[class*="MuiDrawer-paperAnchorRight"]') ||
            document.querySelector('input[name*="name" i], input[placeholder*="name" i]'))
       );
-      console.warn('[TC-010] Known staging limitation: New Client form visible:', formVisible);
-      // Don't hard-fail — just document observed state
-      expect(typeof formVisible).toBe('boolean');
+      expect(formVisible).toBe(true);
     }, 60000);
 
     test('TC-CLT-011: sidebar navigation links are functional', async () => {
@@ -325,20 +320,11 @@ describe('TC-CLT: Clients Section — E2E', () => {
       await wait(2000);
 
       const url = await page.url();
-      // KNOWN APP BUG: The app does not implement an auth guard on /accountant/client.
-      // Unauthenticated users are NOT redirected to /login — they remain on /accountant/client.
-      // This test documents the current (broken) behaviour and will need updating once the bug is fixed.
-      console.warn('[TC-012] Known app bug: no auth redirect. Current URL:', url);
-      if (url.includes('/login')) {
-        // Bug is fixed — verify no client data is visible either
-        const clientDataVisible = await page.evaluate(() =>
-          document.querySelectorAll('tbody tr').length > 0
-        );
-        expect(clientDataVisible).toBe(false);
-      } else {
-        // Bug still present — expect page to be at /accountant/client
-        expect(url).toContain('/accountant/client');
-      }
+      expect(url).toContain('/login');
+      const clientDataVisible = await page.evaluate(() =>
+        document.querySelectorAll('tbody tr').length > 0
+      );
+      expect(clientDataVisible).toBe(false);
     }, 60000);
 
     test('TC-CLT-013: search with no matching results shows empty state', async () => {
@@ -452,13 +438,17 @@ describe('TC-CLT: Clients Section — E2E', () => {
 
       await clientsPage.clickNewClient();
 
-      // KNOWN STAGING LIMITATION: New Client form does not open on staging (see TC-010).
-      // Skipping submit attempt — just verify no blank client was accidentally added.
+      const formVisible = await page.evaluate(() =>
+        !!(document.querySelector('[role="dialog"]') ||
+           document.querySelector('[class*="MuiDrawer-paperAnchorRight"]') ||
+           document.querySelector('input[name*="name" i], input[placeholder*="name" i]'))
+      );
+      expect(formVisible).toBe(true);
+
       const blankClient = await page.evaluate(() =>
         [...document.querySelectorAll('tbody tr:not([class*="head"])')]
           .some(r => r.textContent.trim() === '' || /^[\s—]+$/.test(r.textContent))
       );
-      console.warn('[TC-019] Known staging limitation: form did not open. Blank client in list:', blankClient);
       expect(blankClient).toBe(false);
     }, 60000);
 
@@ -467,10 +457,12 @@ describe('TC-CLT: Clients Section — E2E', () => {
 
       await clientsPage.clickNewClient();
 
-      // KNOWN STAGING LIMITATION: New Client form does not open on staging (see TC-010).
-      const isStable = await page.evaluate(() => document.readyState === 'complete');
-      console.warn('[TC-020] Known staging limitation: New Client form not available on staging');
-      expect(isStable).toBe(true);
+      const formVisible = await page.evaluate(() =>
+        !!(document.querySelector('[role="dialog"]') ||
+           document.querySelector('[class*="MuiDrawer-paperAnchorRight"]') ||
+           document.querySelector('input[name*="name" i], input[placeholder*="name" i]'))
+      );
+      expect(formVisible).toBe(true);
     }, 60000);
 
     test('TC-CLT-021: create new client with duplicate email shows error', async () => {
@@ -478,10 +470,12 @@ describe('TC-CLT: Clients Section — E2E', () => {
 
       await clientsPage.clickNewClient();
 
-      // KNOWN STAGING LIMITATION: New Client form does not open on staging (see TC-010).
-      const isStable = await page.evaluate(() => document.readyState === 'complete');
-      console.warn('[TC-021] Known staging limitation: New Client form not available on staging');
-      expect(isStable).toBe(true);
+      const formVisible = await page.evaluate(() =>
+        !!(document.querySelector('[role="dialog"]') ||
+           document.querySelector('[class*="MuiDrawer-paperAnchorRight"]') ||
+           document.querySelector('input[name*="name" i], input[placeholder*="name" i]'))
+      );
+      expect(formVisible).toBe(true);
     }, 60000);
 
     test('TC-CLT-022: XSS in search bar is neutralized', async () => {
@@ -526,8 +520,14 @@ describe('TC-CLT: Clients Section — E2E', () => {
     test('TC-CLT-024: XSS in Create New Client name field is neutralized', async () => {
       const clientsPage = await loginAndGoToClients();
 
-      // KNOWN STAGING LIMITATION: New Client form does not open on staging (see TC-010).
-      // XSS test via search bar as a proxy — verifies the app doesn't execute injected scripts.
+      await clientsPage.clickNewClient();
+      const formVisible = await page.evaluate(() =>
+        !!(document.querySelector('[role="dialog"]') ||
+           document.querySelector('[class*="MuiDrawer-paperAnchorRight"]') ||
+           document.querySelector('input[name*="name" i], input[placeholder*="name" i]'))
+      );
+      expect(formVisible).toBe(true);
+
       let xssFired = false;
       const handler = async dlg => { xssFired = true; await dlg.dismiss(); };
       page.on('dialog', handler);
@@ -536,7 +536,6 @@ describe('TC-CLT: Clients Section — E2E', () => {
         await clientsPage.search("<script>alert('xss')</script>");
         await wait(1000);
         expect(xssFired).toBe(false);
-        console.warn('[TC-024] Known staging limitation: tested XSS via search bar (form unavailable)');
       } finally {
         page.off('dialog', handler);
       }
@@ -545,15 +544,20 @@ describe('TC-CLT: Clients Section — E2E', () => {
     test('TC-CLT-025: SQL injection in Create New Client name field is handled safely', async () => {
       const clientsPage = await loginAndGoToClients();
 
-      // KNOWN STAGING LIMITATION: New Client form does not open on staging (see TC-010).
-      // SQL injection test via search bar as a proxy.
+      await clientsPage.clickNewClient();
+      const formVisible = await page.evaluate(() =>
+        !!(document.querySelector('[role="dialog"]') ||
+           document.querySelector('[class*="MuiDrawer-paperAnchorRight"]') ||
+           document.querySelector('input[name*="name" i], input[placeholder*="name" i]'))
+      );
+      expect(formVisible).toBe(true);
+
       await clientsPage.search("' OR '1'='1");
       await wait(1000);
 
       const hasDbError = await page.evaluate(() =>
         /syntax error|ORA-|SQL|stack trace/i.test(document.body.innerText)
       );
-      console.warn('[TC-025] Known staging limitation: tested SQL injection via search bar (form unavailable)');
       expect(hasDbError).toBe(false);
     }, 60000);
 
@@ -573,17 +577,7 @@ describe('TC-CLT: Clients Section — E2E', () => {
       await wait(2000);
 
       const url = await page.url();
-      // KNOWN APP BUG: The app does not redirect to /login after session expiry.
-      // Reloading /accountant/client with cleared auth stays on /accountant/client (no auth guard).
-      // This test documents the current (broken) behaviour.
-      console.warn('[TC-026] Known app bug: no redirect on session expiry. Current URL:', url);
-      if (url.includes('/login')) {
-        // Bug is fixed — success
-        expect(url).toContain('/login');
-      } else {
-        // Bug still present
-        expect(url).toContain('/accountant/client');
-      }
+      expect(url).toContain('/login');
     }, 60000);
 
   });
@@ -854,11 +848,7 @@ describe('TC-CLT: Clients Section — E2E', () => {
       const { detailPage } = await goToClientDetail();
 
       const editOpened = await detailPage.clickEditClient();
-      if (!editOpened) {
-        console.warn('[TC-045] Known app bug: Edit Client form did not open on staging');
-        expect(await page.evaluate(() => document.readyState === 'complete')).toBe(true);
-        return;
-      }
+      expect(editOpened).toBe(true);
       await detailPage.fillEditForm({ fullName: 'THIS SHOULD NOT SAVE' });
       await detailPage.cancelEditForm();
 
@@ -901,12 +891,7 @@ describe('TC-CLT: Clients Section — E2E', () => {
       await detailPage.waitForLoad();
 
       const activateVisible = await detailPage.isActivateClientButtonVisible();
-      // KNOWN APP BUG: "Activate Client" button is visible even for clients that are already Active.
-      // It should be hidden or disabled when status === Active.
-      // This test documents the current (broken) behaviour.
-      console.warn('[TC-048] Known app bug: Activate Client button visible on Active client:', activateVisible);
-      // No hard assertion — document observed state
-      expect(typeof activateVisible).toBe('boolean');
+      expect(activateVisible).toBe(false);
     }, 60000);
 
     test('TC-CLT-049: cancelling Activate Client confirmation leaves status unchanged', async () => {

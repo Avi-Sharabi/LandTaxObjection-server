@@ -484,17 +484,11 @@ describe('TC-CASE: Cases List Page — E2E', () => {
       await wait(2000);
 
       const url = await page.url();
-      // KNOWN APP BUG: auth guard on /accountant/cases may not be implemented on staging.
-      // Document observed behaviour without hard failing until the bug is fixed.
-      console.warn('[TC-013] Auth guard check. Current URL:', url);
-      if (url.includes('/login')) {
-        const caseDataVisible = await page.evaluate(() =>
-          document.querySelectorAll('tbody tr').length > 0
-        );
-        expect(caseDataVisible).toBe(false);
-      } else {
-        expect(url).toContain('/accountant/cases');
-      }
+      expect(url).toContain('/login');
+      const caseDataVisible = await page.evaluate(() =>
+        document.querySelectorAll('tbody tr').length > 0
+      );
+      expect(caseDataVisible).toBe(false);
     }, 60000);
 
     test('TC-CASE-014: search with no matching results shows empty state', async () => {
@@ -634,13 +628,7 @@ describe('TC-CASE: Cases List Page — E2E', () => {
       await wait(2000);
 
       const url = await page.url();
-      // KNOWN APP BUG: may not redirect on session expiry — document observed state
-      console.warn('[TC-026] Session expiry check. Current URL:', url);
-      if (url.includes('/login')) {
-        expect(url).toContain('/login');
-      } else {
-        expect(url).toContain('/accountant/cases');
-      }
+      expect(url).toContain('/login');
     }, 60000);
 
   });

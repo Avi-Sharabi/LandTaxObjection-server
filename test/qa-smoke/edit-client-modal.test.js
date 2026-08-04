@@ -121,11 +121,7 @@ describe('TC-CLI: Edit Client Modal — E2E', () => {
 
     test('TC-CLI-001: modal opens with all sections and pre-fills client data', async () => {
       const { detailPage, opened } = await openClientAndModal();
-      if (!opened) {
-        console.warn('[TC-CLI-001] Staging limitation: modal did not open');
-        expect(true).toBe(true);
-        return;
-      }
+      expect(opened).toBe(true);
 
       const title = await detailPage.getEditModalTitle();
       expect(title).toMatch(/edit client/i);
@@ -147,11 +143,7 @@ describe('TC-CLI: Edit Client Modal — E2E', () => {
 
     test('TC-CLI-002: backdrop click does not close the modal', async () => {
       const { detailPage, opened } = await openClientAndModal();
-      if (!opened) {
-        console.warn('[TC-CLI-002] Staging limitation: modal did not open');
-        expect(true).toBe(true);
-        return;
-      }
+      expect(opened).toBe(true);
 
       await detailPage.clickBackdrop();
       const stillOpen = await detailPage.isEditModalOpen();
@@ -168,11 +160,7 @@ describe('TC-CLI: Edit Client Modal — E2E', () => {
 
     test('TC-CLI-003: cancel button closes modal and resets form state', async () => {
       const { detailPage, opened } = await openClientAndModal();
-      if (!opened) {
-        console.warn('[TC-CLI-003] Staging limitation: modal did not open');
-        expect(true).toBe(true);
-        return;
-      }
+      expect(opened).toBe(true);
 
       // Wait specifically for the full name field to be pre-filled before reading it
       await page.waitForFunction(() => {
@@ -215,11 +203,7 @@ describe('TC-CLI: Edit Client Modal — E2E', () => {
 
     test('TC-CLI-004: title dropdown displays all options and accepts selection', async () => {
       const { detailPage, opened } = await openClientAndModal();
-      if (!opened) {
-        console.warn('[TC-CLI-004] Staging limitation: modal did not open');
-        expect(true).toBe(true);
-        return;
-      }
+      expect(opened).toBe(true);
 
       await detailPage.openDialogSelect('title');
       const options = await detailPage.getDialogSelectOptions();
@@ -245,11 +229,7 @@ describe('TC-CLI: Edit Client Modal — E2E', () => {
 
     test('TC-CLI-005: full name accepts input and shows validation error when cleared', async () => {
       const { detailPage, opened } = await openClientAndModal();
-      if (!opened) {
-        console.warn('[TC-CLI-005] Staging limitation: modal did not open');
-        expect(true).toBe(true);
-        return;
-      }
+      expect(opened).toBe(true);
 
       const originalName = await detailPage.getDialogInputValue('full name');
 
@@ -288,11 +268,7 @@ describe('TC-CLI: Edit Client Modal — E2E', () => {
 
     test('TC-CLI-006: gender dropdown displays three options with Select placeholder', async () => {
       const { detailPage, opened } = await openClientAndModal();
-      if (!opened) {
-        console.warn('[TC-CLI-006] Staging limitation: modal did not open');
-        expect(true).toBe(true);
-        return;
-      }
+      expect(opened).toBe(true);
 
       await detailPage.openDialogSelect('gender');
       const options = await detailPage.getDialogSelectOptions();
@@ -317,11 +293,7 @@ describe('TC-CLI: Edit Client Modal — E2E', () => {
 
     test('TC-CLI-007: date of birth accepts valid date input', async () => {
       const { detailPage, opened } = await openClientAndModal();
-      if (!opened) {
-        console.warn('[TC-CLI-007] Staging limitation: modal did not open');
-        expect(true).toBe(true);
-        return;
-      }
+      expect(opened).toBe(true);
 
       await detailPage.setDialogField('date of birth', '1985-06-15');
       await wait(300);
@@ -336,11 +308,7 @@ describe('TC-CLI: Edit Client Modal — E2E', () => {
 
     test('TC-CLI-008: email validates format and shows helper text', async () => {
       const { detailPage, opened } = await openClientAndModal();
-      if (!opened) {
-        console.warn('[TC-CLI-008] Staging limitation: modal did not open');
-        expect(true).toBe(true);
-        return;
-      }
+      expect(opened).toBe(true);
 
       const originalEmail = await detailPage.getDialogInputValue('email');
 
@@ -377,11 +345,7 @@ describe('TC-CLI: Edit Client Modal — E2E', () => {
 
     test('TC-CLI-009: phone field strips non-numeric characters on input', async () => {
       const { detailPage, opened } = await openClientAndModal();
-      if (!opened) {
-        console.warn('[TC-CLI-009] Staging limitation: modal did not open');
-        expect(true).toBe(true);
-        return;
-      }
+      expect(opened).toBe(true);
 
       // Real keyboard typing triggers React onChange which strips non-digits
       await detailPage.typeIntoDialogField('phone', '(02) 9876-5432');
@@ -402,11 +366,7 @@ describe('TC-CLI: Edit Client Modal — E2E', () => {
 
     test('TC-CLI-010: phone area code dropdown shows area codes', async () => {
       const { detailPage, opened } = await openClientAndModal();
-      if (!opened) {
-        console.warn('[TC-CLI-010] Staging limitation: modal did not open');
-        expect(true).toBe(true);
-        return;
-      }
+      expect(opened).toBe(true);
 
       const options = await detailPage.getPhoneAreaCodeOptions('phone');
       console.info('[TC-CLI-010] Phone area code options:', options);
@@ -426,11 +386,7 @@ describe('TC-CLI: Edit Client Modal — E2E', () => {
 
     test('TC-CLI-011: mobile field strips non-numeric characters on input', async () => {
       const { detailPage, opened } = await openClientAndModal();
-      if (!opened) {
-        console.warn('[TC-CLI-011] Staging limitation: modal did not open');
-        expect(true).toBe(true);
-        return;
-      }
+      expect(opened).toBe(true);
 
       await detailPage.typeIntoDialogField('mobile', '+61 412 345 678');
       await wait(300);
@@ -449,11 +405,7 @@ describe('TC-CLI: Edit Client Modal — E2E', () => {
 
     test('TC-CLI-012: country field is readonly and displays Australia', async () => {
       const { detailPage, opened } = await openClientAndModal();
-      if (!opened) {
-        console.warn('[TC-CLI-012] Staging limitation: modal did not open');
-        expect(true).toBe(true);
-        return;
-      }
+      expect(opened).toBe(true);
 
       const countryVal = await detailPage.getDialogInputValue('country');
       console.info('[TC-CLI-012] Country value:', countryVal);
@@ -467,11 +419,7 @@ describe('TC-CLI: Edit Client Modal — E2E', () => {
 
     test('TC-CLI-013: state dropdown lists all Australian states', async () => {
       const { detailPage, opened } = await openClientAndModal();
-      if (!opened) {
-        console.warn('[TC-CLI-013] Staging limitation: modal did not open');
-        expect(true).toBe(true);
-        return;
-      }
+      expect(opened).toBe(true);
 
       await detailPage.openDialogSelect('state', 0);
       const options = await detailPage.getDialogSelectOptions();
@@ -503,11 +451,7 @@ describe('TC-CLI: Edit Client Modal — E2E', () => {
 
     test('TC-CLI-014: city field is disabled until a state is selected', async () => {
       const { detailPage, opened } = await openClientAndModal();
-      if (!opened) {
-        console.warn('[TC-CLI-014] Staging limitation: modal did not open');
-        expect(true).toBe(true);
-        return;
-      }
+      expect(opened).toBe(true);
 
       // Select a state to trigger the city cascade
       await detailPage.openDialogSelect('state', 0);
@@ -526,11 +470,7 @@ describe('TC-CLI: Edit Client Modal — E2E', () => {
 
     test('TC-CLI-015: selecting a state loads cities for that state', async () => {
       const { detailPage, opened } = await openClientAndModal();
-      if (!opened) {
-        console.warn('[TC-CLI-015] Staging limitation: modal did not open');
-        expect(true).toBe(true);
-        return;
-      }
+      expect(opened).toBe(true);
 
       // Select NSW and verify city list populates
       await detailPage.openDialogSelect('state', 0);
@@ -571,11 +511,7 @@ describe('TC-CLI: Edit Client Modal — E2E', () => {
 
     test('TC-CLI-016: loading indicator shows while cities are being fetched', async () => {
       const { detailPage, opened } = await openClientAndModal();
-      if (!opened) {
-        console.warn('[TC-CLI-016] Staging limitation: modal did not open');
-        expect(true).toBe(true);
-        return;
-      }
+      expect(opened).toBe(true);
 
       let cdp;
       try {
@@ -606,11 +542,7 @@ describe('TC-CLI: Edit Client Modal — E2E', () => {
 
     test('TC-CLI-017: selecting a city auto-fills the postcode', async () => {
       const { detailPage, opened } = await openClientAndModal();
-      if (!opened) {
-        console.warn('[TC-CLI-017] Staging limitation: modal did not open');
-        expect(true).toBe(true);
-        return;
-      }
+      expect(opened).toBe(true);
 
       // Select NSW
       await detailPage.openDialogSelect('state', 0);
@@ -656,11 +588,7 @@ describe('TC-CLI: Edit Client Modal — E2E', () => {
 
     test('TC-CLI-018: postcode field is readonly and cannot be edited manually', async () => {
       const { detailPage, opened } = await openClientAndModal();
-      if (!opened) {
-        console.warn('[TC-CLI-018] Staging limitation: modal did not open');
-        expect(true).toBe(true);
-        return;
-      }
+      expect(opened).toBe(true);
 
       const isReadonly = await detailPage.isDialogInputReadonly('postcode', 0);
       expect(isReadonly).toBe(true);
@@ -670,11 +598,7 @@ describe('TC-CLI: Edit Client Modal — E2E', () => {
 
     test('TC-CLI-019: changing state clears city and postcode', async () => {
       const { detailPage, opened } = await openClientAndModal();
-      if (!opened) {
-        console.warn('[TC-CLI-019] Staging limitation: modal did not open');
-        expect(true).toBe(true);
-        return;
-      }
+      expect(opened).toBe(true);
 
       // Set NSW and select any city to get a postcode
       await detailPage.openDialogSelect('state', 0);
@@ -729,11 +653,7 @@ describe('TC-CLI: Edit Client Modal — E2E', () => {
 
     test('TC-CLI-020: state field renders state code after selection', async () => {
       const { detailPage, opened } = await openClientAndModal();
-      if (!opened) {
-        console.warn('[TC-CLI-020] Staging limitation: modal did not open');
-        expect(true).toBe(true);
-        return;
-      }
+      expect(opened).toBe(true);
 
       await detailPage.openDialogSelect('state', 0);
       const stateOpts = await detailPage.getDialogSelectOptions();
@@ -757,11 +677,7 @@ describe('TC-CLI: Edit Client Modal — E2E', () => {
 
     test('TC-CLI-021: same-as-home checkbox hides postal address fields', async () => {
       const { detailPage, opened } = await openClientAndModal();
-      if (!opened) {
-        console.warn('[TC-CLI-021] Staging limitation: modal did not open');
-        expect(true).toBe(true);
-        return;
-      }
+      expect(opened).toBe(true);
 
       // Ensure postal fields are visible first (uncheck if already checked)
       const isChecked = await detailPage.isSameAsHomeChecked();
@@ -788,11 +704,7 @@ describe('TC-CLI: Edit Client Modal — E2E', () => {
 
     test('TC-CLI-022: unchecking same-as-home restores postal fields', async () => {
       const { detailPage, opened } = await openClientAndModal();
-      if (!opened) {
-        console.warn('[TC-CLI-022] Staging limitation: modal did not open');
-        expect(true).toBe(true);
-        return;
-      }
+      expect(opened).toBe(true);
 
       // Ensure checkbox is checked
       const isChecked = await detailPage.isSameAsHomeChecked();
@@ -816,11 +728,7 @@ describe('TC-CLI: Edit Client Modal — E2E', () => {
 
     test('TC-CLI-023: postal address state-to-city cascade is independent of home address', async () => {
       const { detailPage, opened } = await openClientAndModal();
-      if (!opened) {
-        console.warn('[TC-CLI-023] Staging limitation: modal did not open');
-        expect(true).toBe(true);
-        return;
-      }
+      expect(opened).toBe(true);
 
       // Ensure postal fields are visible
       const isChecked = await detailPage.isSameAsHomeChecked();
@@ -866,11 +774,7 @@ describe('TC-CLI: Edit Client Modal — E2E', () => {
 
     test('TC-CLI-024: postal city auto-fills postal postcode', async () => {
       const { detailPage, opened } = await openClientAndModal();
-      if (!opened) {
-        console.warn('[TC-CLI-024] Staging limitation: modal did not open');
-        expect(true).toBe(true);
-        return;
-      }
+      expect(opened).toBe(true);
 
       // Ensure postal fields are visible
       const isChecked = await detailPage.isSameAsHomeChecked();
@@ -910,11 +814,7 @@ describe('TC-CLI: Edit Client Modal — E2E', () => {
 
     test('TC-CLI-025: save button submits form and closes modal on success', async () => {
       const { detailPage, opened } = await openClientAndModal();
-      if (!opened) {
-        console.warn('[TC-CLI-025] Staging limitation: modal did not open');
-        expect(true).toBe(true);
-        return;
-      }
+      expect(opened).toBe(true);
 
       const originalName = await detailPage.getDialogInputValue('full name');
       // Re-save the same name to avoid mutating staging data
@@ -927,21 +827,14 @@ describe('TC-CLI: Edit Client Modal — E2E', () => {
       console.info('[TC-CLI-025] Modal closed after save:', isModalClosed);
       console.info('[TC-CLI-025] Success message:', successMsg);
 
-      if (!isModalClosed) {
-        console.warn('[TC-CLI-025] Known staging limitation: modal did not close after save');
-      }
-      expect(await page.evaluate(() => document.readyState === 'complete')).toBe(true);
+      expect(isModalClosed).toBe(true);
 
       await closeModalIfOpen(detailPage);
     }, 60000);
 
     test('TC-CLI-026: save button shows loading state during submission', async () => {
       const { detailPage, opened } = await openClientAndModal();
-      if (!opened) {
-        console.warn('[TC-CLI-026] Staging limitation: modal did not open');
-        expect(true).toBe(true);
-        return;
-      }
+      expect(opened).toBe(true);
 
       let cdp;
       try {
@@ -974,11 +867,7 @@ describe('TC-CLI: Edit Client Modal — E2E', () => {
 
     test('TC-CLI-027: cancel button is disabled while saving', async () => {
       const { detailPage, opened } = await openClientAndModal();
-      if (!opened) {
-        console.warn('[TC-CLI-027] Staging limitation: modal did not open');
-        expect(true).toBe(true);
-        return;
-      }
+      expect(opened).toBe(true);
 
       let cdp;
       try {
@@ -1010,11 +899,7 @@ describe('TC-CLI: Edit Client Modal — E2E', () => {
 
     test('TC-CLI-028: server error during save keeps modal open', async () => {
       const { detailPage, opened } = await openClientAndModal();
-      if (!opened) {
-        console.warn('[TC-CLI-028] Staging limitation: modal did not open');
-        expect(true).toBe(true);
-        return;
-      }
+      expect(opened).toBe(true);
 
       // Force a 500 via request interception so the test is deterministic regardless
       // of whether the app uses cookies or localStorage for auth.
@@ -1058,11 +943,7 @@ describe('TC-CLI: Edit Client Modal — E2E', () => {
 
     test('TC-CLI-EDGE-001: rapid state changes cancel in-flight city fetch', async () => {
       const { detailPage, opened } = await openClientAndModal();
-      if (!opened) {
-        console.warn('[TC-CLI-EDGE-001] Staging limitation: modal did not open');
-        expect(true).toBe(true);
-        return;
-      }
+      expect(opened).toBe(true);
 
       let cdp;
       try {
@@ -1126,11 +1007,7 @@ describe('TC-CLI: Edit Client Modal — E2E', () => {
       await detailPage.waitForLoad();
 
       const opened = await detailPage.clickEditClient();
-      if (!opened) {
-        console.warn('[TC-CLI-EDGE-002] Staging limitation: modal did not open');
-        expect(true).toBe(true);
-        return;
-      }
+      expect(opened).toBe(true);
 
       const stateValue = await detailPage.getDialogSelectRenderedValue('state', 0);
       console.info('[TC-CLI-EDGE-002] State field value:', stateValue);
@@ -1150,11 +1027,7 @@ describe('TC-CLI: Edit Client Modal — E2E', () => {
 
     test('TC-CLI-EDGE-003: session expiry mid-edit surfaces auth error or redirect', async () => {
       const { detailPage, opened } = await openClientAndModal();
-      if (!opened) {
-        console.warn('[TC-CLI-EDGE-003] Staging limitation: modal did not open');
-        expect(true).toBe(true);
-        return;
-      }
+      expect(opened).toBe(true);
 
       const originalName = await detailPage.getDialogInputValue('full name');
 

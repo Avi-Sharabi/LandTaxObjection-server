@@ -442,19 +442,11 @@ describe('TC-DASH: Dashboard — E2E', () => {
       const url = await page.url();
       console.info('[TC-DASH-013] URL after direct unauthenticated access:', url);
 
-      // KNOWN APP BUG: auth guard on dashboard may not be fully implemented on staging.
-      // Soft-assert: either redirected to /login or dashboard renders (document observed state).
-      if (url.includes('/login')) {
-        // Correct: redirected — verify no dashboard data is exposed
-        const hasDashboardData = await page.evaluate(() =>
-          /active cases|deadline risk|recent activity/i.test(document.body.innerText)
-        );
-        expect(hasDashboardData).toBe(false);
-        console.info('[TC-DASH-013] Correctly redirected to login — no dashboard data visible');
-      } else {
-        console.warn('[TC-DASH-013] Auth guard not triggered — dashboard accessible without auth (KNOWN BUG)');
-        expect(url).toContain('/accountant/dashboard');
-      }
+      expect(url).toContain('/login');
+      const hasDashboardData = await page.evaluate(() =>
+        /active cases|deadline risk|recent activity/i.test(document.body.innerText)
+      );
+      expect(hasDashboardData).toBe(false);
     }, 60000);
 
     test('TC-DASH-014: Dashboard loads correctly when account has zero active cases', async () => {
@@ -509,17 +501,11 @@ describe('TC-DASH: Dashboard — E2E', () => {
       const url = await page.url();
       console.info('[TC-DASH-015] URL after session invalidation + reload:', url);
 
-      if (url.includes('/login')) {
-        console.info('[TC-DASH-015] Correctly redirected to login after session expiry');
-        const hasDashboardData = await page.evaluate(() =>
-          /active cases|deadline risk/i.test(document.body.innerText)
-        );
-        expect(hasDashboardData).toBe(false);
-      } else {
-        // KNOWN BUG: app may not enforce session expiry on reload
-        console.warn('[TC-DASH-015] Session expiry did not trigger redirect — KNOWN BUG (auth guard not enforced on reload)');
-        expect(url).toContain('/accountant/dashboard');
-      }
+      expect(url).toContain('/login');
+      const hasDashboardData = await page.evaluate(() =>
+        /active cases|deadline risk/i.test(document.body.innerText)
+      );
+      expect(hasDashboardData).toBe(false);
     }, 60000);
 
     test('TC-DASH-016: KPI counts do not display negative numbers', async () => {
