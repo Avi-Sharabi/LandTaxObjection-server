@@ -18,6 +18,9 @@ lerna-debug.log*
 # Tests
 /coverage
 /.nyc_output
+/test/qa-smoke/node_modules
+/test/qa-smoke/.env
+/test/qa-smoke/failed-tests.txt
 
 # IDEs and editors
 /.idea

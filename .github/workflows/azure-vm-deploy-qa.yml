@@ -74,10 +74,13 @@ jobs:
             docker run -d \
               --name app \
               --restart always \
+              --log-opt max-size=10m \
+              --log-opt max-file=3 \
               -p 3000:3000 \
               --env-file /etc/app.env \
               -v /var/log/app/ormlogs.log:/app/ormlogs.log \
               "$IMAGE"
+            docker image prune -af --filter "until=24h" || true
 
   migrate:
     needs: deploy
@@ -106,3 +109,30 @@ jobs:
           DB_NAME:     ${{ github.ref == 'refs/heads/main' && secrets.DB_NAME_PROD     || github.ref == 'refs/heads/qa' && secrets.DB_NAME_QA     || secrets.DB_NAME_DEV }}
           DB_SSL:      ${{ github.ref == 'refs/heads/main' && secrets.DB_SSL_PROD      || github.ref == 'refs/heads/qa' && secrets.DB_SSL_QA      || secrets.DB_SSL_DEV }}
         run: npm run migration:run
+
+  qa-regression-smoke:
+    needs: migrate
+    runs-on: ubuntu-latest
+    environment: qa
+    timeout-minutes: 40
+    env:
+      BASE_URL: https://qa.landtax.ymlgroup.com.au
+      LOGIN_EMAIL: pol.imbing@ymlgroup.com.au
+      LOGIN_PASSWORD: ${{ secrets.QA_TEST_PASSWORD }}
+      CI: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: test/qa-smoke/package-lock.json
+
+      - name: Install dependencies
+        working-directory: test/qa-smoke
+        run: npm ci
+
+      - name: Run QA regression suite (Puppeteer)
+        working-directory: test/qa-smoke
+        run: npm test
