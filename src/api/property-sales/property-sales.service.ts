@@ -11,7 +11,7 @@ import {
   assertAllowedDownloadUrl,
   downloadViaBrowser,
 } from './archive-download';
-import { extractDatFiles } from './archive-extractor';
+import { extractDatFiles, type ArchiveLimits } from './archive-extractor';
 import {
   type ArchiveCandidate,
   selectArchivesToIngest,
@@ -21,7 +21,24 @@ import { PsiBrowserService } from './psi-browser.service';
 import { SourceDiscoveryService, wrapPage } from './source-discovery.service';
 import { describePropertySalesError } from './exceptions/describe-property-sales-error';
 import type { PropertySalesErrorCode } from './exceptions/property-sales.exception';
-import { PropertySalesConfig } from './property-sales.config';
+import {
+  ALLOWED_DOWNLOAD_HOSTS,
+  BROWSER_TIMEOUT_MS,
+  GIB,
+} from './property-sales.constants';
+
+const DOWNLOAD_TIMEOUT_MS = 300_000;
+const MAX_ARCHIVE_BYTES = GIB;
+const MAX_ARCHIVES_PER_RUN = 5;
+const LOG_SAMPLE_ROWS = 3;
+const EXCLUDED_SALE_CODES: ReadonlySet<string> = new Set();
+const EXCLUDED_ZONINGS: ReadonlySet<string> = new Set();
+const ARCHIVE_LIMITS: ArchiveLimits = Object.freeze({
+  maxTotalUncompressedBytes: 8 * GIB,
+  maxEntryUncompressedBytes: GIB,
+  maxEntryCount: 20_000,
+  maxCompressionRatio: 200,
+});
 
 export interface ArchiveIngestOutcome {
   readonly sourceUrl: string;
@@ -37,11 +54,7 @@ export interface ArchiveIngestOutcome {
   readonly errorMessage?: string;
 }
 
-export type SweepStatus =
-  | 'completed'
-  | 'skipped_disabled'
-  | 'skipped_concurrent'
-  | 'failed';
+export type SweepStatus = 'completed' | 'skipped_concurrent' | 'failed';
 
 export interface SweepOptions {
   readonly maxArchives?: number;
@@ -67,7 +80,6 @@ export class PropertySalesService {
   private isRunning = false;
 
   constructor(
-    private readonly config: PropertySalesConfig,
     private readonly psiBrowser: PsiBrowserService,
     private readonly sourceDiscovery: SourceDiscoveryService,
     @InjectDataSource() private readonly dataSource: DataSource,
@@ -99,11 +111,6 @@ export class PropertySalesService {
   }
 
   async run(options: SweepOptions = {}): Promise<SweepResult> {
-    if (!this.config.enabled) {
-      this.logEvent('PropertySales.disabled', {});
-      return { status: 'skipped_disabled' };
-    }
-
     if (this.isRunning) {
       this.logEvent('PropertySales.skippedConcurrent', {});
       return { status: 'skipped_concurrent' };
@@ -165,7 +172,7 @@ export class PropertySalesService {
 
       const discoveredCount = candidates.length;
 
-      const maxArchives = options.maxArchives ?? this.config.maxArchivesPerRun;
+      const maxArchives = options.maxArchives ?? MAX_ARCHIVES_PER_RUN;
       const considered = selectArchivesToIngest(
         candidates,
         loadedReleaseDates,
@@ -218,20 +225,20 @@ export class PropertySalesService {
     try {
       await mkdir(archiveDir, { recursive: true });
 
-      assertAllowedDownloadUrl(candidate.url, this.config.allowedDownloadHosts);
+      assertAllowedDownloadUrl(candidate.url, ALLOWED_DOWNLOAD_HOSTS);
 
       const destPath = join(archiveDir, archiveFilename);
       await downloadViaBrowser(browser, candidate.url, destPath, {
-        navigationTimeoutMs: this.config.browserTimeoutMs,
-        timeoutMs: this.config.downloadTimeoutMs,
-        maxBytes: this.config.maxArchiveBytes,
+        navigationTimeoutMs: BROWSER_TIMEOUT_MS,
+        timeoutMs: DOWNLOAD_TIMEOUT_MS,
+        maxBytes: MAX_ARCHIVE_BYTES,
       });
 
       const extractDir = join(archiveDir, 'extracted');
       const extraction = await extractDatFiles(
         destPath,
         extractDir,
-        this.config.archiveLimits,
+        ARCHIVE_LIMITS,
       );
 
       const rows: SaleRow[] = [];
@@ -242,7 +249,10 @@ export class PropertySalesService {
         rejectedCount += parsed.rejectedCount;
       }
 
-      const { included, excludedCount } = applySaleFilters(rows, this.config);
+      const { included, excludedCount } = applySaleFilters(rows, {
+        excludedSaleCodes: EXCLUDED_SALE_CODES,
+        excludedZonings: EXCLUDED_ZONINGS,
+      });
 
       this.logEvent('PropertySales.parsed', {
         archiveFilename,
@@ -256,13 +266,13 @@ export class PropertySalesService {
 
       // KAN-241 stops before any database write, so a bounded sample is the
       // only way to see that fields mapped correctly. KAN-242 inserts `rows`.
-      if (this.config.logSampleRows > 0) {
+      if (LOG_SAMPLE_ROWS > 0) {
         this.logEvent('PropertySales.sampleRows', {
           archiveFilename,
           releaseDate: candidate.releaseDate,
-          sampleSize: Math.min(this.config.logSampleRows, included.length),
+          sampleSize: Math.min(LOG_SAMPLE_ROWS, included.length),
           ofTotal: included.length,
-          sample: included.slice(0, this.config.logSampleRows),
+          sample: included.slice(0, LOG_SAMPLE_ROWS),
         });
       }
 

@@ -2,7 +2,11 @@ import { createReadStream } from 'node:fs';
 import { createInterface } from 'node:readline';
 
 import { DatParsingException } from './exceptions/dat-parsing.exception';
-import type { PropertySalesConfig } from './property-sales.config';
+
+interface SaleFilterConfig {
+  readonly excludedSaleCodes: ReadonlySet<string>;
+  readonly excludedZonings: ReadonlySet<string>;
+}
 
 const B_FIELDS = [
   'districtCode',
@@ -261,7 +265,7 @@ export async function parseDatFile(
 
 export function applySaleFilters(
   rows: readonly SaleRow[],
-  config: Pick<PropertySalesConfig, 'excludedSaleCodes' | 'excludedZonings'>,
+  config: SaleFilterConfig,
 ): SaleFilterResult {
   if (
     config.excludedSaleCodes.size === 0 &&

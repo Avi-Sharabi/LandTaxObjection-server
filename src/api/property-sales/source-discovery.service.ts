@@ -4,7 +4,11 @@ import type { Page as PuppeteerPage } from 'puppeteer';
 import { assertAllowedDownloadUrl } from './archive-download';
 import type { ArchiveCandidate } from './archive-selection.util';
 import { SourceDiscoveryException } from './exceptions/source-discovery.exception';
-import { PropertySalesConfig } from './property-sales.config';
+import {
+  ALLOWED_DOWNLOAD_HOSTS,
+  BROWSER_TIMEOUT_MS,
+  HEADLESS,
+} from './property-sales.constants';
 
 interface DiscoveryFrame {
   url(): string;
@@ -128,6 +132,11 @@ function dedupeCandidates(
   return unique;
 }
 
+const DISCOVERY_URL =
+  'https://www.valuergeneral.nsw.gov.au/design/bulk_psi_content/bulk_psi';
+const WEEKLY_LINK_SELECTOR = 'div.panel-body.weekly a';
+const WEEKLY_LINK_PATTERN = /^\/__psi\/weekly\/\d{8}\.zip$/i;
+
 const CHALLENGE_HOST = 'challenges.cloudflare.com';
 
 const CHALLENGE_TITLES = [
@@ -146,8 +155,6 @@ function delay(ms: number): Promise<void> {
 @Injectable()
 export class SourceDiscoveryService {
   private readonly logger = new Logger(SourceDiscoveryService.name);
-
-  constructor(private readonly config: PropertySalesConfig) {}
 
   private logEvent(context: string, data: Record<string, unknown>): void {
     this.logger.log(
@@ -176,7 +183,7 @@ export class SourceDiscoveryService {
 
       let hrefs: readonly string[];
       try {
-        hrefs = await frame.queryLinks(this.config.weeklyLinkSelector);
+        hrefs = await frame.queryLinks(WEEKLY_LINK_SELECTOR);
       } catch (err) {
         this.logger.debug(
           JSON.stringify({
@@ -197,11 +204,11 @@ export class SourceDiscoveryService {
   async discoverArchiveCandidates(
     page: DiscoveryPage,
   ): Promise<ArchiveCandidate[]> {
-    const linkPattern = this.config.weeklyLinkPattern;
+    const linkPattern = WEEKLY_LINK_PATTERN;
 
-    const { status } = await page.goto(this.config.discoveryUrl, {
+    const { status } = await page.goto(DISCOVERY_URL, {
       waitUntil: 'networkidle2',
-      timeout: this.config.browserTimeoutMs,
+      timeout: BROWSER_TIMEOUT_MS,
     });
 
     let candidates = await this.collectCandidates(page, linkPattern);
@@ -223,25 +230,25 @@ export class SourceDiscoveryService {
     if (candidates.length === 0) {
       if (await this.looksChallenged(page)) {
         throw new SourceDiscoveryException(
-          `${this.config.discoveryUrl} served a bot-check interstitial instead of the listing (status ${status ?? 'unknown'}). ` +
-            'Confirm PSI_HEADLESS and stealth configuration before retrying.',
+          `${DISCOVERY_URL} served a bot-check interstitial instead of the listing (status ${status ?? 'unknown'}). ` +
+            'Confirm HEADLESS and stealth configuration in property-sales.constants.ts before retrying.',
           {
             context: {
-              url: this.config.discoveryUrl,
+              url: DISCOVERY_URL,
               status,
-              headless: this.config.headless,
+              headless: HEADLESS,
             },
           },
         );
       }
 
       throw new SourceDiscoveryException(
-        `No weekly archive links found on ${this.config.discoveryUrl} using selector "${this.config.weeklyLinkSelector}" and pattern ${linkPattern.source} (initial response status ${status ?? 'unknown'}). ` +
-          'The page shows no live bot-check signal, so its structure has probably changed — verify PSI_WEEKLY_LINK_SELECTOR first, then PSI_DISCOVERY_URL and PSI_WEEKLY_LINK_PATTERN, against the live page.',
+        `No weekly archive links found on ${DISCOVERY_URL} using selector "${WEEKLY_LINK_SELECTOR}" and pattern ${linkPattern.source} (initial response status ${status ?? 'unknown'}). ` +
+          'The page shows no live bot-check signal, so its structure has probably changed — verify WEEKLY_LINK_SELECTOR in property-sales.constants.ts first, then DISCOVERY_URL and WEEKLY_LINK_PATTERN, against the live page.',
         {
           context: {
-            url: this.config.discoveryUrl,
-            selector: this.config.weeklyLinkSelector,
+            url: DISCOVERY_URL,
+            selector: WEEKLY_LINK_SELECTOR,
             pattern: linkPattern.source,
             status,
           },
@@ -254,10 +261,7 @@ export class SourceDiscoveryService {
     const allowed: ArchiveCandidate[] = [];
     for (const candidate of sorted) {
       try {
-        assertAllowedDownloadUrl(
-          candidate.url,
-          this.config.allowedDownloadHosts,
-        );
+        assertAllowedDownloadUrl(candidate.url, ALLOWED_DOWNLOAD_HOSTS);
         allowed.push(candidate);
       } catch (err) {
         this.logger.warn(
@@ -273,10 +277,10 @@ export class SourceDiscoveryService {
 
     if (allowed.length === 0) {
       throw new SourceDiscoveryException(
-        `Every candidate found on ${this.config.discoveryUrl} was on a host outside the configured allowlist`,
+        `Every candidate found on ${DISCOVERY_URL} was on a host outside the configured allowlist`,
         {
           context: {
-            url: this.config.discoveryUrl,
+            url: DISCOVERY_URL,
             candidateCount: sorted.length,
           },
         },

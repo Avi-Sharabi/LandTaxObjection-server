@@ -96,7 +96,7 @@ async function assertZipSignature(path: string, url: string): Promise<void> {
         'DOWNLOAD_BLOCKED',
         `${url} returned an HTML document in place of the archive (${size} bytes, signature ${signature}). ` +
           'This is a bot-protection challenge served as an attachment rather than the file itself. ' +
-          'The download was discarded — confirm PSI_HEADLESS/stealth configuration.',
+          'The download was discarded — confirm HEADLESS/stealth configuration in property-sales.constants.ts.',
         { context: { url, bytes: size, signature } },
       );
     }

@@ -3,7 +3,7 @@ import puppeteerExtra from 'puppeteer-extra';
 import StealthPlugin from 'puppeteer-extra-plugin-stealth';
 import type { Browser as PuppeteerBrowser } from 'puppeteer';
 
-import { PropertySalesConfig } from './property-sales.config';
+import { HEADLESS } from './property-sales.constants';
 
 puppeteerExtra.use(StealthPlugin());
 
@@ -11,13 +11,11 @@ puppeteerExtra.use(StealthPlugin());
 export class PsiBrowserService {
   private readonly logger = new Logger(PsiBrowserService.name);
 
-  constructor(private readonly config: PropertySalesConfig) {}
-
   async launch(): Promise<PuppeteerBrowser> {
     this.logger.log(
       JSON.stringify({
         context: 'PsiBrowser.launch',
-        headless: this.config.headless,
+        headless: HEADLESS,
         ts: new Date().toISOString(),
       }),
     );
@@ -27,7 +25,7 @@ export class PsiBrowserService {
         launch: (opts: unknown) => Promise<PuppeteerBrowser>;
       }
     ).launch({
-      headless: this.config.headless,
+      headless: HEADLESS,
       defaultViewport: null,
       args: [
         '--no-sandbox',

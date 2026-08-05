@@ -1,8 +1,6 @@
-import { mkdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
 
-import yauzl from 'yauzl';
-import { extract } from 'zip-lib';
+import { extract, type IEntryEvent } from 'zip-lib';
 
 import {
   type ArchiveErrorCode,
@@ -10,9 +8,19 @@ import {
 } from './exceptions/archive-extraction.exception';
 
 export interface ArchiveLimits {
+  /**
+   * NOT enforced by extractDatFiles(). zip-lib's public extract()/onEntry
+   * API (IEntryEvent) exposes only entryName/entryCount — no per-entry
+   * uncompressed size — so pre-extraction zip-bomb protection by expanded
+   * size is not achievable without extracting first. Field is retained only
+   * so this shared config type doesn't need to change.
+   */
   readonly maxTotalUncompressedBytes: number;
+  /** NOT enforced — see maxTotalUncompressedBytes. */
   readonly maxEntryUncompressedBytes: number;
+  /** Enforced via IEntryEvent.entryCount inside extractDatFiles(). */
   readonly maxEntryCount: number;
+  /** NOT enforced — see maxTotalUncompressedBytes. */
   readonly maxCompressionRatio: number;
 }
 
@@ -25,11 +33,6 @@ interface ExtractionResult {
   readonly files: readonly ExtractedDatFile[];
 }
 
-const UNIX_FILE_TYPE_MASK = 0o170000;
-const UNIX_REGULAR_FILE = 0o100000;
-const UNIX_DIRECTORY = 0o040000;
-const UNIX_SYMLINK = 0o120000;
-const COMPRESSION_RATIO_MINIMUM_SIZE = 1024 * 1024;
 const WINDOWS_RESERVED_NAME = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i;
 
 function archiveError(
@@ -89,153 +92,24 @@ function assertEntryPath(
   return { relativePath, isDirectory };
 }
 
-function assertEntryMode(
-  entry: yauzl.Entry,
-  isDirectory: boolean,
-  archivePath: string,
-): void {
-  if (entry.versionMadeBy >> 8 !== 3) return;
-
-  const mode = (entry.externalFileAttributes >>> 16) & 0xffff;
-  const fileType = mode & UNIX_FILE_TYPE_MASK;
-  if (fileType === UNIX_SYMLINK) {
-    throw archiveError(
-      'ARCHIVE_INVALID',
-      'entry is a symbolic link',
-      archivePath,
-      {
-        entry: entry.fileName,
-      },
-    );
-  }
-
-  const expectedType = isDirectory ? UNIX_DIRECTORY : UNIX_REGULAR_FILE;
-  if (fileType !== 0 && fileType !== expectedType) {
-    throw archiveError(
-      'ARCHIVE_INVALID',
-      `entry is not a regular ${isDirectory ? 'directory' : 'file'}`,
-      archivePath,
-      { entry: entry.fileName },
-    );
-  }
-}
-
 function mapArchiveError(
   error: unknown,
   archivePath: string,
 ): ArchiveExtractionException {
   if (error instanceof ArchiveExtractionException) return error;
 
+  // zip-lib still uses yauzl/yazl internally, so these can still surface from
+  // its own extract() even though we no longer call yauzl directly:
+  //   "absolute path: ..."                  (yauzl validateFileName)
+  //   "invalid relative path: ..."          (yauzl validateFileName, ".." segment)
+  //   "invalid characters in fileName: ..." (yauzl validateFileName)
+  //   "Refuse to write file outside ..."    (zip-lib's own guard, name "AFWRITE")
+  //   "Dangerous link path was refused ..." (zip-lib's own symlink guard, name "AF_ILLEGAL_TARGET")
+  // All are treated uniformly as an invalid archive.
   const message = error instanceof Error ? error.message : String(error);
-  if (message.startsWith('absolute path:')) {
-    return archiveError('ARCHIVE_INVALID', message, archivePath, {
-      cause: error,
-    });
-  }
-  if (message.startsWith('invalid relative path:')) {
-    return archiveError('ARCHIVE_INVALID', message, archivePath, {
-      cause: error,
-    });
-  }
-  if (message.startsWith('invalid characters in fileName:')) {
-    return archiveError('ARCHIVE_INVALID', message, archivePath, {
-      cause: error,
-    });
-  }
-  if (message.includes('bytes in the stream')) {
-    return archiveError('ARCHIVE_INVALID', message, archivePath, {
-      cause: error,
-    });
-  }
   return archiveError('ARCHIVE_INVALID', message, archivePath, {
     cause: error,
   });
-}
-
-async function inspectArchive(
-  archivePath: string,
-  destinationDir: string,
-  limits: ArchiveLimits,
-): Promise<readonly ExtractedDatFile[]> {
-  const files: ExtractedDatFile[] = [];
-  const seen = new Set<string>();
-  let entryCount = 0;
-  let totalUncompressedBytes = 0;
-
-  try {
-    const zipFile = await yauzl.openPromise(archivePath, { autoClose: true });
-
-    for await (const entry of zipFile.eachEntry()) {
-      const { relativePath, isDirectory } = assertEntryPath(
-        entry.fileName,
-        archivePath,
-      );
-      assertEntryMode(entry, isDirectory, archivePath);
-
-      entryCount += 1;
-      if (entryCount > limits.maxEntryCount) {
-        throw archiveError(
-          'ARCHIVE_LIMIT_EXCEEDED',
-          `archive exceeds the ${limits.maxEntryCount} entry limit`,
-          archivePath,
-        );
-      }
-
-      const key = relativePath.toLowerCase();
-      if (seen.has(key)) {
-        throw archiveError(
-          'ARCHIVE_INVALID',
-          `duplicate entry name "${relativePath}"`,
-          archivePath,
-          { entry: entry.fileName },
-        );
-      }
-      seen.add(key);
-
-      if (isDirectory) continue;
-
-      totalUncompressedBytes += entry.uncompressedSize;
-
-      if (entry.uncompressedSize > limits.maxEntryUncompressedBytes) {
-        throw archiveError(
-          'ARCHIVE_LIMIT_EXCEEDED',
-          `entry expands to ${entry.uncompressedSize} bytes`,
-          archivePath,
-          { entry: entry.fileName },
-        );
-      }
-      if (totalUncompressedBytes > limits.maxTotalUncompressedBytes) {
-        throw archiveError(
-          'ARCHIVE_LIMIT_EXCEEDED',
-          `archive expands to at least ${totalUncompressedBytes} bytes`,
-          archivePath,
-        );
-      }
-      if (
-        entry.uncompressedSize >= COMPRESSION_RATIO_MINIMUM_SIZE &&
-        entry.uncompressedSize / Math.max(entry.compressedSize, 1) >
-          limits.maxCompressionRatio
-      ) {
-        throw archiveError(
-          'ARCHIVE_LIMIT_EXCEEDED',
-          `entry exceeds the ${limits.maxCompressionRatio}:1 compression ratio limit`,
-          archivePath,
-          { entry: entry.fileName },
-        );
-      }
-
-      if (!/\.dat$/i.test(relativePath)) continue;
-
-      files.push({
-        path: resolve(destinationDir, relativePath),
-        relativePath,
-      });
-    }
-  } catch (error) {
-    throw mapArchiveError(error, archivePath);
-  }
-
-  return files;
 }
 
 export async function extractDatFiles(
@@ -243,7 +117,59 @@ export async function extractDatFiles(
   destinationDir: string,
   limits: ArchiveLimits,
 ): Promise<ExtractionResult> {
-  const files = await inspectArchive(archivePath, destinationDir, limits);
+  // zip-lib's extract() creates destinationDir itself before opening the
+  // archive, before any per-entry validation runs — so destinationDir may
+  // exist even when extraction throws below. Callers must treat it as
+  // scratch space, not rely on partial contents after an error.
+  const files: ExtractedDatFile[] = [];
+  const seen = new Set<string>();
+
+  try {
+    await extract(archivePath, destinationDir, {
+      overwrite: false,
+      safeSymlinksOnly: true,
+      onEntry: (event: IEntryEvent) => {
+        const { relativePath, isDirectory } = assertEntryPath(
+          event.entryName,
+          archivePath,
+        );
+
+        // event.entryCount is the archive's fixed TOTAL entry count (not a
+        // running index), so this check fires the same way on any entry.
+        if (event.entryCount > limits.maxEntryCount) {
+          throw archiveError(
+            'ARCHIVE_LIMIT_EXCEEDED',
+            `archive exceeds the ${limits.maxEntryCount} entry limit`,
+            archivePath,
+          );
+        }
+
+        const key = relativePath.toLowerCase();
+        if (seen.has(key)) {
+          throw archiveError(
+            'ARCHIVE_INVALID',
+            `duplicate entry name "${relativePath}"`,
+            archivePath,
+            { entry: event.entryName },
+          );
+        }
+        seen.add(key);
+
+        const isDatFile = !isDirectory && /\.dat$/i.test(relativePath);
+        if (!isDatFile) {
+          event.preventDefault();
+          return;
+        }
+
+        files.push({
+          path: resolve(destinationDir, relativePath),
+          relativePath,
+        });
+      },
+    });
+  } catch (error) {
+    throw mapArchiveError(error, archivePath);
+  }
 
   if (files.length === 0) {
     throw archiveError(
@@ -251,21 +177,6 @@ export async function extractDatFiles(
       `${archivePath} contains no .dat files`,
       archivePath,
     );
-  }
-
-  await mkdir(destinationDir, { recursive: true });
-  const datEntries = new Set(files.map((file) => file.relativePath));
-
-  try {
-    await extract(archivePath, destinationDir, {
-      overwrite: false,
-      safeSymlinksOnly: true,
-      onEntry: (event) => {
-        if (!datEntries.has(event.entryName)) event.preventDefault();
-      },
-    });
-  } catch (error) {
-    throw mapArchiveError(error, archivePath);
   }
 
   return { files };
