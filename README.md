@@ -56,30 +56,46 @@ $ docker compose up -d
 
 Weekly ingestion pipeline for the NSW Valuer General's bulk Property Sales
 Information feed — `src/api/property-sales/`. One linear sweep per cron
-tick: read `property_sales_raw` for the latest data already held → discover
-every advertised weekly `.zip` (Puppeteer, headless + stealth) → download
-whatever is newer, oldest-first → unzip the `.dat` entries → parse them
-(record-type filtering plus an optional content-exclusion filter). Downloaded
-archives live in an OS temp directory for the lifetime of one sweep and are
-removed when it finishes, whether it succeeded or not — there is no ledger
-table, no queue, and no persistent archive storage.
+tick: read `property_sales_raw` for the release dates already loaded →
+discover every advertised weekly `.zip` (Puppeteer, headless + stealth) →
+download the ones not yet loaded, oldest-first → unzip the `.dat` entries →
+parse them (record-type filtering plus an optional content-exclusion filter).
+Downloaded archives live in an OS temp directory for the lifetime of one sweep
+and are removed when it finishes, whether it succeeded or not — there is no
+ledger table, no queue, and no persistent archive storage.
 
 **Stops before any database write.** Nothing here inserts into
 `property_sales_raw` — a later ticket (KAN-242) does that, plus a migration
 fixing that table's `dealing_number` unique constraint (it silently drops
-~2.3% of every week's sales; see the migration note in KAN-242). Until
-KAN-242 lands, nothing advances the watermark this pipeline reads, so a
-sweep re-downloads and re-parses the same archives every run — harmless
-while the feature is disabled by default, but worth knowing if you enable it
-for a soak test.
+~2.3% of every week's sales; see the migration note in KAN-242). Because
+nothing writes rows yet, every sweep sees an empty set of loaded release dates
+and so re-downloads and re-parses the same archives each run. That is expected
+until KAN-242 lands.
+
+Selection is a per-release **existence check**, not a high-water mark: a sweep
+ingests any advertised week whose release date is absent from
+`property_sales_raw`. That is deliberate — a watermark can never fill a gap, so
+a week that failed while a later one succeeded would be skipped forever.
+Consequence: against an empty table the sweep works through all ~31 advertised
+weeks at `PSI_MAX_ARCHIVES_PER_RUN` per run, rather than taking only the newest.
 
 **Disabled by default everywhere.** Set `PSI_DOWNLOAD_ENABLED=true` to turn
 it on — no other configuration is required. See
 `src/api/property-sales/property-sales.config.ts` for the full list of
-`PSI_*` env vars and their defaults (cron schedule, timeouts, size limits,
-zip-bomb ceilings). `PSI_CRON_SCHEDULE` accepts any cron expression — use a
-short interval like `*/10 * * * *` for local testing, then move to the
-weekly default (`0 3 * * 1`).
+`PSI_*` env vars and their defaults (timeouts, size limits, zip-bomb ceilings,
+link selector, log sample size).
+
+**The schedule is a code constant, not an env var.** `property-sales.task.ts`
+uses `@Cron('0 3 * * 1')` (Mon 03:00) — a decorator argument is evaluated
+before `ConfigModule` reads `.env`, so it cannot come from configuration.
+Changing it is a code change. For a local sweep, call
+`PropertySalesService.run()` directly instead of waiting for the cron.
+
+**Seeing the output.** Since nothing is persisted yet, the pipeline reports
+what it parsed through the log: `PropertySales.parsed` per archive,
+`PropertySales.sampleRows` with the first `PSI_LOG_SAMPLE_ROWS` mapped rows
+(default 3, `0` disables), and one `PropertySales.sweepTotals` line per sweep.
+The sample is bounded because a single archive holds ~3,250 rows.
 
 The content-level exclusion filter (`PSI_EXCLUDE_SALE_CODES` /
 `PSI_EXCLUDE_ZONINGS`, both comma-separated and empty by default) is a
@@ -90,8 +106,9 @@ does not match this field. Confirm the intended rule before setting either
 var — doing so is then an env-var change, not a code change.
 
 No admin REST surface and no BullMQ queue — this is a single cron-triggered
-sweep per environment, and the service's own in-process flag is what stops
-two ticks overlapping.
+sweep per environment. Overlapping cron ticks are skipped by `@Cron`'s
+`waitForCompletion`; the service's own `isRunning` flag additionally guards
+anything that calls `run()` directly.
 
 ## Run tests
 

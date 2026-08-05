@@ -1,19 +1,3 @@
-/**
- * Sequences one ingestion sweep end to end, matching the five-box pipeline
- * agreed with the team: cron trigger -> read the DB for the latest data ->
- * download via puppeteer -> unzip -> parse the .dat (including filtering).
- * Deliberately stops there — nothing here reads or writes
- * `property_sales_raw` beyond the one watermark SELECT below; KAN-242 adds
- * the INSERT.
- *
- * No ledger, no queue, no retention: a downloaded archive lives in one
- * sweep's own OS temp directory and is removed when the sweep finishes,
- * whether it succeeded or not. One archive's failure is logged and skipped;
- * it never aborts the rest of the sweep. Concurrency is a single in-process
- * flag — this app runs as one container per environment, so an advisory
- * database lock would be solving a problem that does not exist here.
- */
-
 import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -23,25 +7,20 @@ import { InjectDataSource } from '@nestjs/typeorm';
 import type { Browser as PuppeteerBrowser } from 'puppeteer';
 import type { DataSource } from 'typeorm';
 
+import {
+  assertAllowedDownloadUrl,
+  downloadViaBrowser,
+} from './archive-download';
 import { extractDatFiles } from './archive-extractor';
 import {
   type ArchiveCandidate,
-  assertAllowedDownloadUrl,
-  downloadViaBrowser,
-  PsiBrowserService,
-  SourceDiscoveryService,
-  wrapPage,
-} from './discovery-and-download';
-import {
-  applySaleFilters,
-  groupBySaleKey,
-  mapSaleRow,
-  parseDatFile,
-  type RejectedRecord,
-  saleKey,
-  type SaleRow,
-} from './dat-parser';
-import { describeError, type PropertySalesErrorCode } from './exceptions';
+  selectArchivesToIngest,
+} from './archive-selection.util';
+import { applySaleFilters, parseDatFile, type SaleRow } from './dat-parser';
+import { PsiBrowserService } from './psi-browser.service';
+import { SourceDiscoveryService, wrapPage } from './source-discovery.service';
+import { describePropertySalesError } from './exceptions/describe-property-sales-error';
+import type { PropertySalesErrorCode } from './exceptions/property-sales.exception';
 import { PropertySalesConfig } from './property-sales.config';
 
 export interface ArchiveIngestOutcome {
@@ -100,35 +79,23 @@ export class PropertySalesService {
     );
   }
 
-  /**
-   * Box 2: "read the DB to figure out what is the latest data". Every B
-   * record in a weekly archive carries a `download_datetime` equal to that
-   * archive's own release date (at 01:00), so `MAX(download_datetime)` is an
-   * exact watermark — any candidate whose release date is strictly newer is
-   * guaranteed not yet loaded.
-   *
-   * `property_sales_raw` is not TypeORM-managed — it is created out-of-band
-   * by comparable-sales-data/schema-creation.sql and appears in none of this
-   * repo's migrations (the same thing comparables.service.ts's boot-time
-   * schema introspection already has to work around) — so this is a raw
-   * query via the injected DataSource, not a repository.
-   *
-   * Returns `null` when the table doesn't exist yet (a fresh environment) or
-   * is empty — callers must treat that as "no watermark" and take the
-   * oldest candidates, not as an error.
-   */
-  private async readLatestSaleWatermark(): Promise<Date | null> {
+  private async readLoadedReleaseDates(): Promise<ReadonlySet<string>> {
     const [{ to_regclass: tableExists }] = await this.dataSource.query<
       [{ to_regclass: string | null }]
     >(`SELECT to_regclass('public.property_sales_raw') AS to_regclass`);
     if (tableExists === null) {
-      return null;
+      return new Set();
     }
 
-    const [{ watermark }] = await this.dataSource.query<
-      [{ watermark: Date | null }]
-    >(`SELECT MAX(download_datetime) AS watermark FROM property_sales_raw`);
-    return watermark;
+    const rows = await this.dataSource.query<{ release_date: string }[]>(
+      `SELECT DISTINCT to_char(
+         (download_datetime AT TIME ZONE 'Australia/Sydney')::date,
+         'YYYY-MM-DD'
+       ) AS release_date
+       FROM property_sales_raw
+       WHERE download_datetime IS NOT NULL`,
+    );
+    return new Set(rows.map((row) => row.release_date));
   }
 
   async run(options: SweepOptions = {}): Promise<SweepResult> {
@@ -151,27 +118,25 @@ export class PropertySalesService {
   }
 
   private async runLocked(options: SweepOptions): Promise<SweepResult> {
-    // Box 2: read the DB for the latest data already held, before anything
-    // else — cheap, and lets a DB problem surface before Puppeteer launches.
-    const watermark = await this.readLatestSaleWatermark();
-    this.logEvent('PropertySales.watermark', {
-      watermark: watermark?.toISOString() ?? null,
+    const loadedReleaseDates = await this.readLoadedReleaseDates();
+    this.logEvent('PropertySales.alreadyLoaded', {
+      loadedCount: loadedReleaseDates.size,
+      newestLoaded: [...loadedReleaseDates].sort().pop() ?? null,
     });
 
     const sweepTempDir = await mkdtemp(join(tmpdir(), 'psi-'));
     try {
-      return await this.runSweep(watermark, options, sweepTempDir);
+      return await this.runSweep(loadedReleaseDates, options, sweepTempDir);
     } finally {
       await rm(sweepTempDir, { recursive: true, force: true });
     }
   }
 
   private async runSweep(
-    watermark: Date | null,
+    loadedReleaseDates: ReadonlySet<string>,
     options: SweepOptions,
     sweepTempDir: string,
   ): Promise<SweepResult> {
-    // Box 3 (discovery half): find every advertised weekly candidate.
     const browser = await this.psiBrowser.launch();
     try {
       let candidates: readonly ArchiveCandidate[];
@@ -181,7 +146,7 @@ export class PropertySalesService {
           wrapPage(rawPage),
         );
       } catch (err) {
-        const described = describeError(err);
+        const described = describePropertySalesError(err);
         this.logger.error(
           JSON.stringify({
             context: 'PropertySales.discoveryFailed',
@@ -200,22 +165,18 @@ export class PropertySalesService {
 
       const discoveredCount = candidates.length;
 
-      // Only candidates released after the watermark are new; a null
-      // watermark (fresh environment, or table not created yet) means take
-      // the oldest ones first rather than fail the sweep.
-      const scoped =
-        watermark === null
-          ? candidates
-          : candidates.filter((c) => new Date(c.releaseDate) > watermark);
-
-      // Discovery returns newest-first; catch-up should progress chronologically.
-      const oldestFirst = [...scoped].reverse();
       const maxArchives = options.maxArchives ?? this.config.maxArchivesPerRun;
-      const considered = oldestFirst.slice(0, maxArchives);
+      const considered = selectArchivesToIngest(
+        candidates,
+        loadedReleaseDates,
+        maxArchives,
+      );
 
       this.logEvent('PropertySales.sweepScoped', {
         discoveredCount,
+        alreadyLoadedCount: loadedReleaseDates.size,
         consideredCount: considered.length,
+        considering: considered.map((c) => c.releaseDate),
       });
 
       const archives: ArchiveIngestOutcome[] = [];
@@ -224,6 +185,15 @@ export class PropertySalesService {
           await this.ingestOneArchive(browser, candidate, sweepTempDir, index),
         );
       }
+
+      this.logEvent('PropertySales.sweepTotals', {
+        archiveCount: archives.length,
+        parsedCount: archives.filter((a) => a.status === 'parsed').length,
+        failedCount: archives.filter((a) => a.status === 'failed').length,
+        totalSaleRows: archives.reduce((n, a) => n + (a.saleRowCount ?? 0), 0),
+        totalExcluded: archives.reduce((n, a) => n + (a.excludedCount ?? 0), 0),
+        totalRejected: archives.reduce((n, a) => n + (a.rejectedCount ?? 0), 0),
+      });
 
       return {
         status: 'completed',
@@ -236,11 +206,6 @@ export class PropertySalesService {
     }
   }
 
-  /**
-   * Boxes 3 (download) -> 4 (unzip) -> 5 (parse, including filtering) for
-   * one candidate. Never throws — any failure is caught and returned as a
-   * 'failed' outcome so it cannot abort the rest of the sweep.
-   */
   private async ingestOneArchive(
     browser: PuppeteerBrowser,
     candidate: ArchiveCandidate,
@@ -253,19 +218,15 @@ export class PropertySalesService {
     try {
       await mkdir(archiveDir, { recursive: true });
 
-      // Discovery already pre-filtered by host allowlist; re-checking here
-      // means the actual fetch never happens against an unvalidated URL,
-      // even if a caller ever invokes ingestOneArchive some other way.
       assertAllowedDownloadUrl(candidate.url, this.config.allowedDownloadHosts);
 
-      // Box 3: download via puppeteer.
       const destPath = join(archiveDir, archiveFilename);
       await downloadViaBrowser(browser, candidate.url, destPath, {
+        navigationTimeoutMs: this.config.browserTimeoutMs,
         timeoutMs: this.config.downloadTimeoutMs,
         maxBytes: this.config.maxArchiveBytes,
       });
 
-      // Box 4: unzip (.dat entries only).
       const extractDir = join(archiveDir, 'extracted');
       const extraction = await extractDatFiles(
         destPath,
@@ -273,23 +234,12 @@ export class PropertySalesService {
         this.config.archiveLimits,
       );
 
-      // Box 5: parse the .dat file(s), including filtering.
       const rows: SaleRow[] = [];
-      const rejections: RejectedRecord[] = [];
+      let rejectedCount = 0;
       for (const file of extraction.files) {
         const parsed = await parseDatFile(file.path, file.relativePath);
-        const ownershipsByKey = groupBySaleKey(parsed.ownerships);
-        for (const sale of parsed.sales) {
-          const outcome = mapSaleRow(
-            sale,
-            ownershipsByKey.get(saleKey(sale)) ?? [],
-          );
-          if (outcome.row) {
-            rows.push(outcome.row);
-          } else {
-            rejections.push(...outcome.rejections);
-          }
-        }
+        rows.push(...parsed.rows);
+        rejectedCount += parsed.rejectedCount;
       }
 
       const { included, excludedCount } = applySaleFilters(rows, this.config);
@@ -300,14 +250,22 @@ export class PropertySalesService {
         datFileCount: extraction.files.length,
         saleRowCount: rows.length,
         excludedCount,
-        rejectedCount: rejections.length,
+        rejectedCount,
+        includedCount: included.length,
       });
 
-      // KAN-242 plugs in here: insert `included` into property_sales_raw,
-      // then the watermark advances on its own next sweep. Until then,
-      // nothing here writes to the database, so a re-run will re-discover
-      // and re-parse the same archives — harmless while the feature is
-      // disabled by default, and documented in the README.
+      // KAN-241 stops before any database write, so a bounded sample is the
+      // only way to see that fields mapped correctly. KAN-242 inserts `rows`.
+      if (this.config.logSampleRows > 0) {
+        this.logEvent('PropertySales.sampleRows', {
+          archiveFilename,
+          releaseDate: candidate.releaseDate,
+          sampleSize: Math.min(this.config.logSampleRows, included.length),
+          ofTotal: included.length,
+          sample: included.slice(0, this.config.logSampleRows),
+        });
+      }
+
       return {
         sourceUrl: candidate.url,
         archiveFilename,
@@ -316,11 +274,11 @@ export class PropertySalesService {
         datFileCount: extraction.files.length,
         saleRowCount: rows.length,
         excludedCount,
-        rejectedCount: rejections.length,
+        rejectedCount,
         rows: included,
       };
     } catch (err) {
-      const described = describeError(err);
+      const described = describePropertySalesError(err);
       this.logger.error(
         JSON.stringify({
           context: 'PropertySales.archiveFailed',
