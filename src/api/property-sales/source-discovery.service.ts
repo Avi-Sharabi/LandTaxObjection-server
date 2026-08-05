@@ -1,9 +1,15 @@
 import { Injectable, Logger } from '@nestjs/common';
 import type { Page as PuppeteerPage } from 'puppeteer';
 
-import { assertAllowedDownloadUrl } from './archive-download';
+import {
+  dedupeCandidates,
+  sortCandidatesNewestFirst,
+  toCandidates,
+} from './archive-candidate.util';
 import type { ArchiveCandidate } from './archive-selection.util';
+import { assertAllowedDownloadUrl } from './download-url-allowlist.util';
 import { SourceDiscoveryException } from './exceptions/source-discovery.exception';
+import { logEvent } from './property-sales-log.util';
 import {
   ALLOWED_DOWNLOAD_HOSTS,
   BROWSER_TIMEOUT_MS,
@@ -48,90 +54,6 @@ export function wrapPage(page: PuppeteerPage): DiscoveryPage {
   };
 }
 
-function isValidCalendarDate(
-  year: number,
-  month: number,
-  day: number,
-): boolean {
-  if (month < 1 || month > 12 || day < 1 || day > 31) return false;
-  const utc = new Date(Date.UTC(year, month - 1, day));
-  return (
-    utc.getUTCFullYear() === year &&
-    utc.getUTCMonth() === month - 1 &&
-    utc.getUTCDate() === day
-  );
-}
-
-function toIsoDate(year: number, month: number, day: number): string | null {
-  if (!isValidCalendarDate(year, month, day)) return null;
-  const mm = String(month).padStart(2, '0');
-  const dd = String(day).padStart(2, '0');
-  return `${year}-${mm}-${dd}`;
-}
-
-const FILENAME_DATE_PATTERN = /(\d{4})(\d{2})(\d{2})\.zip$/i;
-
-function parseFilenameReleaseDate(pathname: string): string | null {
-  const match = FILENAME_DATE_PATTERN.exec(pathname);
-  if (match === null) return null;
-
-  return toIsoDate(Number(match[1]), Number(match[2]), Number(match[3]));
-}
-
-function toCandidates(
-  hrefs: readonly string[],
-  linkPattern: RegExp,
-): ArchiveCandidate[] {
-  const candidates: ArchiveCandidate[] = [];
-
-  for (const href of hrefs) {
-    if (href === '') continue;
-
-    let resolved: URL;
-    try {
-      resolved = new URL(href);
-    } catch {
-      continue;
-    }
-
-    if (
-      !linkPattern.test(resolved.pathname) &&
-      !linkPattern.test(resolved.href)
-    )
-      continue;
-
-    const releaseDate = parseFilenameReleaseDate(resolved.pathname);
-    if (releaseDate === null) continue;
-
-    candidates.push({ url: resolved.href, releaseDate });
-  }
-
-  return candidates;
-}
-
-function sortCandidatesNewestFirst(
-  candidates: readonly ArchiveCandidate[],
-): ArchiveCandidate[] {
-  return [...candidates].sort((a, b) => {
-    if (a.releaseDate !== b.releaseDate)
-      return a.releaseDate < b.releaseDate ? 1 : -1;
-    return a.url < b.url ? 1 : a.url > b.url ? -1 : 0;
-  });
-}
-
-function dedupeCandidates(
-  candidates: readonly ArchiveCandidate[],
-): ArchiveCandidate[] {
-  const seen = new Set<string>();
-  const unique: ArchiveCandidate[] = [];
-  for (const candidate of candidates) {
-    if (seen.has(candidate.url)) continue;
-    seen.add(candidate.url);
-    unique.push(candidate);
-  }
-  return unique;
-}
-
 const DISCOVERY_URL =
   'https://www.valuergeneral.nsw.gov.au/design/bulk_psi_content/bulk_psi';
 const WEEKLY_LINK_SELECTOR = 'div.panel-body.weekly a';
@@ -155,12 +77,6 @@ function delay(ms: number): Promise<void> {
 @Injectable()
 export class SourceDiscoveryService {
   private readonly logger = new Logger(SourceDiscoveryService.name);
-
-  private logEvent(context: string, data: Record<string, unknown>): void {
-    this.logger.log(
-      JSON.stringify({ context, ...data, ts: new Date().toISOString() }),
-    );
-  }
 
   private async looksChallenged(page: DiscoveryPage): Promise<boolean> {
     if (page.frames().some((frame) => frame.url().includes(CHALLENGE_HOST)))
@@ -219,9 +135,9 @@ export class SourceDiscoveryService {
       waited += SETTLE_POLL_MS
     ) {
       if (await this.looksChallenged(page)) {
-        this.logEvent('SourceDiscovery.stillChallenged', { waited });
+        logEvent(this.logger, 'SourceDiscovery.stillChallenged', { waited });
       } else {
-        this.logEvent('SourceDiscovery.noCandidatesYet', { waited });
+        logEvent(this.logger, 'SourceDiscovery.noCandidatesYet', { waited });
       }
       await delay(SETTLE_POLL_MS);
       candidates = await this.collectCandidates(page, linkPattern);
@@ -287,7 +203,7 @@ export class SourceDiscoveryService {
       );
     }
 
-    this.logEvent('SourceDiscovery.discovered', {
+    logEvent(this.logger, 'SourceDiscovery.discovered', {
       candidateCount: allowed.length,
       newest: allowed[0]?.releaseDate,
       oldest: allowed[allowed.length - 1]?.releaseDate,

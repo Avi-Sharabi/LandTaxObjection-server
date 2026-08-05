@@ -13,9 +13,9 @@ export class PropertySalesTask {
     name: 'property-sales-ingest',
     waitForCompletion: true,
   })
-  async handleWeeklySweep(): Promise<void> {
+  async handleWeeklyArchiveSync(): Promise<void> {
     try {
-      await this.runScheduledSweep();
+      await this.runScheduledArchiveSync();
     } catch (err) {
       this.logger.error(
         `[PSI] Unhandled error — ${err instanceof Error ? err.message : String(err)}`,
@@ -23,10 +23,10 @@ export class PropertySalesTask {
     }
   }
 
-  async runScheduledSweep(): Promise<void> {
+  async runScheduledArchiveSync(): Promise<void> {
     const result = await this.propertySales.run();
     this.logger.log(
-      `[PSI] Sweep finished — status=${result.status}` +
+      `[PSI] Archive sync finished — status=${result.status}` +
         (result.consideredCount !== undefined
           ? ` considered=${result.consideredCount}`
           : ''),
