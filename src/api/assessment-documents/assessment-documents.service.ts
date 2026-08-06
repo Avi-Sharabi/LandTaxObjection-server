@@ -1,23 +1,59 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { AzureBlobService } from 'src/common/azure-blob/azure-blob.service';
+import { Readable } from 'stream';
+import {
+  AzureBlobService,
+  BlobStream,
+} from 'src/common/azure-blob/azure-blob.service';
 import { AssessmentDocument } from './entities/assessment-document.entity';
 import { DisputeCase } from '../dispute-cases/entities/dispute-case.entity';
 import { CreateAssessmentDocumentDto } from './dto/create-assessment-document.dto';
 import { UpdateAssessmentDocumentDto } from './dto/update-assessment-document.dto';
 import { AssessmentDocumentResponseDto } from './dto/assessment-document-response.dto';
+import { AssessmentDocumentsRepository } from './assessment-documents.repository';
+import { AssessmentDocumentNotFoundException } from './exceptions/assessment-document-not-found.exception';
+import { AssessmentDocumentFileMissingException } from './exceptions/assessment-document-file-missing.exception';
 
 const URL_EXPIRY_MINUTES = 30;
 const FOLDER = 'assessment-documents';
 
+/**
+ * Allowlist of Content-Types the download endpoint will advertise, keyed by the
+ * stored file extension. Deliberately an allowlist rather than a general MIME
+ * lookup: the bytes are user-uploaded, and serving an unexpected type such as
+ * text/html or image/svg+xml from our own origin would be stored XSS against a
+ * cookie-authenticated session. Anything unrecognised is served as an opaque
+ * download instead.
+ */
+const DOWNLOAD_CONTENT_TYPES: Record<string, string> = {
+  pdf: 'application/pdf',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  tiff: 'image/tiff',
+  doc: 'application/msword',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+};
+const DEFAULT_CONTENT_TYPE = 'application/octet-stream';
+
+export interface AssessmentDocumentContent {
+  stream: Readable;
+  filename: string;
+  contentType: string;
+  contentLength?: number;
+}
+
 @Injectable()
 export class AssessmentDocumentsService {
+  private readonly logger = new Logger(AssessmentDocumentsService.name);
+
   constructor(
     @InjectRepository(AssessmentDocument)
     private readonly assessmentDocumentsRepository: Repository<AssessmentDocument>,
     @InjectRepository(DisputeCase)
     private readonly disputeCaseRepository: Repository<DisputeCase>,
+    private readonly repository: AssessmentDocumentsRepository,
     private readonly azureBlobService: AzureBlobService,
   ) {}
 
@@ -198,21 +234,104 @@ export class AssessmentDocumentsService {
     return caseScoped;
   }
 
+  /**
+   * Resolves a document to a readable blob stream plus the metadata the caller
+   * needs to build the HTTP response. Everything that can fail is resolved here,
+   * before any header is written, so failures still reach the exception filters.
+   */
+  async getDocumentContent(id: string): Promise<AssessmentDocumentContent> {
+    const doc = await this.repository.findByIdForDownload(id);
+    if (!doc) throw new AssessmentDocumentNotFoundException(id);
+    if (!doc.file_path) throw new AssessmentDocumentFileMissingException(id);
+
+    const filename = this.buildFilename(doc)!;
+    const contentType = this.resolveContentType(doc.file_path);
+
+    let blob: BlobStream;
+    try {
+      blob = await this.azureBlobService.getFileStream(doc.file_path);
+    } catch (error) {
+      // Blob genuinely absent is a domain condition; anything else (expired
+      // credential, throttle, outage) is infrastructure and must not be
+      // reported as a 404 — rethrow and let AllExceptionsFilter emit a 500.
+      this.logger.error(
+        `Failed to open blob stream for assessment document ${id}`,
+        error instanceof Error ? error.stack : String(error),
+      );
+      if (this.isNotFoundError(error)) {
+        throw new AssessmentDocumentFileMissingException(id);
+      }
+      throw error;
+    }
+
+    this.logger.log(
+      `Streaming assessment document ${id} as ${filename} (${blob.contentLength ?? 'unknown'} bytes)`,
+    );
+    return {
+      stream: blob.stream,
+      filename,
+      contentType,
+      contentLength: blob.contentLength,
+    };
+  }
+
+  private resolveContentType(filePath: string): string {
+    const extension = filePath.split('.').pop()?.toLowerCase() ?? '';
+    return DOWNLOAD_CONTENT_TYPES[extension] ?? DEFAULT_CONTENT_TYPE;
+  }
+
+  private isNotFoundError(error: unknown): boolean {
+    return (
+      typeof error === 'object' &&
+      error !== null &&
+      'statusCode' in error &&
+      (error as { statusCode?: number }).statusCode === 404
+    );
+  }
+
   private toResponseDto(
     doc: AssessmentDocument,
   ): AssessmentDocumentResponseDto {
+    const filename = this.buildFilename(doc);
     const viewUrl = this.azureBlobService.getFileUrl(
       doc.file_path,
       URL_EXPIRY_MINUTES,
     );
-    const downloadUrl = doc.file_path
+    const downloadUrl = filename
       ? this.azureBlobService.getFileUrl(
           doc.file_path,
           URL_EXPIRY_MINUTES,
-          `attachment; filename="${doc.document_name}.${doc.file_path.split('.').pop()}"`,
+          `attachment; filename="${filename}"`,
         )
       : null;
-    return AssessmentDocumentResponseDto.fromEntity(doc, viewUrl, downloadUrl);
+    return AssessmentDocumentResponseDto.fromEntity(
+      doc,
+      viewUrl,
+      downloadUrl,
+      filename,
+    );
+  }
+
+  /**
+   * The name the document should be saved as. Derived from document_name rather
+   * than the basename of file_path, because a PATCH rename updates the former
+   * and not the latter, and document_name is what the UI displays.
+   *
+   * Sanitised for use in a Content-Disposition header: document_name is only
+   * validated against '/' on the way in, so quotes and CR/LF can reach here —
+   * a quote would truncate the header value and a newline makes Node throw
+   * ERR_INVALID_CHAR.
+   */
+  private buildFilename(doc: AssessmentDocument): string | null {
+    if (!doc.file_path) return null;
+
+    const extension = doc.file_path.includes('.')
+      ? `.${doc.file_path.split('.').pop()}`
+      : '';
+    const base = doc.document_name.replace(/[\\/:*?"<>|]/g, '_');
+
+    // eslint-disable-next-line no-control-regex
+    return `${base}${extension}`.replace(/[\x00-\x1f\x7f]/g, '').trim();
   }
 
   private extractExtension(base64: string): string {

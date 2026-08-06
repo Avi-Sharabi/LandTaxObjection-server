@@ -3,21 +3,27 @@ import {
   Controller,
   Delete,
   Get,
+  Header,
+  HttpStatus,
+  Logger,
   Param,
   ParseUUIDPipe,
   Patch,
   Post,
   Query,
+  StreamableFile,
   UseGuards,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiCookieAuth,
   ApiOperation,
   ApiParam,
   ApiQuery,
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
+import { Throttle } from '@nestjs/throttler';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { AssessmentDocumentsService } from './assessment-documents.service';
 import { CreateAssessmentDocumentDto } from './dto/create-assessment-document.dto';
@@ -30,6 +36,8 @@ import { AssessmentDocumentResponseDto } from './dto/assessment-document-respons
 @UseGuards(JwtAuthGuard)
 @Controller({ path: 'assessment-documents', version: '1' })
 export class AssessmentDocumentsController {
+  private readonly logger = new Logger(AssessmentDocumentsController.name);
+
   constructor(
     private readonly assessmentDocumentsService: AssessmentDocumentsService,
   ) {}
@@ -89,6 +97,67 @@ export class AssessmentDocumentsController {
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<AssessmentDocumentResponseDto> {
     return this.assessmentDocumentsService.findOne(id);
+  }
+
+  /**
+   * Streams the document bytes through the API rather than handing the browser a
+   * SAS URL. The SAS URL is unusable from client-side `fetch` because the storage
+   * account has no CORS rule for the app's origins, and reading the bytes in JS
+   * is what the folder-picker download requires.
+   */
+  @Get(':id/content')
+  @Throttle({ default: { limit: 40, ttl: 60_000 } })
+  @Header('X-Content-Type-Options', 'nosniff')
+  @ApiCookieAuth()
+  @ApiOperation({
+    summary: 'Stream a single assessment document as raw bytes',
+    description:
+      'Returns the document as an attachment. Always served with an explicit ' +
+      'server-derived Content-Type and nosniff, since the stored bytes are user-supplied.',
+  })
+  @ApiParam({ name: 'id', description: 'Assessment document UUID' })
+  @ApiResponse({ status: 200, description: 'Raw document bytes' })
+  @ApiResponse({ status: 400, description: 'Malformed UUID' })
+  @ApiResponse({
+    status: 404,
+    description: 'Document not found or has no stored file',
+  })
+  @ApiResponse({ status: 429, description: 'Too many download requests' })
+  async getContent(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<StreamableFile> {
+    const { stream, filename, contentType, contentLength } =
+      await this.assessmentDocumentsService.getDocumentContent(id);
+
+    const file = new StreamableFile(stream, {
+      type: contentType,
+      // Declaring Content-Length gives the browser a real progress bar, and makes
+      // a transfer that ends early detectable by the client rather than arriving
+      // as a complete-looking short file.
+      length: contentLength,
+      disposition: `attachment; filename="${filename}"; filename*=UTF-8''${encodeURIComponent(filename)}`,
+    });
+
+    // A blob stream can fail after headers are flushed — the handler promise has
+    // already resolved 200 by then, so no exception filter can run. Nest's default
+    // handler replies with the raw error message, which is the upstream-text leak
+    // this codebase is trying to close, so replace it.
+    file.setErrorLogger((error) =>
+      this.logger.error(
+        `Blob stream failed for assessment document ${id}`,
+        error.stack,
+      ),
+    );
+    file.setErrorHandler((_error, response) => {
+      if (response.headersSent) {
+        response.end();
+        return;
+      }
+      response.statusCode = HttpStatus.INTERNAL_SERVER_ERROR;
+      response.send('Internal server error');
+    });
+
+    return file;
   }
 
   @Patch(':id')
