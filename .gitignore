@@ -49,6 +49,9 @@ lerna-debug.log*
 .temp
 .tmp
 
+# NSW Valuer General bulk PSI downloads (zips + extracted .DAT files)
+/psi-downloads
+
 # Runtime data
 pids
 *.pid
