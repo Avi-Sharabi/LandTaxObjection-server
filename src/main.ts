@@ -4,6 +4,7 @@ import { AppModule } from './app.module';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { ValidationPipe, VersioningType } from '@nestjs/common';
 import { DomainExceptionFilter } from './common/filters/domain-exception.filter';
+import { AllExceptionsFilter } from './common/filters/all-exceptions.filter';
 import { json, urlencoded } from 'express';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const cookieParser = require('cookie-parser');
@@ -42,7 +43,12 @@ async function bootstrap() {
     type: VersioningType.URI,
   });
 
-  app.useGlobalFilters(new DomainExceptionFilter());
+  // Order matters: Nest evaluates global filters in reverse registration order,
+  // so DomainExceptionFilter is consulted first and AllExceptionsFilter acts as
+  // the backstop for everything else. Without the backstop, unrecognised errors
+  // fall through to Nest's BaseExceptionFilter, which duck-types anything with
+  // `statusCode` + `message` and relays it to the client verbatim.
+  app.useGlobalFilters(new AllExceptionsFilter(), new DomainExceptionFilter());
 
   app.useGlobalPipes(new ValidationPipe({
     whitelist: true,
