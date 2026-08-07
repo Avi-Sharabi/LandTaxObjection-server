@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { QueryFailedError, Repository } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import {
   CreateDisputeIntakeDto,
@@ -94,11 +94,11 @@ export class DisputeIntakeOrchestrator {
         continue;
       }
 
-      const caseReference = await this.generateCaseReference();
-
       const flags = this.mapConstraintsToFlags(prop.constraints ?? []);
       const notice = await this.createValuationNotice(property.id, prop.valuation_notice, intakeDto.valuationYear, assessmentDocument.id, intakeDto.noticeDate);
-      const disputeCase = await this.createDisputeCase(client as Client, property.id, notice.id, caseReference, prop.state, prop.valuation_notice.assessed_land_value, intakeDto, flags, authoritativeDeadline, deadlineLapsed);
+      const { disputeCase, caseReference } = await this.createDisputeCaseWithUniqueReference(
+        client as Client, property.id, notice.id, prop.state, prop.valuation_notice.assessed_land_value, intakeDto, flags, authoritativeDeadline, deadlineLapsed,
+      );
 
       await this.createLegalGrounds(disputeCase.id, prop.grounds ?? []);
       caseReferences.push(caseReference);
@@ -197,6 +197,51 @@ export class DisputeIntakeOrchestrator {
     return this.valuationNoticesRepository.save(notice);
   }
 
+  private static readonly MAX_CASE_REFERENCE_ATTEMPTS = 3;
+
+  // generateCaseReference() + createDisputeCase() are retried together as a belt-and-braces guard.
+  // The DB sequence backing generateCaseReference() already makes collisions practically impossible,
+  // so this should never fire in normal operation — it only covers the case where the sequence has
+  // drifted behind the rows actually in the table (e.g. references inserted outside the intake flow,
+  // or a restore that reloaded dispute_cases without re-running the sequence's setval).
+  private async createDisputeCaseWithUniqueReference(
+    client: Client,
+    propertyId: string,
+    valuationNoticeId: string,
+    jurisdiction: Jurisdiction,
+    assessedLandValue: number | null,
+    intakeDto: CreateDisputeIntakeDto,
+    flags: PropertyFlags,
+    statutoryDeadline: Date,
+    deadlineLapsedFlagged: boolean,
+  ): Promise<{ disputeCase: DisputeCase; caseReference: string }> {
+    for (let attempt = 1; attempt <= DisputeIntakeOrchestrator.MAX_CASE_REFERENCE_ATTEMPTS; attempt++) {
+      const caseReference = await this.generateCaseReference();
+      try {
+        const disputeCase = await this.createDisputeCase(
+          client, propertyId, valuationNoticeId, caseReference, jurisdiction,
+          assessedLandValue, intakeDto, flags, statutoryDeadline, deadlineLapsedFlagged,
+        );
+        return { disputeCase, caseReference };
+      } catch (err) {
+        const isLastAttempt = attempt === DisputeIntakeOrchestrator.MAX_CASE_REFERENCE_ATTEMPTS;
+        if (this.isDuplicateCaseReferenceError(err) && !isLastAttempt) {
+          this.logger.warn(`Case reference ${caseReference} collided with a concurrent submission (attempt ${attempt}) — retrying with a new reference.`);
+          continue;
+        }
+        throw err;
+      }
+    }
+    // Unreachable — the loop always returns or throws — but keeps TypeScript satisfied.
+    throw new Error('Failed to generate a unique case reference after retries');
+  }
+
+  private isDuplicateCaseReferenceError(err: unknown): boolean {
+    if (!(err instanceof QueryFailedError)) return false;
+    const driverErr = err as QueryFailedError & { code?: string; constraint?: string };
+    return driverErr.code === '23505' && driverErr.constraint === 'UQ_dispute_cases_case_reference';
+  }
+
   private async createDisputeCase(
     client: Client,
     propertyId: string,
@@ -282,9 +327,10 @@ export class DisputeIntakeOrchestrator {
 
   private async generateCaseReference(): Promise<string> {
     const year = new Date().getFullYear();
-    // A DB sequence, not repository.count() + 1 — the count is non-atomic (two concurrent intake
-    // requests can read the same value and mint duplicate case references) and isn't stable under
-    // soft-deletes.
+    // A DB sequence, not repository.count() + 1 or MAX(existing) + 1 — those reads are non-atomic
+    // (two concurrent intake requests can read the same value and mint duplicate case references).
+    // nextval also never reissues a number, so deleting cases — soft via the UI or the batch delete,
+    // or hard via the retention cleanup task — can't free up a reference still in use elsewhere.
     let nextval: string;
     try {
       const rows = await this.disputeCasesRepository.query<Array<{ nextval: string }>>(
