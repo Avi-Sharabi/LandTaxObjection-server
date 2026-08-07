@@ -3,6 +3,10 @@ import { ClientsService } from './clients.service';
 import { CreateClientDto } from './dto/create-client.dto';
 import { UpdateClientInfoDto } from './dto/update-client-info.dto';
 import { AcceptTCDto } from './dto/accept-tc.dto';
+import {
+  BulkDeleteClientsDto,
+  BulkDeleteClientsResponseDto,
+} from './dto/bulk-delete-clients.dto';
 import { GetClientsQueryDto } from '../../common/dto/paginated-query.dto';
 import { ApiBearerAuth, ApiOperation, ApiParam, ApiResponse } from '@nestjs/swagger';
 import { AcceptTcResponseDto } from './dto/accept-tc-response.dto';
@@ -78,5 +82,20 @@ export class ClientsController {
     @Req() req: { user: { id: string } },
   ) {
     return this.clientsService.remove(id, req.user.id);
+  }
+
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.ACCOUNTANT)
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Soft-delete multiple clients (and their dispute cases) in one request' })
+  @ApiResponse({ status: 200, type: BulkDeleteClientsResponseDto })
+  @ApiResponse({ status: 401, description: 'Unauthorised' })
+  @ApiResponse({ status: 403, description: 'Forbidden — accountant or admin role required' })
+  @Post('batch-delete')
+  removeMany(
+    @Body() dto: BulkDeleteClientsDto,
+    @Req() req: { user: { id: string } },
+  ): Promise<BulkDeleteClientsResponseDto> {
+    return this.clientsService.removeMany(dto.ids, req.user.id);
   }
 }
