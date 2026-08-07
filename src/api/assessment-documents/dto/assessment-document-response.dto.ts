@@ -32,10 +32,20 @@ export class AssessmentDocumentResponseDto {
   })
   downloadUrl: string | null;
 
+  @ApiProperty({
+    nullable: true,
+    description:
+      'Filename to save the document as, including extension. Null when no file is stored. ' +
+      'Matches the Content-Disposition sent by GET /assessment-documents/:id/content.',
+    example: 'Land Tax Assessment Notice.pdf',
+  })
+  filename: string | null;
+
   static fromEntity(
     doc: AssessmentDocument,
     viewUrl: string | null,
     downloadUrl: string | null,
+    filename: string | null,
   ): AssessmentDocumentResponseDto {
     const dto = new AssessmentDocumentResponseDto();
     dto.id = doc.id;
@@ -45,6 +55,7 @@ export class AssessmentDocumentResponseDto {
     dto.created_at = doc.created_at;
     dto.viewUrl = viewUrl;
     dto.downloadUrl = downloadUrl;
+    dto.filename = filename;
     return dto;
   }
 }
