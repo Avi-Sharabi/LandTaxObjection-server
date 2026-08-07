@@ -1,8 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { InjectDataSource } from '@nestjs/typeorm';
+import { rm } from 'fs/promises';
 import { join } from 'path';
 import type { Browser, Page } from 'puppeteer';
+import { DataSource, EntityManager } from 'typeorm';
 
 import { PuppeteerService } from '../supporting-evidence/shared/puppeteer.service';
+import { PsiWeekUnusableException } from './exceptions/psi-week-unusable.exception';
 import { PsiArchiveService } from './psi-archive.service';
 import { PsiDatParserService } from './psi-dat-parser.service';
 import { PsiDownloadService } from './psi-download.service';
@@ -14,7 +18,8 @@ import {
   PSI_USER_AGENT,
 } from './psi-import.constant';
 import {
-  PsiSaleRecord,
+  PsiParsedFile,
+  PsiWeekCounts,
   PsiWeekResult,
 } from './types/psi-sale-record.interface';
 import {
@@ -28,6 +33,8 @@ export class PsiImportService {
   private readonly logger = new Logger(PsiImportService.name);
 
   constructor(
+    @InjectDataSource()
+    private readonly dataSource: DataSource,
     private readonly repository: PsiImportRepository,
     private readonly puppeteerSvc: PuppeteerService,
     private readonly scraper: PsiScraperService,
@@ -37,26 +44,27 @@ export class PsiImportService {
   ) {}
 
   /**
-   * Runs the full pipeline: resolve the reference date from the database, find the weekly files
-   * published since then, download and extract each, and parse the .DAT files.
-   *
-   * Nothing is written to `property_sales_raw` — parsed records are logged only. That is
-   * deliberate for this iteration; the table feeds the live comparables pipeline, so the parse
-   * gets eyeballed before it gets trusted.
+   * Resolves the reference date from the database, finds the weekly files published since then,
+   * then downloads, extracts, parses and inserts each into `property_sales_raw`.
    *
    * One browser is opened for the whole run and shared by the scrape and download steps. The
    * origin is behind Cloudflare, and only requests from the session that solved its challenge
    * are honoured — a fresh browser per download would have to re-clear each time.
+   *
+   * @param runId ties every log line to one run; the task passes its Redis lock token.
    */
-  async runImport(): Promise<PsiWeekResult[]> {
+  async runImport(runId: string): Promise<PsiWeekResult[]> {
     const startedAt = Date.now();
+
+    await this.sweepDownloadRoot();
+
     const referenceLabel = await this.resolveReferenceLabel();
 
     let browser: Browser | null = null;
     let page: Page | null = null;
 
     try {
-      browser = await this.puppeteerSvc.launch();
+      browser = await this.puppeteerSvc.launchForPsi();
       page = await browser.newPage();
       await page.setUserAgent(PSI_USER_AGENT);
 
@@ -70,11 +78,13 @@ export class PsiImportService {
         this.logger.log(
           `${PSI_LOG_TAG} Already up to date — nothing to download`,
         );
+        // Summarised anyway, so one PSI.run.done per tick and a gap means a run died.
+        this.logRunSummary(runId, [], startedAt);
         return [];
       }
 
-      const results = await this.processWeeks(page, listing.links);
-      this.logRunSummary(results, startedAt);
+      const results = await this.processWeeks(runId, page, listing.links);
+      this.logRunSummary(runId, results, startedAt);
       return results;
     } finally {
       if (page) await page.close().catch(() => {});
@@ -83,30 +93,84 @@ export class PsiImportService {
   }
 
   /**
-   * Weeks are handled one at a time, and a failure on one is logged and skipped rather than
-   * aborting the run.
+   * Works oldest-first and stops at the first failure. Both halves are load-bearing.
+   *
+   * The resume marker is `MAX(download_datetime)` — a scalar watermark that cannot tell whether
+   * the weeks below it were ever inserted. It is only correct if it advances over a *contiguous*
+   * committed prefix. Newest-first would have a committed 24 Aug assert that a still-pending
+   * 17 Aug is done; continuing past a failure would have the same effect one week later. Either
+   * way that week is never offered again and is lost silently.
    *
    * Sequential by design: concurrency here would mean several archives in flight against a
    * government server, from a container already running Chromium under
    * `--js-flags=--max-old-space-size=512`.
    */
   private async processWeeks(
+    runId: string,
     page: Page,
     links: PsiWeeklyLink[],
   ): Promise<PsiWeekResult[]> {
     const results: PsiWeekResult[] = [];
 
-    for (const link of links) {
+    for (const link of [...links].reverse()) {
+      const weekStartedAt = Date.now();
+      let result: PsiWeekResult;
+
       try {
-        results.push(await this.processWeek(page, link));
+        result = {
+          link,
+          ...(await this.processWeek(page, link)),
+          status: 'success',
+          durationMs: Date.now() - weekStartedAt,
+          error: null,
+        };
       } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
         this.logger.error(
-          `${PSI_LOG_TAG} Week ${link.label} failed — ${err instanceof Error ? err.message : String(err)}`,
+          `${PSI_LOG_TAG} Week ${link.label} failed — ${message}`,
         );
+        result = {
+          link,
+          datFileCount: 0,
+          recordCount: 0,
+          malformedLines: 0,
+          skippedRecords: 0,
+          status: 'failed',
+          durationMs: Date.now() - weekStartedAt,
+          error: message,
+        };
+      }
+
+      this.logWeekOutcome(runId, result);
+      results.push(result);
+
+      if (result.status === 'failed') {
+        this.logger.warn(
+          `${PSI_LOG_TAG} Stopping after ${link.label} — later weeks stay pending so the reference date does not skip this one`,
+        );
+        break;
       }
     }
 
     return results;
+  }
+
+  /**
+   * Clears `psi-downloads/` before a run starts.
+   *
+   * Each week deletes its own directory in a `finally`, which covers every path the process
+   * survives — but `main.ts` builds the app without `enableShutdownHooks()`, so the SIGTERM that
+   * replaces the container on deploy never unwinds that frame, and SIGKILL/OOM never would. A
+   * sweep on the way in covers all of them and needs no state.
+   */
+  private async sweepDownloadRoot(): Promise<void> {
+    try {
+      await rm(PSI_DOWNLOAD_ROOT, { recursive: true, force: true });
+    } catch (err) {
+      this.logger.warn(
+        `${PSI_LOG_TAG} Could not clear ${PSI_DOWNLOAD_ROOT} — ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
 
   /**
@@ -132,69 +196,147 @@ export class PsiImportService {
     return label;
   }
 
+  /**
+   * Downloads, extracts, parses and inserts one week, then deletes what it wrote to disk.
+   *
+   * The `finally` runs on the failure path too: a failed week's insert rolled back, so the archive
+   * is worthless, and keeping it would mean trusting it — `downloadWeeklyArchive`'s
+   * "already downloaded" check is a bare `stat().isFile()` with no integrity validation.
+   */
   private async processWeek(
     page: Page,
     link: PsiWeeklyLink,
-  ): Promise<PsiWeekResult> {
+  ): Promise<PsiWeekCounts> {
     const runDir = join(PSI_DOWNLOAD_ROOT, link.fileStem);
-    const zipPath = await this.downloader.downloadWeeklyArchive(
-      page,
-      link,
-      runDir,
-    );
 
-    const { datFiles, nestedArchiveCount } =
-      await this.archive.extractWeeklyArchive(zipPath, runDir);
-
-    this.logger.log(
-      `${PSI_LOG_TAG}   extracted ${nestedArchiveCount} archive(s) → ${datFiles.length} .DAT file(s)`,
-    );
-
-    if (datFiles.length === 0) {
-      this.logger.warn(
-        `${PSI_LOG_TAG}   No .DAT files found in ${link.label} — check the archive layout`,
+    try {
+      const zipPath = await this.downloader.downloadWeeklyArchive(
+        page,
+        link,
+        runDir,
       );
-      return { link, zipPath, datFileCount: 0, recordCount: 0 };
+
+      const { datFiles, nestedArchiveCount } =
+        await this.archive.extractWeeklyArchive(zipPath, runDir);
+
+      this.logger.log(
+        `${PSI_LOG_TAG}   extracted ${nestedArchiveCount} archive(s) → ${datFiles.length} .DAT file(s)`,
+      );
+
+      if (datFiles.length === 0) {
+        this.logger.warn(
+          `${PSI_LOG_TAG}   No .DAT files found in ${link.label} — check the archive layout`,
+        );
+        return {
+          datFileCount: 0,
+          recordCount: 0,
+          malformedLines: 0,
+          skippedRecords: 0,
+        };
+      }
+
+      // One raw dump per week so the positional field layout stays verifiable against real data.
+      await this.parser.logSampleLines(datFiles[0]);
+
+      return {
+        datFileCount: datFiles.length,
+        ...(await this.ingestWeek(link, datFiles)),
+      };
+    } finally {
+      // Swallowed so a cleanup failure cannot mask the real error; the start-of-run sweep
+      // collects whatever is left behind.
+      await rm(runDir, { recursive: true, force: true }).catch(
+        (err: unknown) => {
+          this.logger.warn(
+            `${PSI_LOG_TAG}   Could not delete ${runDir} — ${err instanceof Error ? err.message : String(err)}`,
+          );
+        },
+      );
     }
-
-    // One raw dump per week so the positional field layout stays verifiable against real data.
-    await this.parser.logSampleLines(datFiles[0]);
-
-    // One file at a time: parse, hand off, drop. Nothing is retained across the loop, so peak
-    // memory is a single district file (tens of records) no matter how many weeks are being
-    // caught up — a 31-week backlog costs the same as a single week.
-    let recordCount = 0;
-    for (const datFile of datFiles) {
-      const records = await this.parseFile(datFile);
-      this.ingestRecords(records);
-      recordCount += records.length;
-    }
-
-    return { link, zipPath, datFileCount: datFiles.length, recordCount };
   }
 
   /**
-   * PLACEHOLDER — the hand-off point for the next task: writing one .DAT file's records into
-   * `property_sales_raw`. For now it dumps them as JSON so the shape can be inspected.
+   * Parses and inserts one week's .DAT files in a single transaction.
    *
-   * Called once per file rather than once per run, so this is already the right shape for a
-   * batched insert: the caller drops each array as soon as this returns, keeping peak memory at
-   * one district file regardless of how many weeks a catch-up covers. Keep it that way — going
-   * back to a single end-of-run call would put ~100k records (~230 MB) on a heap capped at
-   * `--js-flags=--max-old-space-size=512`, in a container that is also running Chromium.
+   * All-or-nothing is what keeps the resume marker honest. A bundle's records do NOT share one
+   * `download_datetime` — the 03 Aug 2026 bundle carries 14 distinct stamps, 01:00 through 01:12,
+   * one per batch of district files. They do share a calendar date, and the marker is rendered
+   * down to `DD MMM YYYY`, so a half-inserted week still moves the marker onto that week's own
+   * label and the district files that never landed would never be offered again.
    *
-   * The `console.log` is the one thing that must go. Printing every record overruns the Docker
-   * json-file driver's `max-size=10m` on the VM and rotates away the surrounding log lines —
-   * fine for dev-time inspection, not for an unattended Monday run.
+   * Download and extraction run before this, not inside it — they are network-bound and would
+   * otherwise pin a pooled connection for minutes. Parse-and-insert is seconds.
+   *
+   * One file at a time: parse, insert, drop. Peak memory is a single district file however deep
+   * the backlog; accumulating first would put ~100k records (~230 MB) on a 512 MB heap shared with
+   * Chromium.
    */
-  private ingestRecords(records: PsiSaleRecord[]): void {
-    if (records.length === 0) return;
+  private async ingestWeek(
+    link: PsiWeeklyLink,
+    datFiles: string[],
+  ): Promise<Omit<PsiWeekCounts, 'datFileCount'>> {
+    // One stamp per week, so the rows that arrived together stay identifiable afterwards.
+    const importedAt = new Date();
 
-    console.log(JSON.stringify(records, null, 2));
+    let recordCount = 0;
+    let malformedLines = 0;
+    let skippedRecords = 0;
+
+    await this.dataSource.transaction(async (manager: EntityManager) => {
+      for (const datFile of datFiles) {
+        const parsed = await this.parseFile(datFile);
+
+        // Per file, not once per week: stamps vary within a bundle, so one sample proves nothing
+        // about the other 122 files.
+        if (parsed.records.length > 0) {
+          this.assertWeekStamp(link, parsed.records[0].download_datetime);
+        }
+
+        await this.repository.insertSaleRecords(
+          manager,
+          parsed.records,
+          importedAt,
+        );
+
+        recordCount += parsed.records.length;
+        malformedLines += parsed.malformedLines;
+        skippedRecords += parsed.skippedRecords;
+      }
+
+      // Files but no records means the B layout moved and every line was rejected. Committing
+      // that would advance the reference date over a week that imported nothing, so fail instead.
+      if (recordCount === 0) {
+        throw new PsiWeekUnusableException(
+          link.label,
+          `${datFiles.length} .DAT file(s) yielded no sale records (${malformedLines} malformed, ${skippedRecords} non-B)`,
+        );
+      }
+    });
+
+    return { recordCount, malformedLines, skippedRecords };
+  }
+
+  /**
+   * Fails the week unless its records' `download_datetime` renders back to the anchor label the
+   * scraper matched on.
+   *
+   * Nothing else ties the two together: labels are raw anchor text, the reference is
+   * `formatPsiLabel(MAX(download_datetime))`. If they disagree, the next run's reference is a
+   * string absent from the listing, `selectNewerThan` falls through and returns every published
+   * week, and `property_sales_raw` gains a duplicate copy of all of them on every run.
+   */
+  private assertWeekStamp(link: PsiWeeklyLink, stamp: Date | null): void {
+    const rendered = stamp === null ? null : formatPsiLabel(stamp);
+    if (rendered === link.label) return;
+
+    throw new PsiWeekUnusableException(
+      link.label,
+      `its records carry download_datetime ${rendered ?? 'NULL'}, which would not match the listing on the next run`,
+    );
   }
 
   /** Parses one .DAT file, logging its counts and returning the mapped sale records. */
-  private async parseFile(datFile: string): Promise<PsiSaleRecord[]> {
+  private async parseFile(datFile: string): Promise<PsiParsedFile> {
     const parsed = await this.parser.parseFile(datFile);
 
     const malformedNote =
@@ -203,7 +345,7 @@ export class PsiImportService {
       `${PSI_LOG_TAG}   ${parsed.sourceFile} — ${parsed.records.length} sale record(s), ${parsed.skippedRecords} non-B skipped${malformedNote}`,
     );
 
-    return parsed.records;
+    return parsed;
   }
 
   private logListingSummary(listing: PsiListingResult): void {
@@ -215,16 +357,60 @@ export class PsiImportService {
     }
   }
 
-  private logRunSummary(results: PsiWeekResult[], startedAt: number): void {
-    const files = results.reduce((total, week) => total + week.datFileCount, 0);
-    const records = results.reduce(
-      (total, week) => total + week.recordCount,
-      0,
-    );
-    const seconds = Math.round((Date.now() - startedAt) / 1000);
+  private logRunSummary(
+    runId: string,
+    results: PsiWeekResult[],
+    startedAt: number,
+  ): void {
+    const sum = (pick: (week: PsiWeekResult) => number): number =>
+      results.reduce((total, week) => total + pick(week), 0);
 
+    const failed = results.filter((week) => week.status === 'failed').length;
+    const records = sum((week) => week.recordCount);
+    const files = sum((week) => week.datFileCount);
+    const durationMs = Date.now() - startedAt;
+
+    this.logEvent('PSI.run.done', {
+      runId,
+      weeks: results.length,
+      weeksSucceeded: results.length - failed,
+      weeksFailed: failed,
+      datFileCount: files,
+      recordCount: records,
+      malformedLines: sum((week) => week.malformedLines),
+      skippedRecords: sum((week) => week.skippedRecords),
+      durationMs,
+    });
+
+    // Kept alongside the JSON — this is the line a human tailing `docker logs` reads.
     this.logger.log(
-      `${PSI_LOG_TAG} Run complete — ${results.length} week(s), ${files} file(s), ${records.toLocaleString('en-AU')} record(s) in ${seconds}s`,
+      `${PSI_LOG_TAG} Run complete — ${results.length} week(s)${failed > 0 ? `, ${failed} failed` : ''}, ${files} file(s), ${records.toLocaleString('en-AU')} record(s) in ${Math.round(durationMs / 1000)}s`,
+    );
+  }
+
+  private logWeekOutcome(runId: string, result: PsiWeekResult): void {
+    this.logEvent('PSI.week.done', {
+      runId,
+      weekLabel: result.link.label,
+      fileStem: result.link.fileStem,
+      status: result.status,
+      datFileCount: result.datFileCount,
+      recordCount: result.recordCount,
+      malformedLines: result.malformedLines,
+      skippedRecords: result.skippedRecords,
+      durationMs: result.durationMs,
+      error: result.error,
+    });
+  }
+
+  /**
+   * One JSON object per line, matching `comparables.service.ts`'s `logEvent`. Stringified into the
+   * message rather than passed as a second argument: Nest's built-in Logger reads a trailing
+   * argument as the *context*, and this app has no Pino or custom `LoggerService`.
+   */
+  private logEvent(context: string, data: Record<string, unknown>): void {
+    this.logger.log(
+      JSON.stringify({ context, ...data, ts: new Date().toISOString() }),
     );
   }
 }

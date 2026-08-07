@@ -1,8 +1,8 @@
 /**
  * A parsed `B` (sale detail) record, keyed to the `property_sales_raw` column shape.
  *
- * `id` and `imported_at` are omitted — they are assigned by the database on insert, which this
- * iteration does not do.
+ * `id` is omitted (database-assigned). `imported_at` is omitted here but stamped by
+ * `PsiImportRepository.insertSaleRecords` rather than left to a column default.
  */
 export interface PsiSaleRecord {
   source_file: string | null;
@@ -43,10 +43,25 @@ export interface PsiParsedFile {
   readonly malformedLines: number;
 }
 
-/** Aggregate outcome of one week's worth of work. */
-export interface PsiWeekResult {
-  readonly link: { label: string; fileStem: string };
-  readonly zipPath: string;
+/** What downloading, parsing and inserting one week produced. */
+export interface PsiWeekCounts {
   readonly datFileCount: number;
   readonly recordCount: number;
+  /** Summed across the week's files. A jump here means the B layout has shifted at VG's end. */
+  readonly malformedLines: number;
+  readonly skippedRecords: number;
+}
+
+/**
+ * Aggregate outcome of one week's worth of work, and the payload of the per-week log line.
+ *
+ * No `zipPath`: the archive is deleted before the week returns, so the path would name something
+ * that no longer exists.
+ */
+export interface PsiWeekResult extends PsiWeekCounts {
+  readonly link: { label: string; fileStem: string };
+  readonly status: 'success' | 'failed';
+  readonly durationMs: number;
+  /** Failure message, or null when the week succeeded. */
+  readonly error: string | null;
 }
