@@ -2,7 +2,14 @@ import { BlobSASPermissions, BlobServiceClient, generateBlobSASQueryParameters, 
 import { Injectable } from "@nestjs/common";
 import { ConfigService } from "@nestjs/config";
 import { lookup as mimeLookup } from 'mime-types';
+import { Readable } from "stream";
 import { InvalidConfigurationException } from "../exceptions/invalid-configuration.exception";
+
+export interface BlobStream {
+    stream: Readable;
+    /** Blob size, when Azure reports it — lets callers declare Content-Length. */
+    contentLength?: number;
+}
 
 
 @Injectable()
@@ -67,6 +74,29 @@ export class AzureBlobService {
         }, sharedKeyCredential).toString();
 
         return `https://${this.accountName}.blob.core.windows.net/${this.containerName}/${blobName}?${sasToken}`;
+    }
+
+    /**
+     * Streaming counterpart to getFileContent — hands back the readable rather
+     * than concatenating it into a Buffer, so peak memory is one chunk instead
+     * of one whole file. Used by the document download endpoint.
+     *
+     * Every per-call value stays local: this service is a DEFAULT-scope
+     * singleton, so caching the blob client or the stream on `this` would let a
+     * concurrent request read another caller's bytes.
+     */
+    async getFileStream(blobName: string): Promise<BlobStream> {
+        const containerClient = this.client.getContainerClient(this.containerName);
+        const blockBlobClient = containerClient.getBlockBlobClient(blobName);
+
+        const downloadResponse = await blockBlobClient.download(0);
+        return {
+            // readableStreamBody is typed as NodeJS.ReadableStream but is a Node
+            // Readable at runtime (it is the HTTP response body), which is what
+            // StreamableFile requires.
+            stream: downloadResponse.readableStreamBody as Readable,
+            contentLength: downloadResponse.contentLength,
+        };
     }
 
     async deleteFile(blobName: string): Promise<void> {
