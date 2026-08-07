@@ -60,7 +60,11 @@ RUN npx puppeteer browsers install chrome
 USER root
 
 COPY --from=builder /app/dist ./dist
-RUN chown -R node:node /app/dist
+
+# /app stays root-owned, so anything the app writes at runtime needs its own node-owned dir.
+# psi-downloads holds the weekly Valuer General archives and their extracted .DAT files.
+RUN mkdir -p /app/psi-downloads \
+    && chown -R node:node /app/dist /app/psi-downloads
 USER node
 EXPOSE 3000
 CMD ["node", "dist/main.js"]
