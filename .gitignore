@@ -69,3 +69,5 @@ CLAUDE.md
 .history
 .env.keys
 .vscode
+
+skills-lock.json
