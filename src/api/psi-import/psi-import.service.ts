@@ -259,10 +259,11 @@ export class PsiImportService {
    * Parses and inserts one week's .DAT files in a single transaction.
    *
    * All-or-nothing is what keeps the resume marker honest. A bundle's records do NOT share one
-   * `download_datetime` — the 03 Aug 2026 bundle carries 14 distinct stamps, 01:00 through 01:12,
-   * one per batch of district files. They do share a calendar date, and the marker is rendered
-   * down to `DD MMM YYYY`, so a half-inserted week still moves the marker onto that week's own
-   * label and the district files that never landed would never be offered again.
+   * `download_datetime` — the 03 Aug 2026 bundle carries 13 distinct stamps, 01:00 through 01:12,
+   * one per batch of district files — but they do share a calendar date, and the marker is rendered
+   * down to `DD MMM YYYY`. So a half-inserted week still moves the marker onto that week's own label
+   * and the district files that never landed would never be offered again. The loop also tracks the
+   * newest stamp for `assertWeekStamp`, which is checked once the week is otherwise known good.
    *
    * Download and extraction run before this, not inside it — they are network-bound and would
    * otherwise pin a pooled connection for minutes. Parse-and-insert is seconds.
@@ -281,15 +282,20 @@ export class PsiImportService {
     let recordCount = 0;
     let malformedLines = 0;
     let skippedRecords = 0;
+    let latestStamp: number | null = null;
 
     await this.dataSource.transaction(async (manager: EntityManager) => {
       for (const datFile of datFiles) {
-        const parsed = await this.parseFile(datFile);
+        const parsed = await this.parseAndLogFile(datFile);
 
-        // Per file, not once per week: stamps vary within a bundle, so one sample proves nothing
-        // about the other 122 files.
-        if (parsed.records.length > 0) {
-          this.assertWeekStamp(link, parsed.records[0].download_datetime);
+        for (const record of parsed.records) {
+          const time = record.download_datetime?.getTime();
+          if (
+            time !== undefined &&
+            (latestStamp === null || time > latestStamp)
+          ) {
+            latestStamp = time;
+          }
         }
 
         await this.repository.insertSaleRecords(
@@ -311,32 +317,52 @@ export class PsiImportService {
           `${datFiles.length} .DAT file(s) yielded no sale records (${malformedLines} malformed, ${skippedRecords} non-B)`,
         );
       }
+
+      this.assertWeekStamp(link, latestStamp);
     });
 
     return { recordCount, malformedLines, skippedRecords };
   }
 
   /**
-   * Fails the week unless its records' `download_datetime` renders back to the anchor label the
+   * Fails the week unless its newest `download_datetime` renders back to the anchor label the
    * scraper matched on.
    *
-   * Nothing else ties the two together: labels are raw anchor text, the reference is
-   * `formatPsiLabel(MAX(download_datetime))`. If they disagree, the next run's reference is a
-   * string absent from the listing, `selectNewerThan` falls through and returns every published
-   * week, and `property_sales_raw` gains a duplicate copy of all of them on every run.
+   * Two independent sources have to agree and nothing else compares them: the label is raw anchor
+   * text scraped from the page, the stamp is a field inside the .DAT files. The next run's reference
+   * is `formatPsiLabel(MAX(download_datetime))`, matched against anchor text by string equality — so
+   * if they disagree, `selectNewerThan` finds no match, falls through, and returns every published
+   * week. It warns when it does that, but by then the marker is already poisoned and every Monday
+   * re-imports the whole listing.
+   *
+   * Only the newest stamp is checked because the marker *is* `MAX(...)` — an earlier-dated outlier
+   * cannot move it, so it cannot affect the reference.
    */
-  private assertWeekStamp(link: PsiWeeklyLink, stamp: Date | null): void {
-    const rendered = stamp === null ? null : formatPsiLabel(stamp);
+  private assertWeekStamp(
+    link: PsiWeeklyLink,
+    latestStamp: number | null,
+  ): void {
+    if (latestStamp === null) {
+      throw new PsiWeekUnusableException(
+        link.label,
+        'no record carries a download_datetime, so the reference query would never see this week',
+      );
+    }
+
+    const rendered = formatPsiLabel(new Date(latestStamp));
     if (rendered === link.label) return;
 
     throw new PsiWeekUnusableException(
       link.label,
-      `its records carry download_datetime ${rendered ?? 'NULL'}, which would not match the listing on the next run`,
+      `its newest download_datetime renders as ${rendered}, which is not the label the listing matched`,
     );
   }
 
-  /** Parses one .DAT file, logging its counts and returning the mapped sale records. */
-  private async parseFile(datFile: string): Promise<PsiParsedFile> {
+  /**
+   * Delegates to `PsiDatParserService.parseFile` and logs the file's counts. Named for what it adds
+   * — the parsing itself happens entirely in the parser, and the result is returned unchanged.
+   */
+  private async parseAndLogFile(datFile: string): Promise<PsiParsedFile> {
     const parsed = await this.parser.parseFile(datFile);
 
     const malformedNote =

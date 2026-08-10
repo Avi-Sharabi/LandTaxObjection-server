@@ -14,10 +14,12 @@ const logger = new Logger('PropertySalesRawSeeder');
  * `relation "property_sales_raw" does not exist`, before Puppeteer even launches.
  *
  * Deliberately NOT a migration. `migration:run` executes against prod and QA in the deploy
- * pipeline, and the column list below is *inferred* from the entity rather than read from the real
- * table — putting it in a migration would make a guess canonical for a table this repo does not
- * own, and `down()` would have to be `DROP TABLE` against production data. Scoping it to local
- * development keeps the guess where it can only cost a `docker compose down -v`.
+ * pipeline, and the columns below describe *the data*, not the live table: they come from
+ * `SALE_RECORD_FIELDS`, which establishes column names and types but says nothing about the real
+ * table's defaults, NOT NULL constraints, varchar lengths or indexes. A migration has to specify
+ * every one of those, so it would promote a partial picture to canonical for a table this repo does
+ * not own — and `down()` could only be `DROP TABLE` against production data. Scoped to local
+ * development, anything wrong here costs a `docker compose down -v`.
  */
 export async function seedPropertySalesRaw(
   dataSource: DataSource,
@@ -54,10 +56,17 @@ async function tableExists(dataSource: DataSource): Promise<boolean> {
 }
 
 /**
- * Mirrors `src/api/psi-import/entities/property-sales-raw.entity.ts` column for column.
+ * Taken from `SALE_RECORD_FIELDS` in `psi-import/psi-dat-parser.service.ts` — the schema contract
+ * for this table, and the only definition verified against both real .DAT files and live
+ * `property_sales_raw` rows. `property-sales-raw.entity.ts` agrees field for field, but it is
+ * second-hand: its own doc comment records that it was derived from `comparable-sale.entity.ts`.
  *
- * `id bigserial` is structural, not a performance choice: the insert in
- * `PsiImportRepository.insertSaleRecords` omits `id` and relies on a column default.
+ * The parser accounts for 25 of the 27 columns — 24 from `SALE_RECORD_FIELDS`, plus `source_file`,
+ * which `toSaleRecord` sets itself. The other two are not guesses either:
+ *   `imported_at` — stamped by `PsiImportRepository.insertSaleRecords`, because the table is
+ *                   externally managed and no column default can be assumed.
+ *   `id`          — the database's, via a default the insert relies on and never supplies. That
+ *                   makes `bigserial` structural here rather than a performance choice.
  *
  * No secondary indexes on purpose. This repo cannot see production's index set, and inventing some
  * here would make local queries faster than the environment they exist to represent — a worse trap
