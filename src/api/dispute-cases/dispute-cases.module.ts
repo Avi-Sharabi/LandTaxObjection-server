@@ -18,6 +18,7 @@ import { AzureEmailModule } from 'src/common/azure-email/azure-email.module';
 import { DisputeIntakeOrchestrator } from './intake/dispute-intake.orchestrator';
 import { XpmClientHandler } from './intake/xpm-client.handler';
 import { PdfStorageHandler } from './intake/pdf-storage.handler';
+import { DocumentExtractionHandler } from './intake/document-extraction.handler';
 import { fyiStorageService } from 'src/common/fyi-storage/fyi-storage.service';
 import { ApprovalReminderTask } from './approval-reminder.task';
 import { MsGraphModule } from 'src/common/ms-graph/ms-graph.module';
@@ -34,9 +35,16 @@ import { SupportingEvidenceModule } from '../supporting-evidence/supporting-evid
 import { AnalyzeAiQueueService } from './analyze-ai-queue.service';
 import { AnalyzeAiProcessor, ANALYZE_AI_QUEUE } from './analyze-ai.processor';
 import { DisputeObjectionReason } from './entities/dispute-objection-reason.entity';
+import { DisputeAiSnapshot } from './entities/dispute-ai-snapshot.entity';
 import { ObjectionReasonMarkdownService } from './objection-reason-markdown.service';
 import { ObjectionReasonBrowserService } from './objection-reason-browser.service';
 import { ObjectionReasonGeneratorService } from './objection-reason-generator.service';
+import { AiPropertySearchService } from './ai-property-search.service';
+import { ValuationReportService } from './valuation-report.service';
+import { ValuationReportRepository } from './valuation-report.repository';
+import { ValuationCtxCacheService } from './valuation-ctx-cache.service';
+import { ComparableSale } from '../comparables/entities/comparable-sale.entity';
+import { DisputeEvidenceIssue } from '../supporting-evidence/entities/dispute-evidence-issue.entity';
 
 @Module({
   imports: [
@@ -63,6 +71,9 @@ import { ObjectionReasonGeneratorService } from './objection-reason-generator.se
       PackageDocument,
       AuditLog,
       DisputeObjectionReason,
+      DisputeAiSnapshot,
+      ComparableSale,
+      DisputeEvidenceIssue,
     ]),
   ],
   controllers: [DisputeCasesController],
@@ -73,9 +84,14 @@ import { ObjectionReasonGeneratorService } from './objection-reason-generator.se
     ObjectionReasonMarkdownService,
     ObjectionReasonBrowserService,
     ObjectionReasonGeneratorService,
+    AiPropertySearchService,
+    ValuationReportService,
+    ValuationReportRepository,
+    ValuationCtxCacheService,
     DisputeIntakeOrchestrator,
     XpmClientHandler,
     PdfStorageHandler,
+    DocumentExtractionHandler,
     fyiStorageService,
     ApprovalReminderTask,
     VgEmailMonitorTask,

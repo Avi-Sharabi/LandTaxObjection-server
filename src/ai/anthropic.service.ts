@@ -2,13 +2,31 @@ import { Injectable } from '@nestjs/common';
 import { HttpService } from '@nestjs/axios';
 import { ConfigService } from '@nestjs/config';
 import { firstValueFrom } from 'rxjs';
+import Anthropic from '@anthropic-ai/sdk';
+
+export const ANTHROPIC_MODEL = 'claude-sonnet-4-6';
+
+// Sent on every call() request today via a manual `anthropic-beta` header; kept as the same
+// fixed set via the SDK's `betas` param so behavior (prompt caching, MCP, interleaved thinking)
+// is unchanged by the streaming migration below.
+const BETA_FLAGS = [
+  'mcp-client-2025-04-04',
+  'prompt-caching-2024-07-31',
+  'interleaved-thinking-2025-05-14',
+] as const;
 
 export interface AnthropicCallOptions {
   systemBlocks: { text: string; cached?: boolean }[];
   userMessage: string;
+  documents?: { base64: string; mediaType?: string }[];
   maxTokens?: number;
   thinkingBudgetTokens?: number;
   mcpServers?: boolean;
+  // Per-call override for the client-constructor's default timeout (below) — for callers whose
+  // generation is known to legitimately run longer than the default allows (e.g. a large
+  // maxTokens + thinking report). Left unset, every call keeps today's default; this never
+  // narrows the timeout, only widens it for the specific call that opts in.
+  timeoutMs?: number;
 }
 
 export interface AnthropicCallResult {
@@ -22,75 +40,76 @@ export interface AnthropicCallResult {
   };
 }
 
-interface AnthropicApiResponse {
-  stop_reason: string;
-  content: { type: string; text?: string }[];
-  usage: {
-    input_tokens: number;
-    output_tokens: number;
-    cache_read_input_tokens?: number;
-    cache_creation_input_tokens?: number;
-  };
-}
-
 @Injectable()
 export class AnthropicService {
+  private readonly client: Anthropic;
+
   constructor(
     private readonly http: HttpService,
     private readonly config: ConfigService,
-  ) {}
+  ) {
+    const apiKey = this.config.getOrThrow<string>('ANTHROPIC_API_KEY');
+    // ANTHROPIC_API_URL is the full .../v1/messages endpoint (also used directly by
+    // callWithWebSearch below); the SDK wants just the base URL.
+    const baseURL = this.config.get<string>('ANTHROPIC_API_URL')?.replace(/\/v1\/messages\/?$/, '');
+    this.client = new Anthropic({
+      apiKey,
+      ...(baseURL ? { baseURL } : {}),
+      // Bumped above the SDK's 10-minute default as a safety margin for large max_tokens +
+      // extended-thinking report generations; maxRetries left at the SDK default (2).
+      timeout: 15 * 60 * 1000,
+    });
+  }
 
   async call(options: AnthropicCallOptions): Promise<AnthropicCallResult> {
-    const { systemBlocks, userMessage, maxTokens = 4000, thinkingBudgetTokens = 2000, mcpServers } = options;
-
-    const betaHeader = 'mcp-client-2025-04-04,prompt-caching-2024-07-31,interleaved-thinking-2025-05-14';
+    const { systemBlocks, userMessage, documents, maxTokens = 4000, thinkingBudgetTokens = 2000, mcpServers, timeoutMs } = options;
 
     const system = systemBlocks.map((block) => ({
-      type: 'text',
+      type: 'text' as const,
       text: block.text,
-      ...(block.cached !== false ? { cache_control: { type: 'ephemeral' } } : {}),
+      ...(block.cached !== false ? { cache_control: { type: 'ephemeral' as const } } : {}),
     }));
 
     const mcpBaseUrl = mcpServers ? this.config.get<string>('MCP_PUBLIC_URL') : null;
     const mcpUrl = mcpBaseUrl ? `${mcpBaseUrl}/api/mcp` : null;
     const mcpToken = mcpUrl ? this.config.get<string>('MCP_SECRET_TOKEN') : null;
 
-    const body: Record<string, unknown> = {
-      model: 'claude-sonnet-4-6',
-      max_tokens: maxTokens,
-      system,
-      messages: [{ role: 'user', content: userMessage }],
-    };
+    const userContent = documents?.length
+      ? [
+          ...documents.map((doc) => ({
+            type: 'document' as const,
+            source: { type: 'base64' as const, media_type: (doc.mediaType ?? 'application/pdf') as 'application/pdf', data: doc.base64 },
+          })),
+          { type: 'text' as const, text: userMessage },
+        ]
+      : userMessage;
 
-    body['thinking'] = { type: 'enabled', budget_tokens: thinkingBudgetTokens };
-
-    if (mcpUrl && mcpToken) {
-      body['mcp_servers'] = [
-        { type: 'url', url: mcpUrl, name: 'postgres', authorization_token: mcpToken },
-      ];
-    }
-
-    const response = await firstValueFrom(
-      this.http.post<AnthropicApiResponse>(
-        this.config.getOrThrow<string>('ANTHROPIC_API_URL'),
-        body,
-        {
-          headers: {
-            'x-api-key': this.config.getOrThrow<string>('ANTHROPIC_API_KEY'),
-            'anthropic-version': '2023-06-01',
-            'anthropic-beta': betaHeader,
-            'Content-Type': 'application/json',
-          },
-        },
-      ),
+    // Streamed (not buffered) so bytes keep flowing for the whole generation instead of the
+    // connection sitting idle until a large max_tokens + thinking response is fully ready —
+    // that idle-buffered pattern is what made long report-generation calls prone to being
+    // reset by network intermediaries (e.g. the Azure AI gateway ANTHROPIC_API_URL points at).
+    const stream = this.client.beta.messages.stream(
+      {
+        model: ANTHROPIC_MODEL,
+        max_tokens: maxTokens,
+        system,
+        messages: [{ role: 'user', content: userContent }],
+        thinking: { type: 'enabled', budget_tokens: thinkingBudgetTokens },
+        betas: [...BETA_FLAGS],
+        ...(mcpUrl && mcpToken
+          ? { mcp_servers: [{ type: 'url' as const, url: mcpUrl, name: 'postgres', authorization_token: mcpToken }] }
+          : {}),
+      },
+      timeoutMs != null ? { timeout: timeoutMs } : undefined,
     );
 
-    const { stop_reason, content, usage } = response.data;
+    const message = await stream.finalMessage();
+    const { stop_reason, content, usage } = message;
     const textBlock = content?.findLast((b) => b.type === 'text');
 
     return {
-      text: textBlock?.text ?? '',
-      stopReason: stop_reason,
+      text: textBlock?.type === 'text' ? textBlock.text : '',
+      stopReason: stop_reason ?? '',
       usage: {
         inputTokens: usage?.input_tokens ?? 0,
         outputTokens: usage?.output_tokens ?? 0,
@@ -100,12 +119,57 @@ export class AnthropicService {
     };
   }
 
+  async callWithWebSearch(userMessage: string, maxTokens = 2048): Promise<string> {
+    const body = {
+      model: ANTHROPIC_MODEL,
+      max_tokens: maxTokens,
+      tools: [{ type: 'web_search_20260209', name: 'web_search' }],
+      messages: [{ role: 'user', content: userMessage }],
+    };
+
+    const response = await firstValueFrom(
+      this.http.post<{ content: Array<{ type: string; text?: string }> }>(
+        this.config.getOrThrow<string>('ANTHROPIC_API_URL'),
+        body,
+        {
+          headers: {
+            'x-api-key': this.config.getOrThrow<string>('ANTHROPIC_API_KEY'),
+            'anthropic-version': '2023-06-01',
+            'Content-Type': 'application/json',
+          },
+        },
+      ),
+    );
+
+    const textBlocks = response.data.content.filter((b) => b.type === 'text');
+    return textBlocks[textBlocks.length - 1]?.text ?? '';
+  }
+
   parseJsonObject<T>(text: string): T {
     const fenceMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
     const source = fenceMatch ? fenceMatch[1] : text;
-    const jsonMatch = source.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) throw new Error('No JSON object found in response');
-    return JSON.parse(jsonMatch[0]) as T;
+
+    const objectStart = source.indexOf('{');
+    if (objectStart === -1) throw new Error('No JSON object found in response');
+
+    let objectEnd = -1;
+    let depth = 0;
+    let inString = false;
+    let escaped = false;
+    for (let i = objectStart; i < source.length; i++) {
+      const ch = source[i];
+      if (escaped) { escaped = false; continue; }
+      if (ch === '\\' && inString) { escaped = true; continue; }
+      if (ch === '"') { inString = !inString; continue; }
+      if (inString) continue;
+      if (ch === '{' || ch === '[') depth++;
+      else if (ch === '}' || ch === ']') { if (--depth === 0) { objectEnd = i; break; } }
+    }
+    if (objectEnd === -1) {
+      throw new Error('JSON object was not properly closed — the response was likely truncated (check stopReason for "max_tokens")');
+    }
+
+    return JSON.parse(source.slice(objectStart, objectEnd + 1)) as T;
   }
 
   parseJsonArray<T>(text: string): T[] {

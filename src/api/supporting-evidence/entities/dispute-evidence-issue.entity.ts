@@ -18,6 +18,12 @@ export class DisputeEvidenceIssue {
   @Column({ type: 'text', nullable: true })
   confidence: string | null;
 
+  // 'AI_DETECTED_UNVERIFIED' | 'EVIDENCE_OBTAINED' | 'CLIENT_CONFIRMED' — see IssueResult in
+  // supporting-evidence.types.ts. Distinct from confidence: this is whether the finding has been
+  // corroborated, not how confident the model is that it's true.
+  @Column({ type: 'text', nullable: true })
+  verification_status: string | null;
+
   @Column({ type: 'text', nullable: true })
   trigger: string | null;
 

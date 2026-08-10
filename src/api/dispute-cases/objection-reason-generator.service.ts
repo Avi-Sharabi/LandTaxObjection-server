@@ -53,6 +53,9 @@ interface ObjectionGround {
   isTick: boolean;
   analysis: string;
   evidenceDocIds: string[];
+  // Human-readable source names, index-paired with evidenceDocIds — shown to the LLM instead of
+  // the raw UUIDs so ground narratives never echo an internal document identifier.
+  evidenceLabels: string[];
 }
 
 interface ObjectionPropertyDetails {
@@ -132,6 +135,7 @@ export class ObjectionReasonGeneratorService {
     );
 
     const groundDocIds: Record<string, string[]> = {};
+    const groundLabels: Record<string, string[]> = {};
     const groundAnalysis: Record<string, string> = {};
     const attemptedNames = new Set<string>();
     const coveredSubGrounds = new Set<string>();
@@ -164,11 +168,17 @@ export class ObjectionReasonGeneratorService {
             const docId = await this.uploadScreenshot(screenshotPath, disputeCaseId, disputeCase.client_id);
             this.logger.log(`[ENTITY] upload → docId=${docId ?? 'null'}`);
             if (docId) {
-              const groundNums = [...new Set(source.grounds.map(g => parseInt(g, 10)).filter(n => !isNaN(n)))];
+              // Only exact numeric ground codes alias onto a real ground — sub-codes like "9A"-"9H"
+              // (used to organise a specific worked example's narrative) must NOT truncate onto
+              // ground 9 via parseInt('9A', 10) === 9, which previously attached unrelated evidence
+              // (e.g. an entity/ABN lookup) to whatever ground shares that leading digit.
+              const groundNums = [...new Set(source.grounds.filter(g => /^\d+$/.test(g)).map(g => parseInt(g, 10)))];
               for (const num of groundNums) {
                 const key = String(num);
                 if (!groundDocIds[key]) groundDocIds[key] = [];
                 groundDocIds[key].push(docId);
+                if (!groundLabels[key]) groundLabels[key] = [];
+                groundLabels[key].push(matchedName);
                 if (result.comment) {
                   groundAnalysis[key] = (groundAnalysis[key] ? groundAnalysis[key] + '\n' : '') + result.comment;
                 }
@@ -191,7 +201,7 @@ export class ObjectionReasonGeneratorService {
       await browser.close();
     }
 
-    ctx.entityEvidence = { groundDocIds, groundAnalysis, clientName };
+    ctx.entityEvidence = { groundDocIds, groundLabels, groundAnalysis, clientName };
     this.logger.log(`[ENTITY] Done — ${Object.keys(groundDocIds).length} grounds with evidence`);
   }
 
@@ -215,8 +225,8 @@ export class ObjectionReasonGeneratorService {
       dp: ctx.meta.plan ?? '',
     };
 
-    const { concessionType, concessionNote } = await this.generateReasonTexts(grounds, propertyDetails, ctx);
-    await this.persistGrounds(disputeCaseId, grounds, runId, concessionType, concessionNote);
+    const { concessionType, concessionClassification, concessionNote } = await this.generateReasonTexts(grounds, propertyDetails, ctx);
+    await this.persistGrounds(disputeCaseId, grounds, runId, concessionType, concessionClassification, concessionNote, ctx);
   }
 
   async getObjectionReasons(disputeCaseId: string): Promise<DisputeObjectionReason[]> {
@@ -241,16 +251,23 @@ export class ObjectionReasonGeneratorService {
       for (const g of grounds) {
         const key = String(g.groundNumber);
         const docIds = ctx.entityEvidence.groundDocIds[key] ?? [];
-        if (docIds.length > 0) {
-          g.isTick = true;
+        const labels = ctx.entityEvidence.groundLabels?.[key] ?? [];
+        const analysisText = ctx.entityEvidence.groundAnalysis[key] ?? '';
+        if (docIds.length > 0 || analysisText) {
+          if (!this.isNegativeTick(analysisText)) {
+            g.isTick = true;
+          }
           g.evidenceDocIds = [...docIds];
-          g.analysis = ctx.entityEvidence.groundAnalysis[key] ?? '';
+          g.evidenceLabels = [...labels];
+          g.analysis = analysisText;
         }
       }
     }
 
     const g1 = grounds.find(g => g.groundNumber === 1);
-    if (g1 && !g1.isTick && ctx.inputComparables.length > 0) {
+    const g2 = grounds.find(g => g.groundNumber === 2);
+    const lotAreaForAutoTick = ctx.lotAreaM2;
+    if (g1 && !g1.isTick && !(g2?.isTick) && ctx.inputComparables.length > 0 && lotAreaForAutoTick != null && lotAreaForAutoTick > 0) {
       g1.isTick = true;
       this.logger.log(`[OBJECTION] Ground 1 auto-ticked — ${ctx.inputComparables.length} comparable(s) in pipeline`);
     }
@@ -260,25 +277,31 @@ export class ObjectionReasonGeneratorService {
     grounds: ObjectionGround[],
     propertyDetails: ObjectionPropertyDetails,
     ctx: SupportingEvidenceContext,
-  ): Promise<{ concessionType: string | null; concessionNote: string | null }> {
-    for (const g of grounds.filter(g => g.isTick)) {
+  ): Promise<{ concessionType: string | null; concessionClassification: string | null; concessionNote: string | null }> {
+    const tickedGrounds = grounds.filter(g => g.isTick);
+    const tickedGroundNumbers = tickedGrounds.map(g => g.groundNumber);
+
+    for (const g of tickedGrounds) {
       if (g.evidenceDocIds.length > 1) {
         const synthesis = await this.browserService.synthesiseEvidence({
           groundNumber: g.groundNumber,
           label: g.label,
           evidenceFiles: g.evidenceDocIds,
+          evidenceLabels: g.evidenceLabels,
           analysis: g.analysis,
         });
-        if (synthesis?.bestFile && g.evidenceDocIds.includes(synthesis.bestFile)) {
-          g.evidenceDocIds = [synthesis.bestFile];
-          g.analysis = synthesis.analysis;
+        const idx = synthesis?.bestIndex != null ? synthesis.bestIndex - 1 : -1;
+        if (idx >= 0 && idx < g.evidenceDocIds.length) {
+          g.evidenceDocIds = [g.evidenceDocIds[idx]];
+          g.evidenceLabels = [g.evidenceLabels[idx] ?? g.evidenceLabels[0] ?? ''];
+          g.analysis = synthesis!.analysis;
         }
       }
 
       this.logger.log(`[OBJECTION]   ✍  Generating reason text for Ground ${g.groundNumber}`);
-      const generationCtx = this.buildGenerationContext(ctx, g.groundNumber);
+      const generationCtx = this.buildGenerationContext(ctx, g.groundNumber, tickedGroundNumbers);
       const reason = await this.browserService.generateObjectionReason(
-        { groundNumber: g.groundNumber, label: g.label, evidenceFiles: g.evidenceDocIds, analysis: g.analysis },
+        { groundNumber: g.groundNumber, label: g.label, evidenceFiles: g.evidenceDocIds, evidenceLabels: g.evidenceLabels, analysis: g.analysis },
         propertyDetails,
         generationCtx,
       );
@@ -286,14 +309,14 @@ export class ObjectionReasonGeneratorService {
     }
 
     const g9 = grounds.find(g => g.groundNumber === 9);
-    if (!g9?.isTick) return { concessionType: null, concessionNote: null };
+    if (!g9?.isTick) return { concessionType: null, concessionClassification: null, concessionNote: null };
 
     const result = await this.browserService.determineConcessionType(
       g9.analysis,
       ctx,
       PORTAL_CONCESSION_TYPES as unknown as string[],
     );
-    return { concessionType: result.concessionType, concessionNote: result.note };
+    return { concessionType: result.concessionType, concessionClassification: result.classification, concessionNote: result.note };
   }
 
   private async persistGrounds(
@@ -301,19 +324,36 @@ export class ObjectionReasonGeneratorService {
     grounds: ObjectionGround[],
     runId: number,
     concessionType: string | null,
+    concessionClassification: string | null,
     concessionNote: string | null,
+    ctx: SupportingEvidenceContext,
   ): Promise<void> {
-    const rows: Partial<DisputeObjectionReason>[] = grounds.map(g => ({
-      dispute_case_id: disputeCaseId,
-      ground_number: g.groundNumber,
-      label: g.label,
-      is_tick: g.isTick,
-      concession_type: g.groundNumber === 9 ? concessionType : null,
-      concession_type_note: g.groundNumber === 9 ? concessionNote : null,
-      analysis: g.analysis || null,
-      evidence_files: g.evidenceDocIds.length > 0 ? g.evidenceDocIds : null,
-      run_id: runId,
-    }));
+    // Ground 9's real substance is usually a constraint finding (e.g. flood/environmental) owned by
+    // the separate supporting-evidence pipeline, not the incidental entity-lookup evidence that
+    // happens to land on ground 9 via the ABR/ASIC navigation guide. Prefer that finding's own
+    // verification_status so Ground 9 never claims EVIDENCE_OBTAINED for an unrelated screenshot
+    // while the constraint register two sections earlier still says AI-DETECTED — NOT YET VERIFIED.
+    const ground9OwnStatus =
+      ctx.evidenceResult?.issues?.concession?.verification_status ??
+      ctx.evidenceResult?.issues?.environmental?.verification_status ??
+      null;
+
+    const rows: Partial<DisputeObjectionReason>[] = grounds.map(g => {
+      const genericStatus = g.evidenceDocIds.length > 0 ? 'EVIDENCE_OBTAINED' : 'AI_DETECTED_UNVERIFIED';
+      return {
+        dispute_case_id: disputeCaseId,
+        ground_number: g.groundNumber,
+        label: g.label,
+        is_tick: g.isTick,
+        concession_type: g.groundNumber === 9 ? concessionType : null,
+        concession_classification: g.groundNumber === 9 ? concessionClassification : null,
+        concession_type_note: g.groundNumber === 9 ? concessionNote : null,
+        verification_status: g.groundNumber === 9 ? (ground9OwnStatus ?? genericStatus) : genericStatus,
+        analysis: g.analysis || null,
+        evidence_files: g.evidenceDocIds.length > 0 ? g.evidenceDocIds : null,
+        run_id: runId,
+      };
+    });
 
     await this.repo.save(rows);
     this.logger.log(`[OBJECTION] Saved ${rows.length} ground rows for case ${disputeCaseId}`);
@@ -328,6 +368,7 @@ export class ObjectionReasonGeneratorService {
       isTick: false,
       analysis: '',
       evidenceDocIds: [] as string[],
+      evidenceLabels: [] as string[],
     }));
   }
 
@@ -343,7 +384,7 @@ export class ObjectionReasonGeneratorService {
       const blobPath = `objection-reasons/${disputeCaseId}/${filename}`;
       const storedPath = await this.azureBlobService.uploadFile(blobPath, base64);
       if (!storedPath) return null;
-      const doc = await this.assessmentDocumentsService.createArtifactRecord(clientId, filename, storedPath);
+      const doc = await this.assessmentDocumentsService.createArtifactRecord(clientId, filename, storedPath, disputeCaseId);
       return doc.id;
     } catch (err: unknown) {
       this.logger.warn(`[OBJECTION] Failed to upload screenshot ${filePath}: ${(err as Error).message}`);
@@ -383,8 +424,26 @@ export class ObjectionReasonGeneratorService {
         lines.push(`  Total aggregated value: $${ctx.landTaxNotice.total_aggregated_value.toLocaleString()}`);
       }
       for (const prop of (ctx.landTaxNotice.properties ?? []).slice(0, 3)) {
-        const vals = Object.entries(prop.land_values ?? {}).map(([yr, v]) => `${yr}: $${v.toLocaleString()}`).join(', ');
+        const vals = Object.entries(prop.land_values ?? {})
+          .filter((entry): entry is [string, number] => entry[1] != null)
+          .map(([yr, v]) => `${yr}: $${v.toLocaleString()}`)
+          .join(', ');
         lines.push(`  Property: ${prop.address}${vals ? ` — ${vals}` : ''}`);
+      }
+      if (ctx.landTaxNotice.land_tax_payable != null) {
+        lines.push(`  Land tax payable: $${ctx.landTaxNotice.land_tax_payable.toLocaleString()}`);
+      }
+      if (ctx.landTaxNotice.arrears != null) {
+        lines.push(`  Arrears: $${ctx.landTaxNotice.arrears.toLocaleString()}`);
+      }
+      if (ctx.landTaxNotice.interest != null) {
+        lines.push(`  Interest: $${ctx.landTaxNotice.interest.toLocaleString()}`);
+      }
+      if (ctx.landTaxNotice.total_amount_payable != null) {
+        lines.push(`  Total amount payable: $${ctx.landTaxNotice.total_amount_payable.toLocaleString()}`);
+      }
+      if (ctx.landTaxNotice.payment_due_date) {
+        lines.push(`  Payment due date: ${ctx.landTaxNotice.payment_due_date}`);
       }
     }
 
@@ -413,26 +472,52 @@ export class ObjectionReasonGeneratorService {
     return parts.join('\n');
   }
 
-  private buildGenerationContext(ctx: SupportingEvidenceContext, groundNumber: number): string {
+  private buildGenerationContext(ctx: SupportingEvidenceContext, groundNumber: number, tickedGroundNumbers: number[] = []): string {
     const lines: string[] = [];
     const er = ctx.evidenceResult;
 
+    if (tickedGroundNumbers.length > 1) {
+      const allGroundDescriptions = tickedGroundNumbers
+        .map(n => `Ground ${n} — ${GROUND_LABELS[n] ?? `Ground ${n}`}`)
+        .join('; ');
+      lines.push(
+        `CROSS-GROUND NOTICE: This objection raises MULTIPLE grounds simultaneously: ${allGroundDescriptions}. ` +
+        `When writing the text for Ground ${groundNumber}, you MUST explicitly name ALL of the following grounds by number and official label: ${allGroundDescriptions}. ` +
+        `You MUST separately and fully argue the specific merits of Ground ${groundNumber} on its own terms. Naming the other grounds is required but is NOT sufficient — Ground ${groundNumber} must stand alone as a complete, self-contained argument addressing its own specific facts and evidence.`,
+      );
+    }
+
     const zoningLayer = ctx.apiData.layers.find(l => l.layerName === 'Land Zoning Map');
     const zoningCode = zoningLayer?.results?.[0]?.['Zone'] as string | undefined;
+    const zoningLabel = zoningLayer?.results?.[0]?.['Zone Label'] as string | undefined;
+    const zoningFull = zoningCode && zoningLabel ? `${zoningCode} ${zoningLabel}` : zoningCode;
 
     const comparableLines = ctx.inputComparables.slice(0, 5).map(c => {
       const rate = c.rate_per_m2 != null ? Number(c.rate_per_m2) : null;
-      return `  ${c.address}: area ${c.area_m2} m², adjusted value $${c.analysed_land_value.toLocaleString()}${rate != null && !isNaN(rate) ? `, $${rate.toFixed(0)}/m²` : ''}${c.contract_date ? `, sold ${c.contract_date}` : ''}`;
+      const valueStr = c.analysed_land_value != null ? `$${c.analysed_land_value.toLocaleString()}` : 'value unknown';
+      // 'extrapolated' comparables (ComparablesService.selectRankedLastResortCandidates) are
+      // disclosed evidence, not confident evidence — flagged here so ground text never cites one
+      // as if it were ordinary supporting evidence (see comparable-quarantine.util.ts for the
+      // equivalent disclosure in the valuation report's own comparables table).
+      const disclosure = c.size_tier === 'extrapolated'
+        ? ' [RANKED LAST-RESORT MATCH — outside standard size/zoning tolerance, cite with caution]'
+        : '';
+      return `  ${c.address}: area ${c.area_m2} m², adjusted value ${valueStr}${rate != null && !isNaN(rate) ? `, $${rate.toFixed(0)}/m²` : ''}${c.contract_date ? `, sold ${c.contract_date}` : ''}${disclosure}`;
     });
 
     switch (groundNumber) {
       case 1:
       case 2: {
-        if (ctx.meta.assessed_land_value != null) lines.push(`Assessed land value (notice): $${ctx.meta.assessed_land_value.toLocaleString()}`);
-        lines.push(`Lot area: ${ctx.lotAreaM2 ?? ctx.meta.land_area_sqm ?? 'unknown'} m²`);
+        const assessedValue = ctx.meta.assessed_land_value;
+        const lotArea = ctx.lotAreaM2;
+        if (assessedValue != null) lines.push(`Assessed land value (notice): $${assessedValue.toLocaleString()}`);
+        if (lotArea != null) lines.push(`Lot area: ${lotArea} m²`);
+        if (assessedValue != null && lotArea != null && lotArea > 0) {
+          lines.push(`Assessed rate: $${Math.round(assessedValue / lotArea).toLocaleString()}/m²`);
+        }
         if (ctx.meta.fsr_from_pdf != null) lines.push(`FSR (from report): ${ctx.meta.fsr_from_pdf}`);
         if (ctx.meta.height_limit_m != null) lines.push(`Height limit: ${ctx.meta.height_limit_m} m`);
-        if (zoningCode) lines.push(`Zone: ${zoningCode}`);
+        if (zoningFull) lines.push(`Zone: ${zoningFull}`);
         if (comparableLines.length > 0) { lines.push('Comparable sales:'); lines.push(...comparableLines); }
         if (groundNumber === 1 && er) {
           for (const fmt of [
@@ -441,16 +526,28 @@ export class ObjectionReasonGeneratorService {
             this.formatIssueResult('Access constraints', er.issues.access_constraints),
           ]) { if (fmt) lines.push(fmt); }
         }
+        if (ctx.meta.concession_mentions.length > 0) {
+          lines.push('Concession/planning mentions from report:');
+          ctx.meta.concession_mentions.forEach(m => lines.push(`  - ${m}`));
+        }
+        if (groundNumber === 2 && ctx.meta.heritage_mentions.length > 0) {
+          lines.push('Heritage mentions from report:');
+          ctx.meta.heritage_mentions.forEach(m => lines.push(`  - ${m}`));
+        }
+        const docSnippet12 = ctx.inputDocumentsText?.[0];
+        if (docSnippet12) lines.push(`Document evidence: ${docSnippet12.slice(0, 400)}`);
+        if (!lotArea || lotArea === 0) {
+          lines.push('WARNING: Land area is null/zero — cannot calculate $/m² rate or argued value without it. Explicitly state the land area is missing and must be obtained from the current title or deposited plan.');
+        }
         break;
       }
       case 3: {
-        lines.push(`Lot area from cadastre/API: ${ctx.lotAreaM2 ?? 'unknown'} m²`);
-        lines.push(`Lot area from PDF report: ${ctx.meta.land_area_sqm ?? 'unknown'} m²`);
+        lines.push(`Lot area (from Land Value Search document): ${ctx.lotAreaM2 ?? 'unknown'} m²`);
         lines.push(`Lot: ${ctx.meta.lot ?? 'unknown'}, Plan: ${ctx.meta.planType} ${ctx.meta.plan ?? 'unknown'}`);
         break;
       }
       case 4: {
-        if (zoningCode) lines.push(`Zone code from ePlanning: ${zoningCode}`);
+        if (zoningFull) lines.push(`Zone from ePlanning: ${zoningFull}`);
         if (ctx.meta.heritage_mentions.length > 0) {
           lines.push('Heritage mentions from report:');
           ctx.meta.heritage_mentions.forEach(m => lines.push(`  - ${m}`));
@@ -497,23 +594,43 @@ export class ObjectionReasonGeneratorService {
       case 8: {
         if (ctx.meta.assessed_land_value != null) lines.push(`Assessed land value (notice): $${ctx.meta.assessed_land_value.toLocaleString()}`);
         for (const prop of (ctx.landTaxNotice?.properties ?? []).slice(0, 5)) {
-          const vals = Object.entries(prop.land_values ?? {}).map(([yr, v]) => `${yr}: $${v.toLocaleString()}`).join(', ');
+          const vals = Object.entries(prop.land_values ?? {})
+            .filter((entry): entry is [string, number] => entry[1] != null)
+            .map(([yr, v]) => `${yr}: $${v.toLocaleString()}`)
+            .join(', ');
           lines.push(`Notice property: ${prop.address}${vals ? ` — ${vals}` : ''}`);
         }
         if (er) { const fmt = this.formatIssueResult('Apportionment analysis', er.issues.apportionment); if (fmt) lines.push(fmt); }
         break;
       }
       case 9: {
+        if (ctx.meta.assessed_land_value != null) lines.push(`Assessed land value (notice): $${ctx.meta.assessed_land_value.toLocaleString()}`);
         if (ctx.meta.concession_mentions.length > 0) {
           lines.push('Concession mentions from report:');
           ctx.meta.concession_mentions.forEach(m => lines.push(`  - ${m}`));
         }
         if (er) { const fmt = this.formatIssueResult('Concession analysis', er.issues.concession); if (fmt) lines.push(fmt); }
+        const docSnippet9 = ctx.inputDocumentsText?.[0];
+        if (docSnippet9) lines.push(`Document evidence: ${docSnippet9.slice(0, 400)}`);
         break;
       }
     }
 
     return lines.join('\n');
+  }
+
+  private isNegativeTick(text: string): boolean {
+    if (!text) return false;
+    const lower = text.toLowerCase();
+    return (
+      lower.includes('must not be ticked') ||
+      lower.includes('must not tick') ||
+      lower.includes('not be ticked') ||
+      lower.includes('should not be ticked') ||
+      lower.includes('do not tick') ||
+      lower.includes('r5 must not') ||
+      lower.includes('r9 must not')
+    );
   }
 
   private isNegativeComment(comment: string | null): boolean {

@@ -56,11 +56,17 @@ export class GenerateComparableSalesDto {
   @IsString()
   pid?: string;
 
-  @ApiProperty({ example: 4022, required: false, nullable: true, description: 'Actual land area in m² — overrides property.land_area_sqm if provided' })
+  @ApiProperty({ example: 4022, required: false, nullable: true, description: 'Actual land area in m² — last-resort fallback used only when the property has no persisted land_area_eplanning_sqm or land_area_sqm on file' })
   @IsOptional()
   @Type(() => Number)
   @IsNumber()
   land_area_sqm?: number;
+
+  @ApiProperty({ example: 4022, required: false, nullable: true, description: 'ePlanning/cadastre lot area in m² — last-resort fallback used only when no persisted property land area and no other override is available' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  land_area_eplanning_sqm?: number;
 
   @ApiProperty({ example: 'E5 Heavy Industrial', required: false, nullable: true, description: 'Zoning — overrides property.zoning if provided' })
   @IsOptional()
@@ -76,6 +82,18 @@ export class GenerateComparableSalesDto {
   @IsOptional()
   @IsString()
   postcode?: string;
+
+  @ApiProperty({ example: -33.9173, required: false, nullable: true, description: 'Subject property latitude — used to gate comparable sales by real distance; falls back to a suburb-centroid lookup if omitted' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  lat?: number;
+
+  @ApiProperty({ example: 151.2313, required: false, nullable: true, description: 'Subject property longitude — used to gate comparable sales by real distance; falls back to a suburb-centroid lookup if omitted' })
+  @IsOptional()
+  @Type(() => Number)
+  @IsNumber()
+  lng?: number;
 
   // ── Valuation date — loaded from valuation_notice if not provided ─────────
 

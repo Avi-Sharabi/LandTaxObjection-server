@@ -1,8 +1,12 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { IsArray, IsUUID, ArrayMinSize } from 'class-validator';
 
 export class AnalyzeAiEnqueueResponseDto {
   @ApiProperty()
   jobId: string;
+
+  @ApiProperty({ example: 'queued' })
+  status: string;
 }
 
 export class AnalyzeAiStatusResponseDto {
@@ -54,4 +58,46 @@ export class AnalyzeAiQueueResponseDto {
 
   @ApiProperty()
   total: number;
+}
+
+export class BatchAnalyzeAiRequestDto {
+  @ApiProperty({
+    type: [String],
+    description: 'List of dispute case UUIDs to analyse sequentially',
+  })
+  @IsArray()
+  @IsUUID('4', { each: true })
+  @ArrayMinSize(1)
+  caseIds: string[];
+}
+
+export class BatchAnalyzeAiItemDto {
+  @ApiProperty()
+  caseId: string;
+
+  @ApiProperty({ required: false, type: String })
+  jobId?: string;
+
+  @ApiProperty({ enum: ['queued', 'skipped', 'error'] })
+  status: 'queued' | 'skipped' | 'error';
+
+  @ApiProperty({ required: false, type: String })
+  reason?: string;
+}
+
+export class BatchAnalyzeAiResponseDto {
+  @ApiProperty({ type: [BatchAnalyzeAiItemDto] })
+  results: BatchAnalyzeAiItemDto[];
+
+  @ApiProperty()
+  total: number;
+
+  @ApiProperty()
+  queued: number;
+
+  @ApiProperty()
+  skipped: number;
+
+  @ApiProperty()
+  errors: number;
 }

@@ -1,4 +1,4 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, ManyToOne, OneToMany, JoinColumn, Index } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, DeleteDateColumn, ManyToOne, OneToMany, JoinColumn, Index } from 'typeorm';
 import { Client } from '../../clients/entities/client.entity';
 import { Property } from '../../properties/entities/property.entity';
 import { ValuationNotice } from '../../valuation-notices/entities/valuation-notice.entity';
@@ -27,6 +27,30 @@ export enum DisputeStatus {
   CLOSED_NO_OBJECTION = 'closed_no_objection',
 }
 
+// Canonical human phrasing per status, so any report/cover-fact/email surfacing case status
+// renders identically every time instead of being reworded ad hoc. Respects the controlled-
+// vocabulary rule that nothing is described as "lodged"/"submitted" before SUBMITTED_TO_VG
+// (see src/skills/valuation/section_guide.md).
+export const DISPUTE_STATUS_LABELS: Record<DisputeStatus, string> = {
+  [DisputeStatus.PENDING_TNC]: 'Pending — Terms & Conditions acceptance (case not yet started)',
+  [DisputeStatus.DRAFT]: 'Draft — case intake in progress',
+  [DisputeStatus.GROUNDS_SELECTION]: 'Grounds identified — not yet lodged',
+  [DisputeStatus.EVIDENCE_COMPILATION]: 'Evidence compilation in progress — not yet lodged',
+  [DisputeStatus.APPRAISAL]: 'Independent appraisal in progress — not yet lodged',
+  [DisputeStatus.ADVISORY_LETTER_ISSUED]: 'Advisory letter issued — not yet lodged',
+  [DisputeStatus.OBJECTION_PACKAGE_PREPARED]: 'Objection package prepared — awaiting approval to lodge',
+  [DisputeStatus.AWAITING_CLIENT_APPROVAL]: 'Awaiting client approval to lodge',
+  [DisputeStatus.CLIENT_APPROVED]: 'Client approved — ready to lodge',
+  [DisputeStatus.SUBMITTED_TO_VG]: 'Lodged with the Valuer General — awaiting response',
+  [DisputeStatus.VG_RESPONSE_RECEIVED]: 'VG response received',
+  [DisputeStatus.VG_APPROVED]: 'VG objection approved',
+  [DisputeStatus.VG_DECLINED]: 'VG objection declined',
+  [DisputeStatus.FOR_REVIEW]: 'Outcome under review',
+  [DisputeStatus.OUTCOME_RECEIVED]: 'Outcome received',
+  [DisputeStatus.CLOSED]: 'Case closed',
+  [DisputeStatus.CLOSED_NO_OBJECTION]: 'Case closed — no objection lodged',
+};
+
 export enum OutcomeResult {
   UPHELD = 'upheld',
   PARTIALLY_UPHELD = 'partially_upheld',
@@ -39,6 +63,10 @@ export enum Jurisdiction {
   VIC = 'VIC',
   QLD = 'QLD',
   WA = 'WA',
+  SA = 'SA',
+  TAS = 'TAS',
+  ACT = 'ACT',
+  NT = 'NT',
 }
 
 
@@ -78,6 +106,9 @@ export class DisputeCase {
   @Column({ type: 'boolean', nullable: false, default: false })
   no_legal_ground_flagged: boolean;
 
+  @Column({ type: 'boolean', nullable: false, default: false })
+  deadline_lapsed_flagged: boolean;
+
   @Column({ type: 'timestamptz', nullable: true })
   client_approval_requested_at: Date | null;
 
@@ -110,6 +141,9 @@ export class DisputeCase {
 
   @Column({ type: 'boolean', nullable: false, default: false })
   flag_zoning: boolean;
+
+  @Column({ type: 'boolean', nullable: false, default: false })
+  is_valuated: boolean;
 
   @Column({ type: 'smallint', nullable: true })
   evidence_strength_score: number | null;
@@ -162,6 +196,9 @@ export class DisputeCase {
   @Column({ type: 'text', nullable: true })
   analysis_report_blob_path: string | null;
 
+  @Column({ type: 'numeric', precision: 15, scale: 2, nullable: true })
+  internal_assessed_value: number | null;
+
   @Column({ type: 'text', nullable: true })
   vg_response_notes: string | null;
 
@@ -176,6 +213,12 @@ export class DisputeCase {
 
   @UpdateDateColumn({ type: 'timestamptz' })
   updated_at: Date;
+
+  @DeleteDateColumn({ name: 'deleted_at', type: 'timestamptz', nullable: true })
+  deleted_at: Date | null;
+
+  @Column({ name: 'deleted_by', type: 'uuid', nullable: true })
+  deleted_by: string | null;
 
   // Relations
   @ManyToOne(() => Client, (client) => client.dispute_cases, { nullable: false })

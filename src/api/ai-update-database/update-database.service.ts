@@ -5,7 +5,7 @@ import { DataSource } from 'typeorm';
 import { ConfigService } from '@nestjs/config';
 import { plainToInstance } from 'class-transformer';
 import { validateOrReject } from 'class-validator';
-import { isAxiosError } from 'axios';
+import { APIError } from '@anthropic-ai/sdk';
 import { UpdateDatabaseArgsDto } from '../../mcp/dto/tool-args.dto';
 import { AnthropicService } from 'src/ai/anthropic.service';
 import { SkillRegistryService } from '../../mcp/skill-registry.service';
@@ -175,8 +175,8 @@ export class UpdateDatabaseService {
       });
       parsed = this.anthropic.parseJsonObject<typeof parsed>(result.text);
     } catch (err) {
-      const message = isAxiosError(err)
-        ? `Anthropic API ${err.response?.status}: ${err.message}`
+      const message = err instanceof APIError
+        ? `Anthropic API ${err.status}: ${err.message}`
         : err instanceof Error ? err.message : String(err);
       return {
         content: [{ type: 'text', text: JSON.stringify({

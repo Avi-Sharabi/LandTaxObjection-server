@@ -71,4 +71,32 @@ export class UsersService {
     await this.usersRepository.remove(user);
     return { message: `User #${id} removed` };
   }
+
+  async findByEmail(email: string): Promise<User | null> {
+    return this.usersRepository.findOne({ where: { email } });
+  }
+
+  async savePasswordResetToken(userId: string, hashedToken: string, expires: Date): Promise<void> {
+    await this.usersRepository.update(userId, {
+      passwordResetToken: hashedToken,
+      passwordResetExpires: expires,
+      passwordResetUsedAt: null,
+    });
+  }
+
+  async findByResetTokenHash(hashedToken: string): Promise<User | null> {
+    return this.usersRepository
+      .createQueryBuilder('user')
+      .addSelect('user.passwordResetExpires')
+      .addSelect('user.passwordResetUsedAt')
+      .where('user.passwordResetToken = :hashedToken', { hashedToken })
+      .getOne();
+  }
+
+  async resetPasswordAndMarkUsed(userId: string, hashedPassword: string): Promise<void> {
+    await this.usersRepository.update(userId, {
+      password: hashedPassword,
+      passwordResetUsedAt: new Date(),
+    });
+  }
 }

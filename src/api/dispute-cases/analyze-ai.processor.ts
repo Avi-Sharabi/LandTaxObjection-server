@@ -1,11 +1,26 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
+import { InjectRepository } from '@nestjs/typeorm';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
+import { Repository } from 'typeorm';
 import { PropertyContextService } from '../supporting-evidence/property-context.service';
 import { ComparablesService } from '../comparables/comparables.service';
 import { SupportingEvidenceService } from '../supporting-evidence/supporting-evidence.service';
-import { InputComparable } from '../supporting-evidence/supporting-evidence.types';
+import {
+  InputComparable,
+  SupportingEvidenceContext,
+} from '../supporting-evidence/supporting-evidence.types';
 import { ObjectionReasonGeneratorService } from './objection-reason-generator.service';
+import { AiPropertySearchService } from './ai-property-search.service';
+import {
+  ValuationReportService,
+  SafePlanningCtx,
+  buildSafePlanningCtx,
+} from './valuation-report.service';
+import { ValuationCtxCacheService } from './valuation-ctx-cache.service';
+import { DisputeAiSnapshot } from './entities/dispute-ai-snapshot.entity';
+import { DisputeCasesService } from './dispute-cases.service';
+import { parseNswAddressComponents } from 'src/common/utils/address-parser.util';
 
 export const ANALYZE_AI_QUEUE = 'analyze-ai';
 
@@ -19,7 +34,7 @@ export interface AnalyzeAiJobResult {
   status: 'completed';
 }
 
-@Processor(ANALYZE_AI_QUEUE, { concurrency: 1, lockDuration: 600000 })
+@Processor(ANALYZE_AI_QUEUE, { concurrency: 1, lockDuration: 1_800_000 })
 export class AnalyzeAiProcessor extends WorkerHost {
   private readonly logger = new Logger(AnalyzeAiProcessor.name);
 
@@ -28,6 +43,12 @@ export class AnalyzeAiProcessor extends WorkerHost {
     private readonly comparablesService: ComparablesService,
     private readonly supportingEvidenceService: SupportingEvidenceService,
     private readonly objectionReasonGeneratorService: ObjectionReasonGeneratorService,
+    private readonly aiPropertySearchService: AiPropertySearchService,
+    private readonly valuationReportService: ValuationReportService,
+    private readonly ctxCacheService: ValuationCtxCacheService,
+    private readonly disputeCasesService: DisputeCasesService,
+    @InjectRepository(DisputeAiSnapshot)
+    private readonly snapshotRepo: Repository<DisputeAiSnapshot>,
   ) {
     super();
   }
@@ -35,67 +56,291 @@ export class AnalyzeAiProcessor extends WorkerHost {
   async process(job: Job<AnalyzeAiJobData>): Promise<AnalyzeAiJobResult> {
     const { disputeCaseId, address, userId } = job.data;
     this.logger.log(
-      JSON.stringify({ context: 'ANALYZE_AI.start', jobId: job.id, disputeCaseId, ts: new Date().toISOString() }),
+      JSON.stringify({
+        context: 'ANALYZE_AI.start',
+        jobId: job.id,
+        disputeCaseId,
+        ts: new Date().toISOString(),
+      }),
     );
 
     try {
-      // Step 1: Gather property context — saves screenshots + property report to assessment documents
-      this.logger.log(JSON.stringify({ context: 'ANALYZE_AI.gathering_context', jobId: job.id, disputeCaseId }));
-      const { ctx, artifactDocIds } = await this.propertyContextService.gather(disputeCaseId, address);
+      // Guard A: use pre-seeded snapshot if available (skips ePlanning/geocoding/PDF gather)
+      let ctx: SupportingEvidenceContext;
+      let artifactDocIds: Map<string, string> = new Map();
+      const snapshot = await this.snapshotRepo.findOne({
+        where: { dispute_case_id: disputeCaseId },
+      });
+      // 'report_generation'-mode snapshots invert the usual skip pattern: ground-generation is
+      // skipped (grounds are pre-seeded directly into dispute_objection_reasons) and valuation
+      // report generation runs — see Guard E below.
+      const isReportGenerationSnapshot =
+        snapshot?.snapshot_mode === 'report_generation';
+      if (snapshot) {
+        this.logger.log(
+          JSON.stringify({
+            context: 'ANALYZE_AI.snapshot_hit',
+            jobId: job.id,
+            disputeCaseId,
+          }),
+        );
+        ctx = { ...snapshot.context, reportBuffer: null };
+      } else {
+        this.logger.log(
+          JSON.stringify({
+            context: 'ANALYZE_AI.gathering_context',
+            jobId: job.id,
+            disputeCaseId,
+          }),
+        );
+        ({ ctx, artifactDocIds } = await this.propertyContextService.gather(
+          disputeCaseId,
+          address,
+        ));
+        // Cache ctx so the regenerate-valuation-report endpoint can restore planning context without re-running the pipeline
+        await this.ctxCacheService.save(disputeCaseId, ctx);
+        // Persist the Land Value Search document's fields so the report generator has them —
+        // this is now the sole source of subject land size (see property-context.service.ts).
+        if (ctx.landValueSearch) {
+          await this.aiPropertySearchService.persistLandValueSearchDetails(disputeCaseId, ctx.landValueSearch);
+        }
+      }
 
-      // Step 1b: Entity navigation (ABR/ASIC) — runs now so entity facts are in ctx for all downstream steps
-      this.logger.log(JSON.stringify({ context: 'ANALYZE_AI.gathering_entity_evidence', jobId: job.id, disputeCaseId }));
-      await this.objectionReasonGeneratorService.gatherEntityEvidence(disputeCaseId, ctx);
+      // Guard B: skip browser run if a snapshot is active (test data) OR entityEvidence already provided.
+      // Snapshot cases with entityEvidence: null still must not run Puppeteer — the seeder controls
+      // which grounds get evidence; browser automation would produce non-deterministic results.
+      if (snapshot || ctx.entityEvidence) {
+        this.logger.log(
+          JSON.stringify({
+            context: 'ANALYZE_AI.entity_evidence_skipped',
+            jobId: job.id,
+            disputeCaseId,
+            reason: snapshot ? 'snapshot' : 'already_provided',
+          }),
+        );
+      } else {
+        this.logger.log(
+          JSON.stringify({
+            context: 'ANALYZE_AI.gathering_entity_evidence',
+            jobId: job.id,
+            disputeCaseId,
+          }),
+        );
+        await this.objectionReasonGeneratorService.gatherEntityEvidence(
+          disputeCaseId,
+          ctx,
+        );
+      }
 
-      // Step 2: Generate comparable sales — enrich DTO with ePlanning-confirmed address fields
-      // so the prefetch finds real candidates even when the property entity lacks suburb/postcode.
-      this.logger.log(JSON.stringify({ context: 'ANALYZE_AI.generating_comparables', jobId: job.id, disputeCaseId }));
-      const addrMatch = ctx.confirmedAddress.match(/^.+\s+([A-Z][A-Z\s]+)\s+(\d{4})\s*$/i);
-      const zoningLayer = ctx.apiData.layers?.find(l => l.layerName === 'Land Zoning Map');
-      const zoningCode = (zoningLayer?.results?.[0]?.['Zone'] ?? null) as string | null;
-      const lotDp =
-        ctx.meta.lot && ctx.meta.plan
-          ? `Lot ${ctx.meta.lot} ${ctx.meta.planType} ${ctx.meta.plan}`
-          : undefined;
-      await this.comparablesService.generateComparableSales(
-        {
-          dispute_case_id: disputeCaseId,
-          land_area_sqm: ctx.lotAreaM2 ?? undefined,
-          suburb: addrMatch?.[1]?.trim().toUpperCase() ?? undefined,
-          postcode: addrMatch?.[2] ?? undefined,
-          zoning: zoningCode ?? undefined,
-          lot_dp: lotDp,
-          height_limit_m: ctx.meta.height_limit_m ?? undefined,
-        },
-        userId,
-      );
+      // Area fields stripped to prevent planning-layer area data from contaminating Claude's site-area calculation
+      const planningCtx: SafePlanningCtx = buildSafePlanningCtx(ctx);
 
-      // Merge DB comparables + PDF-extracted comparables into context
-      const dbSales = await this.comparablesService.findRawByDisputeCaseId(disputeCaseId);
-      const mappedSales: InputComparable[] = dbSales
-        .filter(s => s.adjusted_land_value != null && s.area != null)
-        .map(s => ({
-          address: [s.property_house_number, s.property_street_name, s.property_locality]
-            .filter(Boolean)
-            .join(' '),
-          area_m2: s.area!,
-          zone: s.zoning ?? undefined,
-          analysed_land_value: s.adjusted_land_value!,
-          rate_per_m2: s.adjusted_rate_per_sqm ?? undefined,
-          contract_date: s.contract_date?.toISOString().split('T')[0] ?? undefined,
-        }));
-      ctx.inputComparables = [...mappedSales, ...ctx.inputComparables];
+      // Guard C: skip comparable generation when a snapshot is active — the snapshot's inputComparables
+      // are the test's controlled inputs; letting generateComparableSales() run would merge non-deterministic
+      // Claude-found sales and contaminate accuracy test results.
+      if (snapshot) {
+        this.logger.log(
+          JSON.stringify({
+            context: 'ANALYZE_AI.comparables_from_snapshot',
+            jobId: job.id,
+            disputeCaseId,
+            count: ctx.inputComparables.length,
+          }),
+        );
+      } else {
+        this.logger.log(
+          JSON.stringify({
+            context: 'ANALYZE_AI.generating_comparables',
+            jobId: job.id,
+            disputeCaseId,
+          }),
+        );
+        // Non-fatal: a missing subject field (address/zoning/land area/valuation date can't be
+        // resolved) or an LLM hiccup here must not fail the whole ~20-minute analysis job — every
+        // step before this one (ABR lookup, planning-portal scraping, entity evidence) already
+        // succeeded and shouldn't be discarded over a problem confined to comparables. Downstream
+        // steps still run using whatever comparables (possibly none) made it into ctx.inputComparables
+        // — mirrors the same rationale as the valuation-report "Non-fatal" wrapper below.
+        try {
+          const { suburb: parsedSuburb, postcode: parsedPostcode } =
+            parseNswAddressComponents(ctx.confirmedAddress);
+          if (!parsedSuburb || !parsedPostcode)
+            this.logger.warn(
+              JSON.stringify({
+                context: 'ANALYZE_AI.addr_parse_failed',
+                jobId: job.id,
+                confirmedAddress: ctx.confirmedAddress,
+                parsedSuburb,
+                parsedPostcode,
+              }),
+            );
+          const zoningLayer = ctx.apiData.layers?.find(
+            (l) => l.layerName === 'Land Zoning Map',
+          );
+          const zoningCode = (zoningLayer?.results?.[0]?.['Zone'] ?? null) as
+            | string
+            | null;
+          const lotDp =
+            ctx.meta.lot && ctx.meta.plan
+              ? `Lot ${ctx.meta.lot} ${ctx.meta.planType} ${ctx.meta.plan}`
+              : undefined;
+          // Persist so the report generator has these too — same rationale as the Land Value
+          // Search persist above; previously both were resolved successfully here but discarded
+          // before ever reaching the report (only the one-off comparables DTO below ever saw them).
+          if (zoningCode || lotDp) {
+            await this.aiPropertySearchService.persistZoningAndLotDp(
+              disputeCaseId,
+              zoningCode,
+              lotDp ?? null,
+            );
+          }
+          await this.comparablesService.generateComparableSales(
+            {
+              dispute_case_id: disputeCaseId,
+              land_area_eplanning_sqm: ctx.lotAreaM2 ?? undefined,
+              suburb: parsedSuburb,
+              postcode: parsedPostcode,
+              zoning: zoningCode ?? undefined,
+              lot_dp: lotDp,
+              height_limit_m: ctx.meta.height_limit_m ?? undefined,
+              lat: ctx.lat ?? undefined,
+              lng: ctx.lng ?? undefined,
+            },
+            userId,
+          );
 
-      // Step 4: Run supporting evidence using pre-built context (no re-gathering)
-      this.logger.log(JSON.stringify({ context: 'ANALYZE_AI.running_evidence', jobId: job.id, disputeCaseId }));
-      ctx.evidenceResult = await this.supportingEvidenceService.analyzeWithCtx(disputeCaseId, ctx, artifactDocIds);
+          const dbSales =
+            await this.comparablesService.findRawByDisputeCaseId(disputeCaseId);
+          const mappedSales: InputComparable[] = dbSales
+            .filter((s) => s.adjusted_land_value != null && s.area != null)
+            .map((s) => ({
+              address: [
+                s.property_house_number,
+                s.property_street_name,
+                s.property_locality,
+              ]
+                .filter(Boolean)
+                .join(' '),
+              area_m2: s.area!,
+              zone: s.zoning ?? undefined,
+              analysed_land_value: s.adjusted_land_value!,
+              rate_per_m2: s.adjusted_rate_per_sqm ?? undefined,
+              contract_date:
+                s.contract_date?.toISOString().split('T')[0] ?? undefined,
+              size_tier: s.size_tier ?? undefined,
+            }));
+          ctx.inputComparables = [...mappedSales, ...ctx.inputComparables];
+        } catch (comparablesErr: unknown) {
+          this.logger.error(
+            JSON.stringify({
+              context: 'ANALYZE_AI.comparables_failed',
+              jobId: job.id,
+              disputeCaseId,
+              error:
+                comparablesErr instanceof Error
+                  ? comparablesErr.message
+                  : String(comparablesErr),
+            }),
+          );
+        }
+      }
 
-      // Step 5: Generate objection reasons — passes all prior pipeline outputs as context
-      this.logger.log(JSON.stringify({ context: 'ANALYZE_AI.generating_objection_reasons', jobId: job.id, disputeCaseId }));
-      await this.objectionReasonGeneratorService.generate(disputeCaseId, ctx);
+      // Guard D: skip supporting-evidence analysis for snapshot/test cases — the snapshot already
+      // provides pre-built evidenceResult (or null); running the full analyzeWithCtx pipeline would
+      // call ePlanning, blob storage, and Claude unnecessarily and skew accuracy test results.
+      if (snapshot) {
+        this.logger.log(
+          JSON.stringify({
+            context: 'ANALYZE_AI.evidence_skipped_snapshot',
+            jobId: job.id,
+            disputeCaseId,
+          }),
+        );
+      } else {
+        this.logger.log(
+          JSON.stringify({
+            context: 'ANALYZE_AI.running_evidence',
+            jobId: job.id,
+            disputeCaseId,
+          }),
+        );
+        ctx.evidenceResult =
+          await this.supportingEvidenceService.analyzeWithCtx(
+            disputeCaseId,
+            ctx,
+            artifactDocIds,
+          );
+      }
+
+      if (isReportGenerationSnapshot) {
+        this.logger.log(
+          JSON.stringify({
+            context: 'ANALYZE_AI.objection_reasons_skipped_report_mode',
+            jobId: job.id,
+            disputeCaseId,
+          }),
+        );
+      } else {
+        this.logger.log(
+          JSON.stringify({
+            context: 'ANALYZE_AI.generating_objection_reasons',
+            jobId: job.id,
+            disputeCaseId,
+          }),
+        );
+        await this.objectionReasonGeneratorService.generate(disputeCaseId, ctx);
+      }
+
+      // Guard E: skip valuation report generation for ground-analysis snapshot/test cases — the
+      // report requires full planning context from ePlanning which is not gathered when a
+      // ground-analysis snapshot is active. 'report_generation'-mode snapshots are exempt from
+      // this skip (their planningCtx is derived from the same snapshot's context, which is
+      // sufficient for the report — see buildSafePlanningCtx above).
+      if (snapshot && !isReportGenerationSnapshot) {
+        this.logger.log(
+          JSON.stringify({
+            context: 'ANALYZE_AI.valuation_report_skipped_snapshot',
+            jobId: job.id,
+            disputeCaseId,
+          }),
+        );
+      } else {
+        // Non-fatal: a PDF/Claude failure here must not fail the whole analysis job
+        this.logger.log(
+          JSON.stringify({
+            context: 'ANALYZE_AI.generating_valuation_report',
+            jobId: job.id,
+            disputeCaseId,
+          }),
+        );
+        try {
+          await this.valuationReportService.generate(
+            disputeCaseId,
+            planningCtx,
+          );
+          await this.disputeCasesService.markValuated(disputeCaseId);
+        } catch (reportErr: unknown) {
+          this.logger.error(
+            JSON.stringify({
+              context: 'ANALYZE_AI.valuation_report_failed',
+              jobId: job.id,
+              disputeCaseId,
+              error:
+                reportErr instanceof Error
+                  ? reportErr.message
+                  : String(reportErr),
+            }),
+          );
+        }
+      }
 
       this.logger.log(
-        JSON.stringify({ context: 'ANALYZE_AI.complete', jobId: job.id, disputeCaseId, ts: new Date().toISOString() }),
+        JSON.stringify({
+          context: 'ANALYZE_AI.complete',
+          jobId: job.id,
+          disputeCaseId,
+          ts: new Date().toISOString(),
+        }),
       );
       return { status: 'completed' };
     } catch (err: unknown) {

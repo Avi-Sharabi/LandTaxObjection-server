@@ -213,7 +213,7 @@ export class SupportingEvidenceService {
     const uploadBlob = async (blobPath: string, base64: string, documentName: string, artifactKey: string) => {
       const filePath = await this.azureBlobService.uploadFile(blobPath, base64);
       if (!filePath) return;
-      const doc = await this.assessmentDocumentsService.createArtifactRecord(clientId, documentName, filePath);
+      const doc = await this.assessmentDocumentsService.createArtifactRecord(clientId, documentName, filePath, disputeCaseId);
       artifactMap.set(artifactKey, doc.id);
     };
 
@@ -402,7 +402,7 @@ export class SupportingEvidenceService {
       const blobPath = `${FOLDER}/${disputeCaseId}/evidence/${key}.pdf`;
       const filePath = await this.azureBlobService.uploadFile(blobPath, base64);
       if (!filePath) return;
-      const doc = await this.assessmentDocumentsService.createArtifactRecord(clientId, label, filePath);
+      const doc = await this.assessmentDocumentsService.createArtifactRecord(clientId, label, filePath, disputeCaseId);
       artifactMap.set(key, doc.id);
     } catch (e) {
       this.logger.warn(`Evidence PDF failed (${key}): ${(e as Error).message}`);
@@ -431,6 +431,7 @@ export class SupportingEvidenceService {
         issue_type: issueType,
         is_tick: flat.tick,
         confidence: flat.confidence ?? null,
+        verification_status: flat.verification_status ?? 'AI_DETECTED_UNVERIFIED',
         trigger: flat.trigger ?? null,
         text_box_content: flat.text_box_content ?? null,
         documents_to_attach,

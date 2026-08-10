@@ -1,4 +1,4 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, Index } from 'typeorm';
 import { ApiProperty } from '@nestjs/swagger';
 
 export enum UserRole {
@@ -35,6 +35,16 @@ export class User {
 
   @Column({ type: 'text', nullable: true, select: false })
   password: string | null;
+
+  @Index()
+  @Column({ name: 'password_reset_token', type: 'text', nullable: true, select: false })
+  passwordResetToken: string | null;
+
+  @Column({ name: 'password_reset_expires', type: 'timestamptz', nullable: true, select: false })
+  passwordResetExpires: Date | null;
+
+  @Column({ name: 'password_reset_used_at', type: 'timestamptz', nullable: true, select: false })
+  passwordResetUsedAt: Date | null;
 
   @Column({ name: 'is_active', type: 'boolean', default: true })
   isActive: boolean;

@@ -13,6 +13,7 @@ import {
   FindOptionsWhere,
   ILike,
   In,
+  IsNull,
   LessThan,
   Not,
   Repository,
@@ -23,12 +24,18 @@ import { GetDisputeCasesQueryDto } from '../../common/dto/paginated-query.dto';
 import { PaginatedDisputeCasesResponseDto } from '../../common/dto/paginated-response.dto';
 import { UpdateDisputeCaseDto } from './dto/update-dispute-case.dto';
 import { CreateDisputeIntakeDto } from './dto/create-dispute-intake.dto';
+import { CreateDisputeIntakeV2Dto } from './dto/create-dispute-intake-v2.dto';
 import { CloseNoObjectionDto } from './dto/close-no-objection.dto';
 import { DisputeCaseResponseDto } from './dto/dispute-case-response.dto';
 import { AnalysisReportResponseDto } from './dto/analysis-report-response.dto';
 import { ApprovalDocumentsResponseDto } from './dto/approval-documents-response.dto';
+import {
+  BulkDeleteDisputeCasesResponseDto,
+  BulkDeleteDisputeCasesResultDto,
+} from './dto/bulk-delete-cases.dto';
 import { DisputeCase, DisputeStatus } from './entities/dispute-case.entity';
 import { ValuationNotice } from '../valuation-notices/entities/valuation-notice.entity';
+import { getLandTaxYearFromValuationDate } from '../../common/utils/land-tax-year.util';
 import { LandTaxComputationService } from '../valuation/land-tax-computation.service';
 import { LandTaxResponseDto } from '../valuation/dto/land-tax-response.dto';
 import {
@@ -36,6 +43,8 @@ import {
   OwnershipType,
 } from '../valuation/dto/calculate-tax.dto';
 import { DisputeIntakeOrchestrator } from './intake/dispute-intake.orchestrator';
+import { DocumentExtractionHandler } from './intake/document-extraction.handler';
+import { ValuationNoticeExtractionDto } from './dto/extract-valuation-notice.dto';
 import { ComparablesService } from '../comparables/comparables.service';
 import { AzureEmailService } from 'src/common/azure-email/azure-email.service';
 import { AzureBlobService } from 'src/common/azure-blob/azure-blob.service';
@@ -68,6 +77,7 @@ export class DisputeCasesService {
   constructor(
     private readonly dataSource: DataSource,
     private readonly intakeOrchestrator: DisputeIntakeOrchestrator,
+    private readonly documentExtractionHandler: DocumentExtractionHandler,
     private readonly comparablesService: ComparablesService,
     private readonly azureEmailService: AzureEmailService,
     private readonly azureBlobService: AzureBlobService,
@@ -83,9 +93,14 @@ export class DisputeCasesService {
   ) { }
 
   async submitIntakeApplication(
-    intakeDto: CreateDisputeIntakeDto,
+    intakeDto: CreateDisputeIntakeDto | CreateDisputeIntakeV2Dto,
   ): Promise<unknown> {
-    return this.intakeOrchestrator.submitIntakeApplication(intakeDto);
+    // V2 omits grounds/constraints; orchestrator treats those as optional at runtime
+    return this.intakeOrchestrator.submitIntakeApplication(intakeDto as CreateDisputeIntakeDto);
+  }
+
+  async extractValuationNoticeDocument(attachment: string): Promise<ValuationNoticeExtractionDto> {
+    return this.documentExtractionHandler.extractValuationNotice(attachment);
   }
 
   async findAll(clientId?: string): Promise<DisputeCaseResponseDto[]> {
@@ -135,11 +150,17 @@ export class DisputeCasesService {
     };
 
     const where: FindOptionsWhere<DisputeCase>[] = search
-      ? [{ ...baseWhere, case_reference: ILike(`%${search}%`) }]
+      ? [
+          { ...baseWhere, case_reference: ILike(`%${search}%`) },
+          { ...baseWhere, client: { name: ILike(`%${search}%`) } },
+          { ...baseWhere, property: { address: ILike(`%${search}%`) } },
+          { ...baseWhere, property: { suburb: ILike(`%${search}%`) } },
+        ]
       : [baseWhere];
 
     const [data, total] = await this.disputeCasesRepository.findAndCount({
       where,
+      relations: { client: true, property: true },
       select: {
         id: true,
         case_reference: true,
@@ -148,16 +169,26 @@ export class DisputeCasesService {
         status: true,
         statutory_deadline: true,
         original_assessed_value: true,
+        internal_assessed_value: true,
         vg_follow_up_count: true,
         reminder_count: true,
+        is_valuated: true,
         created_at: true,
+        client: { name: true },
+        property: { address: true, suburb: true, state: true, postcode: true },
       },
       order: { created_at: 'DESC' },
       skip,
       take: limit,
     });
 
-    return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
+    const flattened = data.map((dc) => ({
+      ...dc,
+      client_name: dc.client?.name ?? null,
+      property_address: this.buildPropertyAddress(dc.property),
+    }));
+
+    return { data: flattened, total, page, limit, totalPages: Math.ceil(total / limit) };
   }
 
   async findOne(id: string): Promise<DisputeCaseResponseDto> {
@@ -307,7 +338,7 @@ export class DisputeCasesService {
     const clientName = disputeCase.client.name;
     const propertyAddress = this.buildPropertyAddress(disputeCase.property);
     const taxYear = String(
-      new Date(disputeCase.valuation_notice.valuation_date).getFullYear(),
+      getLandTaxYearFromValuationDate(disputeCase.valuation_notice.valuation_date),
     );
 
     // Send email first — only persist state if the send succeeds.
@@ -430,7 +461,7 @@ export class DisputeCasesService {
 
     const propertyAddress = this.buildPropertyAddress(disputeCase.property);
     const taxYear = String(
-      new Date(disputeCase.valuation_notice.valuation_date).getFullYear(),
+      getLandTaxYearFromValuationDate(disputeCase.valuation_notice.valuation_date),
     );
 
     return {
@@ -564,6 +595,19 @@ export class DisputeCasesService {
     });
     if (!found) throw new NotFoundException(`Dispute case #${id} not found`);
     return found.case_reference;
+  }
+
+  async getCaseReferenceMap(ids: string[]): Promise<Record<string, string>> {
+    if (ids.length === 0) return {};
+    const rows = await this.disputeCasesRepository.find({
+      where: { id: In(ids) },
+      select: { id: true, case_reference: true },
+    });
+    return Object.fromEntries(rows.map(r => [r.id, r.case_reference]));
+  }
+
+  async markValuated(id: string): Promise<void> {
+    await this.disputeCasesRepository.update(id, { is_valuated: true });
   }
 
   private buildPropertyAddress(
@@ -896,14 +940,55 @@ export class DisputeCasesService {
     }
   }
 
-  async remove(id: string): Promise<{ message: string }> {
-    const disputeCase = await this.disputeCasesRepository.findOne({
-      where: { id },
-    });
-    if (!disputeCase)
+  async remove(id: string, deletedById: string): Promise<{ message: string }> {
+    const exists = await this.disputeCasesRepository.findOne({ where: { id }, select: { id: true } });
+    if (!exists)
       throw new NotFoundException(`Dispute case #${id} not found`);
-    await this.disputeCasesRepository.remove(disputeCase);
-    return { message: `Dispute case #${id} removed` };
+
+    const result = await this.disputeCasesRepository.update(
+      { id, deleted_at: IsNull() },
+      { deleted_at: new Date(), deleted_by: deletedById },
+    );
+
+    if (!result.affected) {
+      throw new ConflictException(`Dispute case #${id} is already deleted`);
+    }
+
+    return { message: `Dispute case #${id} has been deleted` };
+  }
+
+  async removeMany(
+    caseIds: string[],
+    deletedById: string,
+  ): Promise<BulkDeleteDisputeCasesResponseDto> {
+    const settled = await Promise.allSettled(
+      caseIds.map((id) => this.remove(id, deletedById)),
+    );
+
+    const results: BulkDeleteDisputeCasesResultDto[] = settled.map((outcome, i) => {
+      const id = caseIds[i];
+      if (outcome.status === 'fulfilled') {
+        return { id, status: 'deleted' };
+      }
+      const err = outcome.reason;
+      if (err instanceof NotFoundException) {
+        return { id, status: 'not_found' };
+      }
+      if (err instanceof ConflictException) {
+        return { id, status: 'already_deleted' };
+      }
+      this.logger.error(`[BulkDelete] Failed to delete dispute case #${id}: ${err instanceof Error ? err.message : String(err)}`);
+      return { id, status: 'error' };
+    });
+
+    const deleted = results.filter((r) => r.status === 'deleted').length;
+
+    return {
+      results,
+      total: results.length,
+      deleted,
+      skipped: results.length - deleted,
+    };
   }
 
 
@@ -966,8 +1051,7 @@ export class DisputeCasesService {
     notice: ValuationNotice,
     feeSharePct: number,
   ): CalculateTaxDto {
-    // NSW: valuation date is 1 July of (tax_year − 1), so tax year = valuation year + 1
-    const taxYear = new Date(notice.valuation_date).getUTCFullYear() + 1;
+    const taxYear = getLandTaxYearFromValuationDate(notice.valuation_date);
 
     const dto: CalculateTaxDto = {
       tax_year: taxYear,

@@ -56,7 +56,7 @@ export class ApportionmentService {
         lot_plan: c.address,
         area_m2: c.area_m2,
         assessed_value: c.analysed_land_value,
-        value_per_m2: c.rate_per_m2 || (c.area_m2 ? Math.round(c.analysed_land_value / c.area_m2) : null),
+        value_per_m2: c.rate_per_m2 || (c.area_m2 && c.analysed_land_value != null ? Math.round(c.analysed_land_value / c.area_m2) : null),
         zone: c.zone,
         source: 'input_document',
       })).filter(c => c.area_m2 && c.assessed_value);
@@ -118,12 +118,17 @@ export class ApportionmentService {
         { label: 'Google Maps satellite zoom 19', base64: ctx.closeupBase64 },
       ];
 
-      const result = await this.claudeVision.callClaude(payload, images, skill, 'APPORT', 5000, 2500);
+      // Bumped from the shared 5000/2500 default — an aggregated multi-lot site with several
+      // valuation scenarios to compare (current LV, amended-on-objection figure, multiple rate
+      // benchmarks) needs a longer trigger explanation than the default budget leaves room for
+      // once thinking is accounted for; a real run truncated mid-JSON at 5000/2500 (silently
+      // caught, but dropped what looked like a genuine, strong apportionment ground).
+      const result = await this.claudeVision.callClaude(payload, images, skill, 'APPORT', 10000, 4000);
       this.logger.log(`[APPORT] tick: ${result['tick']} | confidence: ${result['confidence']}`);
       return { apportionment: toIssueResult(result), rawData: { vg_comparables: arcgisComps.slice(0, 25) } };
     } catch (err: unknown) {
       this.logger.error(`[APPORT] Fatal: ${(err as Error).message}`);
-      return { apportionment: { tick: false, confidence: 'MANUAL_REVIEW_REQUIRED', trigger: null, text_box_content: null, documents_to_attach: [] }, rawData: { vg_comparables: [] } };
+      return { apportionment: { tick: false, confidence: 'MANUAL_REVIEW_REQUIRED', verification_status: 'AI_DETECTED_UNVERIFIED', trigger: null, text_box_content: null, documents_to_attach: [] }, rawData: { vg_comparables: [] } };
     }
   }
 }

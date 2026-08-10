@@ -11,11 +11,15 @@ export interface SubjectContext {
   vgValuePrior: number;
   landAreaVgSqm: number | null;
   valuationDate: string;
+  lat: number | null;
+  lng: number | null;
 }
 
 export function buildUserPrompt(
   subject: SubjectContext,
   candidates: Record<string, unknown>[],
+  maxDistanceKm: number,
+  zoningLastResort: boolean = false,
 ): string {
   const yoyPct = subject.vgValuePrior > 0
     ? (((subject.vgValueCurrent - subject.vgValuePrior) / subject.vgValuePrior) * 100).toFixed(1)
@@ -26,6 +30,8 @@ export function buildUserPrompt(
   const vgPriorRatePerSqm = subject.landAreaSqm && subject.landAreaSqm > 0
     ? (subject.vgValuePrior / subject.landAreaSqm).toFixed(0)
     : 'unknown';
+  const sizeBandLower = subject.landAreaSqm ? (subject.landAreaSqm * 0.7).toFixed(0) : null;
+  const sizeBandUpper = subject.landAreaSqm ? (subject.landAreaSqm * 1.3).toFixed(0) : null;
 
   const subjectLines = [
     subject.lotDp ? `- Lot/DP: ${subject.lotDp}` : null,
@@ -49,23 +55,44 @@ ${subjectLines}
 
 YOUR ONLY JOB: Select up to 10 records from the candidates below and return them as a JSON array. Do not add, modify, or omit any field values — return each selected record exactly as provided. The fields adjusted_rate_per_sqm, adjusted_land_value, suggested_land_value, and explanation will be computed server-side; set them to null in your output.
 
+${zoningLastResort
+    ? `LAST-RESORT MODE: every normal widening avenue (nearby suburbs, a longer lookback window) has already been exhausted and there is still insufficient same-zoning-family evidence for this case. As an exception this round, candidates with a genuinely different zoning class ARE included below and may be selected — but ONLY if nothing better exists, and ONLY with a detailed "zoning_justification" (see the requirement below) explaining specifically why that sale is still informative despite the zoning difference. Prefer same-family candidates first if any exist in this list; reach for a different-class candidate only when no same-family evidence is available at all.`
+    : `Note: candidates with a genuinely different zoning class have already been excluded from the list below — do not attempt to source one via search_comparable_sales as a substitute; it will be rejected.`}
+
+Note: candidates whose interest_of_sale_percent is non-zero (a fractional/co-ownership interest was sold, not the whole property)${sizeBandLower && sizeBandUpper ? ` or whose area falls outside ${sizeBandLower}m²–${sizeBandUpper}m² (±30% of the subject's ${subject.landAreaSqm}m²)` : ''} will be rejected even if selected — do not source a substitute for either via search_comparable_sales.
+
+MANDATORY — VACANT LAND FIRST: Before selecting any improved-sale records, you MUST include ALL candidates where nature_of_property = 'V' OR primary_purpose contains 'VACANT' (case-insensitive). Only skip a vacant record if purchase_price is null or area is null. Vacant land sales are the strongest evidence — do not omit them in favour of improved properties.
+
+MANDATORY — COMMERCIAL/INDUSTRIAL SALES BEFORE RESIDENTIAL: After vacant land, you MUST include ALL candidates where primary_purpose contains 'COMMERCIAL' OR primary_purpose contains 'INDUSTRIAL' before selecting any residential improved-sale records. These are more relevant evidence for a ${subject.zoning}-zoned subject property than residential sales. Only skip if purchase_price is null or area is null.
+
+MANDATORY — LOWEST RATE FIRST: Within each tier in the SELECTION CRITERIA below, before applying any other tiebreak, you MUST include the 3 candidates in that tier with the lowest raw rate (purchase_price ÷ area for vacant land; (purchase_price × 0.5) ÷ area for improved sales), provided purchase_price and area are non-null. These are the sales most likely to produce an adjusted rate that supports the objection after size and time adjustment — do not pass one over in favour of a more recent or closer-sized sale with a higher rate; recency and area-closeness are tiebreakers among sales with comparable rates, not a substitute for rate.
+
+TIME-BAND PREFERENCE: Sales within 6 months of the valuation date need no time adjustment and are strongest; 6-12 months requires a minor adjustment; 12-18 months requires a full adjustment; sales beyond 18 months are last-resort evidence. Prefer fresher sales when the choice between similar candidates is otherwise close, and only rely on sales older than 18 months if there is no fresher alternative in the candidate list.
+
 SELECTION CRITERIA (apply in order):
 1. Vacant land, same zoning (${subject.zoning}), same suburb — strongest evidence
-2. Improved sales, same zoning, same suburb
-3. Vacant land, same zoning, nearby suburb
-4. Improved sales, same zoning, nearby suburb
-5. Compatible zoning only if same-zoning evidence is insufficient
-6. Different zoning class — last resort only
+2. Commercial/industrial improved sales, same zoning, same suburb
+3. Residential improved sales, same zoning, same suburb
+4. Vacant land, same zoning, nearby suburb
+5. Commercial/industrial improved sales, same zoning, nearby suburb
+6. Residential improved sales, same zoning, nearby suburb
+7. Compatible zoning (same zoning family, different subtype — e.g. R2 vs R3) only if same-zoning evidence is insufficient${zoningLastResort
+    ? `\n8. Different zoning class — LAST RESORT ONLY, only reachable this round because every same-family avenue has already been exhausted. Requires a detailed zoning_justification (see below) and will be flagged as reduced-confidence evidence regardless of your justification.`
+    : ''}
 
-Within each tier: no sale_code flag preferred, more recent preferred, area closest to ${subject.landAreaSqm}m² preferred.
+Within each tier, after the MANDATORY — LOWEST RATE FIRST candidates above: no sale_code flag preferred, then more recent preferred, then area closest to ${subject.landAreaSqm}m² preferred.
 
-TARGET: Return between 5 and 10 records. You MUST work through the tiers in order until you have at least 5 records. Do not stop at a single tier — if tier 1 yields fewer than 5, continue to tier 2, then tier 3, and so on. Only exclude records where purchase_price is null or area is null. Do NOT filter records based on rate per m² or whether you think they support the objection — the reviewer will assess that.
+ZONING JUSTIFICATION REQUIREMENT: For any selected record whose zoning differs from the subject's exact zoning (${subject.zoning}) — a tier 7 "compatible zoning" pick, or a tier 8 "different zoning class" last-resort pick when in that mode — you MUST include a non-empty "zoning_justification" field explaining specifically why that sale is still informative for valuation purposes (e.g. same permitted land uses, same density/FSR band for tier 7; or, for tier 8, why no same-family evidence was usable and why this sale is still the best available indicator). Records missing this justification will be rejected. For records whose zoning matches exactly, set "zoning_justification" to null.
 
-Return ONLY a valid JSON array with no markdown or prose. Each element must contain exactly these fields (copy values verbatim from the candidate record):
-id, property_id, district_code, property_house_number, property_street_name, property_locality, property_post_code, area, zoning, nature_of_property, primary_purpose, component_code, sale_code, interest_of_sale_percent, contract_date, purchase_price, dealing_number, owner_type, adjusted_rate_per_sqm, adjusted_land_value, suggested_land_value, explanation.
+RATE GUIDANCE: The VG's assessed rate is $${vgRatePerSqm}/m². Sales with a raw rate at or below this figure (see MANDATORY — LOWEST RATE FIRST above) are most likely to produce adjusted rates that support the objection once size and time adjustments are applied server-side. Only include candidates with raw rates well above $${vgRatePerSqm}/m² if no better alternatives exist in the candidate list.
+
+TARGET: Return between 5 and 10 records. You MUST work through the tiers in order until you have at least 5 records. Do not stop at a single tier — if tier 1 yields fewer than 5, continue to tier 2, then tier 3, and so on. Only exclude records where purchase_price is null or area is null.
+
+Return ONLY a valid JSON array with no markdown or prose. Each element must contain exactly these fields (copy values verbatim from the candidate record, except zoning_justification which you must write yourself per the requirement above):
+id, property_id, district_code, property_house_number, property_street_name, property_locality, property_post_code, area, area_type, zoning, nature_of_property, primary_purpose, component_code, sale_code, interest_of_sale_percent, contract_date, purchase_price, dealing_number, owner_type, adjusted_rate_per_sqm, adjusted_land_value, suggested_land_value, explanation, zoning_justification.
 
 ${hasCandidates
-    ? `CANDIDATE SALES (${candidates.length} records — pre-filtered to the subject's suburb, postcode, and immediate postcode corridor with same zoning; treat all as geographically relevant):
+    ? `CANDIDATE SALES (${candidates.length} records — pre-filtered to the subject's suburb/postcode corridor with same zoning, AND server-side verified to be within ${maxDistanceKm}km of the subject property by real geocoded distance (see each record's _distanceKm field). Geographic relevance has already been confirmed — you do not need to second-guess proximity, but you should still prefer the closest/most similar records when selecting):
 ${JSON.stringify(candidates)}
 
 If you still have fewer than 5 records with non-null purchase_price and area after reviewing all candidates, use the search_comparable_sales MCP tool to expand the search. Use database tools at most 3 times.`

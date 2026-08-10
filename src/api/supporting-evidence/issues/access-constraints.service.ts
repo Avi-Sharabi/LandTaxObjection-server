@@ -76,7 +76,7 @@ export class AccessConstraintsService {
     } catch (err: unknown) {
       this.logger.error(`[ACCESS] Fatal: ${(err as Error).message}`);
       return {
-        access_constraints: { tick: false, confidence: 'MANUAL_REVIEW_REQUIRED', trigger: null, text_box_content: null, documents_to_attach: [] },
+        access_constraints: { tick: false, confidence: 'MANUAL_REVIEW_REQUIRED', verification_status: 'AI_DETECTED_UNVERIFIED', trigger: null, text_box_content: null, documents_to_attach: [] },
         flood_data: null,
         contaminated_land: null,
       };

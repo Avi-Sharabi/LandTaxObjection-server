@@ -45,12 +45,20 @@ export class GetCaseDocumentsTool implements IMcpTool {
     private readonly azureBlob: AzureBlobService,
   ) {}
 
-  async execute(args: Record<string, unknown>, _correlationId: string): Promise<ToolResult> {
+  async execute(
+    args: Record<string, unknown>,
+    _correlationId: string,
+  ): Promise<ToolResult> {
     const dto = plainToInstance(GetCaseDocumentsArgsDto, args);
 
     if (!dto.case_reference && !dto.case_id) {
       return {
-        content: [{ type: 'text', text: 'Invalid arguments: case_reference or case_id is required' }],
+        content: [
+          {
+            type: 'text',
+            text: 'Invalid arguments: case_reference or case_id is required',
+          },
+        ],
         isError: true,
       };
     }
@@ -63,7 +71,7 @@ export class GetCaseDocumentsTool implements IMcpTool {
                 dc.case_reference,
                 ad.created_at AS uploaded_at
          FROM assessment_documents ad
-         INNER JOIN dispute_cases dc ON dc.client_id = ad.client_id
+         INNER JOIN dispute_cases dc ON dc.id = ad.dispute_case_id
          WHERE dc.id = $1
            AND ad.file_path IS NOT NULL
          ORDER BY ad.created_at DESC`
@@ -74,7 +82,7 @@ export class GetCaseDocumentsTool implements IMcpTool {
                 dc.case_reference,
                 ad.created_at AS uploaded_at
          FROM assessment_documents ad
-         INNER JOIN dispute_cases dc ON dc.client_id = ad.client_id
+         INNER JOIN dispute_cases dc ON dc.id = ad.dispute_case_id
          WHERE dc.case_reference = $1
            AND ad.file_path IS NOT NULL
          ORDER BY ad.created_at DESC`;

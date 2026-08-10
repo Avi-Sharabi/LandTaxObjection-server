@@ -12,6 +12,8 @@ export class DomainExceptionFilter implements ExceptionFilter {
       statusCode: exception.statusCode,
       error: exception.code,
       message: exception.message,
+      title: exception.title,
     });
   }
 }
+
