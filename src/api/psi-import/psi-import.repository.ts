@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { EntityManager, Repository } from 'typeorm';
+import { Repository } from 'typeorm';
 
 import { PropertySalesRaw } from './entities/property-sales-raw.entity';
 import { PSI_INSERT_CHUNK_SIZE } from './psi-import.constant';
@@ -33,12 +33,13 @@ export class PsiImportRepository {
   }
 
   /**
-   * Inserts one .DAT file's records through the caller's `EntityManager`.
+   * Inserts one .DAT file's records through the caller's transaction-bound repository.
    *
-   * The manager is a parameter rather than this class's own repository because a TypeORM
-   * transaction lives on one pooled connection, and `this.repo` is bound to the default manager,
-   * which owns none. Writing through it would take a second connection and commit independently,
-   * so a week that failed partway would leave its earlier files durable and advance
+   * The repository is a parameter rather than this class's own `this.repo` because a TypeORM
+   * transaction lives on one pooled connection, and a repository carries whichever manager built
+   * it — `getRepository` constructs `new Repository(target, manager, queryRunner)`. `this.repo`
+   * comes from the default manager, which owns no connection, so writing through it would commit
+   * independently: a week that failed partway would leave its earlier files durable and advance
    * `MAX(download_datetime)` past the ones that never landed. `findLatestDownloadDatetime` uses
    * `this.repo` on purpose — a read has nothing to be atomic with.
    *
@@ -50,12 +51,11 @@ export class PsiImportRepository {
    * `comparables.service.ts` copies the value onto `comparable_sales` — a NULL would propagate.
    */
   async insertSaleRecords(
-    manager: EntityManager,
+    txRepo: Repository<PropertySalesRaw>,
     records: PsiSaleRecord[],
     importedAt: Date,
   ): Promise<void> {
-    await manager.save(
-      PropertySalesRaw,
+    await txRepo.save(
       records.map((record) => ({ ...record, imported_at: importedAt })),
       { chunk: PSI_INSERT_CHUNK_SIZE },
     );

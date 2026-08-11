@@ -3,9 +3,10 @@ import { InjectDataSource } from '@nestjs/typeorm';
 import { rm } from 'fs/promises';
 import { join } from 'path';
 import type { Browser, Page } from 'puppeteer';
-import { DataSource, EntityManager } from 'typeorm';
+import { DataSource } from 'typeorm';
 
 import { PuppeteerService } from '../supporting-evidence/shared/puppeteer.service';
+import { PropertySalesRaw } from './entities/property-sales-raw.entity';
 import { PsiWeekUnusableException } from './exceptions/psi-week-unusable.exception';
 import { PsiArchiveService } from './psi-archive.service';
 import { PsiDatParserService } from './psi-dat-parser.service';
@@ -285,7 +286,11 @@ export class PsiImportService {
     let skippedRecords = 0;
     let latestStamp: number | null = null;
 
-    await this.dataSource.transaction(async (manager: EntityManager) => {
+    await this.dataSource.transaction(async (manager) => {
+      // Taken off the transactional manager, so the repository carries that manager's connection
+      // and every file's write lands inside this BEGIN. The injected repository would not.
+      const salesRepo = manager.getRepository(PropertySalesRaw);
+
       for (const datFile of datFiles) {
         const parsed = await this.parseAndLogFile(datFile);
 
@@ -300,7 +305,7 @@ export class PsiImportService {
         }
 
         await this.repository.insertSaleRecords(
-          manager,
+          salesRepo,
           parsed.records,
           importedAt,
         );
