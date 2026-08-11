@@ -64,7 +64,9 @@ export class PsiImportService {
     let page: Page | null = null;
 
     try {
-      browser = await this.puppeteerSvc.launchForPsi();
+      // launchForPdf, not launch(): the shared launcher passes --single-process, which detaches the
+      // frame mid-navigation on this Cloudflare-fronted origin.
+      browser = await this.puppeteerSvc.launchForPdf();
       page = await browser.newPage();
       await page.setUserAgent(PSI_USER_AGENT);
 
@@ -102,8 +104,7 @@ export class PsiImportService {
    * way that week is never offered again and is lost silently.
    *
    * Sequential by design: concurrency here would mean several archives in flight against a
-   * government server, from a container already running Chromium under
-   * `--js-flags=--max-old-space-size=512`.
+   * government server, from a container that is also running Chromium.
    */
   private async processWeeks(
     runId: string,
@@ -269,8 +270,8 @@ export class PsiImportService {
    * otherwise pin a pooled connection for minutes. Parse-and-insert is seconds.
    *
    * One file at a time: parse, insert, drop. Peak memory is a single district file however deep
-   * the backlog; accumulating first would put ~100k records (~230 MB) on a 512 MB heap shared with
-   * Chromium.
+   * the backlog; accumulating a long catch-up first would put ~100k records (~230 MB) in the Node
+   * heap, in a container that is also running Chromium.
    */
   private async ingestWeek(
     link: PsiWeeklyLink,

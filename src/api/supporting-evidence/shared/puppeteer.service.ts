@@ -29,29 +29,11 @@ export class PuppeteerService {
     });
   }
 
-  // --single-process detaches the frame mid-navigation ("Navigating frame was detached") on the
-  // Cloudflare-fronted Valuer General origin, so the PSI import gets its own launcher. Measured
-  // against the live listing: with the flag, page.goto fails every time; without it, the page
-  // loads in ~2.4s. Everything else matches launch(), including the 512 MB heap cap — the import
-  // shares a container with this browser and streams a hundred-plus files per week.
-  async launchForPsi(): Promise<Browser> {
-    return (puppeteer as unknown as { launch: (opts: unknown) => Promise<Browser> }).launch({
-      headless: true,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-gpu',
-        '--no-zygote',
-        '--disable-extensions',
-        '--disable-background-networking',
-        '--disable-default-apps',
-        '--js-flags=--max-old-space-size=512',
-      ],
-    });
-  }
-
-  // --single-process crashes the renderer on large PDF payloads; use a separate process for PDF rendering
+  // The launcher without --single-process, shared by two callers for two reasons: the flag crashes
+  // the renderer on large PDF payloads, and it detaches the frame mid-navigation ("Navigating frame
+  // was detached") on the Cloudflare-fronted Valuer General origin the PSI import scrapes. Measured
+  // against the live VG listing: with the flag page.goto fails every time, without it the page
+  // loads in ~2.4s.
   async launchForPdf(): Promise<Browser> {
     return (puppeteer as unknown as { launch: (opts: unknown) => Promise<Browser> }).launch({
       headless: true,

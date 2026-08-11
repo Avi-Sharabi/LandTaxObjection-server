@@ -35,13 +35,15 @@ export class PsiImportRepository {
   /**
    * Inserts one .DAT file's records through the caller's `EntityManager`.
    *
-   * The manager is a parameter rather than this class's own repository so the write joins the
-   * week-level transaction the service owns, instead of committing on its own. See
-   * `PsiImportService.ingestWeek` for why a week has to be all-or-nothing.
+   * The manager is a parameter rather than this class's own repository because a TypeORM
+   * transaction lives on one pooled connection, and `this.repo` is bound to the default manager,
+   * which owns none. Writing through it would take a second connection and commit independently,
+   * so a week that failed partway would leave its earlier files durable and advance
+   * `MAX(download_datetime)` past the ones that never landed. `findLatestDownloadDatetime` uses
+   * `this.repo` on purpose — a read has nothing to be atomic with.
    *
-   * `insert` rather than `save`: `save` issues a SELECT per row to decide insert-vs-update, which
-   * across a week's ~3,200 records is that many needless round trips — and `property_sales_raw`
-   * has no unique key for it to match on anyway.
+   * `chunk` keeps each statement under Postgres' 65535 bind-parameter cap. The records carry no
+   * `id`, so `save` always inserts and never looks up an existing row to decide.
    *
    * `imported_at` is stamped here rather than left to a column default. The table was created
    * out-of-band, so this repo cannot see whether it has one, and
@@ -52,16 +54,10 @@ export class PsiImportRepository {
     records: PsiSaleRecord[],
     importedAt: Date,
   ): Promise<void> {
-    for (
-      let offset = 0;
-      offset < records.length;
-      offset += PSI_INSERT_CHUNK_SIZE
-    ) {
-      const chunk = records
-        .slice(offset, offset + PSI_INSERT_CHUNK_SIZE)
-        .map((record) => ({ ...record, imported_at: importedAt }));
-
-      await manager.insert(PropertySalesRaw, chunk);
-    }
+    await manager.save(
+      PropertySalesRaw,
+      records.map((record) => ({ ...record, imported_at: importedAt })),
+      { chunk: PSI_INSERT_CHUNK_SIZE },
+    );
   }
 }
