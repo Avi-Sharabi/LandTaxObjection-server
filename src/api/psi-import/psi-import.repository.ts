@@ -43,8 +43,9 @@ export class PsiImportRepository {
    * `MAX(download_datetime)` past the ones that never landed. `findLatestDownloadDatetime` uses
    * `this.repo` on purpose — a read has nothing to be atomic with.
    *
-   * `chunk` keeps each statement under Postgres' 65535 bind-parameter cap. The records carry no
-   * `id`, so `save` always inserts and never looks up an existing row to decide.
+   * Batched here rather than by the ORM: `insert` has no `chunk` option — `InsertQueryBuilder`
+   * emits one statement for whatever array it is handed — so a slice loop is what keeps each
+   * statement under Postgres' 65535 bind-parameter cap (500 rows × 26 columns ≈ 13,000).
    *
    * `imported_at` is stamped here rather than left to a column default. The table was created
    * out-of-band, so this repo cannot see whether it has one, and
@@ -55,9 +56,16 @@ export class PsiImportRepository {
     records: PsiSaleRecord[],
     importedAt: Date,
   ): Promise<void> {
-    await txRepo.save(
-      records.map((record) => ({ ...record, imported_at: importedAt })),
-      { chunk: PSI_INSERT_CHUNK_SIZE },
-    );
+    for (
+      let offset = 0;
+      offset < records.length;
+      offset += PSI_INSERT_CHUNK_SIZE
+    ) {
+      const chunk = records
+        .slice(offset, offset + PSI_INSERT_CHUNK_SIZE)
+        .map((record) => ({ ...record, imported_at: importedAt }));
+
+      await txRepo.insert(chunk);
+    }
   }
 }
