@@ -137,6 +137,8 @@ export class PsiImportService {
           recordCount: 0,
           malformedLines: 0,
           skippedRecords: 0,
+          suppressedRows: 0,
+          unmappedAreaType: 0,
           status: 'failed',
           durationMs: Date.now() - weekStartedAt,
           error: message,
@@ -234,6 +236,8 @@ export class PsiImportService {
           recordCount: 0,
           malformedLines: 0,
           skippedRecords: 0,
+          suppressedRows: 0,
+          unmappedAreaType: 0,
         };
       }
 
@@ -284,6 +288,8 @@ export class PsiImportService {
     let recordCount = 0;
     let malformedLines = 0;
     let skippedRecords = 0;
+    let suppressedRows = 0;
+    let unmappedAreaType = 0;
     let latestStamp: number | null = null;
 
     await this.dataSource.transaction(async (manager) => {
@@ -304,30 +310,39 @@ export class PsiImportService {
           }
         }
 
-        await this.repository.insertSaleRecords(
+        const outcome = await this.repository.insertSaleRecords(
           salesRepo,
           parsed.records,
           importedAt,
         );
 
-        recordCount += parsed.records.length;
+        recordCount += outcome.inserted;
+        suppressedRows += outcome.suppressed;
+        unmappedAreaType += outcome.unmappedAreaType;
         malformedLines += parsed.malformedLines;
         skippedRecords += parsed.skippedRecords;
       }
 
-      // Files but no records means the B layout moved and every line was rejected. Committing
-      // that would advance the reference date over a week that imported nothing, so fail instead.
+      // Nothing written at all means either the B layout moved and every line was rejected, or the
+      // whole week collided with rows already present. Committing that would advance the reference
+      // date over a week that stored nothing, so fail instead and leave it pending.
       if (recordCount === 0) {
         throw new PsiWeekUnusableException(
           link.label,
-          `${datFiles.length} .DAT file(s) yielded no sale records (${malformedLines} malformed, ${skippedRecords} non-B)`,
+          `${datFiles.length} .DAT file(s) stored no sale records (${malformedLines} malformed, ${skippedRecords} non-B, ${suppressedRows} rejected by uq_psr_dealing_number)`,
         );
       }
 
       this.assertWeekStamp(link, latestStamp);
     });
 
-    return { recordCount, malformedLines, skippedRecords };
+    return {
+      recordCount,
+      malformedLines,
+      skippedRecords,
+      suppressedRows,
+      unmappedAreaType,
+    };
   }
 
   /**
@@ -400,6 +415,7 @@ export class PsiImportService {
     const failed = results.filter((week) => week.status === 'failed').length;
     const records = sum((week) => week.recordCount);
     const files = sum((week) => week.datFileCount);
+    const suppressed = sum((week) => week.suppressedRows);
     const durationMs = Date.now() - startedAt;
 
     this.logEvent('PSI.run.done', {
@@ -411,12 +427,16 @@ export class PsiImportService {
       recordCount: records,
       malformedLines: sum((week) => week.malformedLines),
       skippedRecords: sum((week) => week.skippedRecords),
+      suppressedRows: suppressed,
+      unmappedAreaType: sum((week) => week.unmappedAreaType),
       durationMs,
     });
 
-    // Kept alongside the JSON — this is the line a human tailing `docker logs` reads.
+    // Kept alongside the JSON — this is the line a human tailing `docker logs` reads. The
+    // suppressed count is surfaced here too because it is a permanent data loss, not a retryable
+    // one, and a steady figure is expected rather than alarming — see PsiImportRepository.
     this.logger.log(
-      `${PSI_LOG_TAG} Run complete — ${results.length} week(s)${failed > 0 ? `, ${failed} failed` : ''}, ${files} file(s), ${records.toLocaleString('en-AU')} record(s) in ${Math.round(durationMs / 1000)}s`,
+      `${PSI_LOG_TAG} Run complete — ${results.length} week(s)${failed > 0 ? `, ${failed} failed` : ''}, ${files} file(s), ${records.toLocaleString('en-AU')} record(s) stored${suppressed > 0 ? `, ${suppressed.toLocaleString('en-AU')} skipped on uq_psr_dealing_number` : ''} in ${Math.round(durationMs / 1000)}s`,
     );
   }
 
@@ -430,6 +450,8 @@ export class PsiImportService {
       recordCount: result.recordCount,
       malformedLines: result.malformedLines,
       skippedRecords: result.skippedRecords,
+      suppressedRows: result.suppressedRows,
+      unmappedAreaType: result.unmappedAreaType,
       durationMs: result.durationMs,
       error: result.error,
     });

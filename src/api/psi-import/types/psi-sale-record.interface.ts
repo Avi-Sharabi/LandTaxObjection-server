@@ -43,13 +43,40 @@ export interface PsiParsedFile {
   readonly malformedLines: number;
 }
 
+/** What writing one .DAT file's records actually achieved. */
+export interface PsiInsertOutcome {
+  /** Rows the database accepted. */
+  readonly inserted: number;
+  /**
+   * Rows `ON CONFLICT DO NOTHING` discarded — almost always `uq_psr_dealing_number`, because one
+   * land-title dealing covers several properties. Expected to be non-zero every week.
+   */
+  readonly suppressed: number;
+  /**
+   * Records whose `area_type` was neither `M` nor `H` and was stored as null instead.
+   *
+   * Counted before the insert, so a record can appear in both this and `suppressed` — they measure
+   * different things (a field that could not be mapped vs a row that never landed) and are not
+   * mutually exclusive.
+   */
+  readonly unmappedAreaType: number;
+}
+
 /** What downloading, parsing and inserting one week produced. */
 export interface PsiWeekCounts {
   readonly datFileCount: number;
+  /** Rows actually written, not rows parsed — `suppressedRows` accounts for the difference. */
   readonly recordCount: number;
   /** Summed across the week's files. A jump here means the B layout has shifted at VG's end. */
   readonly malformedLines: number;
   readonly skippedRecords: number;
+  /**
+   * Parsed rows the unique constraint on `dealing_number` rejected. A steady non-zero figure is
+   * normal and is the accepted cost of leaving that constraint in place; a sudden jump is not.
+   */
+  readonly suppressedRows: number;
+  /** Records carrying an `area_type` outside `M`/`H`. Expected to stay at zero. */
+  readonly unmappedAreaType: number;
 }
 
 /**
