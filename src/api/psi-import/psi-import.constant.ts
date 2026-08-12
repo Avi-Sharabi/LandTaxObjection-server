@@ -38,6 +38,16 @@ export const PSI_IMPORT_CRON_NAME = 'psi-weekly-import';
 
 /** Redis lock guarding against a double-fire if the app is ever scaled past one instance. */
 export const PSI_IMPORT_LOCK_KEY = 'psi:import:lock';
+
+/**
+ * One hour, which is ~600x the headroom actually needed: a full week — download, extract 123
+ * district files, parse and insert 3,252 records — measures at 6 seconds end to end, so even a
+ * 31-week catch-up finishes in about three minutes.
+ *
+ * Resist raising it. The TTL is never refreshed, and the process has no shutdown hook to release
+ * the lock on the way out, so a run killed mid-flight leaves the key behind for the full duration
+ * and every tick until it expires is skipped. A longer TTL only lengthens that outage.
+ */
 export const PSI_IMPORT_LOCK_TTL_SECONDS = 3600;
 
 /**
@@ -67,3 +77,13 @@ export const PSI_MAX_ARCHIVE_DEPTH = 2;
 export const PSI_RECORD_TYPE_SALE = 'B';
 
 export const PSI_FIELD_DELIMITER = ';';
+
+/**
+ * Rows per INSERT statement.
+ *
+ * The insert writes 26 columns (24 spec fields, plus `source_file` and `imported_at`) and Postgres
+ * caps a statement at 65535 bind parameters, putting the hard ceiling at ~2520 rows. District files
+ * hold tens of records each, so this almost never fires — it guards a pathologically large file,
+ * not the normal path.
+ */
+export const PSI_INSERT_CHUNK_SIZE = 500;
