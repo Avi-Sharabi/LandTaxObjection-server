@@ -19,6 +19,7 @@ import { seedLandTaxRates } from './land-tax-rates.seeder';
 import { seedTaxSavingsTest } from './tax-savings-test.seeder';
 import { testVgEmail } from './test-vg-email.seeder';
 import { seedUpdateDatabaseTestFixture } from './update-database-test.seeder';
+import { seedPropertySalesRaw } from './property-sales-raw.seeder';
 
 const logger = new Logger('Seed');
 
@@ -27,6 +28,10 @@ async function runSeeders(dataSource: DataSource): Promise<void> {
   await seedLandTaxRates(dataSource);
 
   if (process.env.NODE_ENV !== 'production') {
+    // First in the block: infrastructure, not a fixture. Creates property_sales_raw, which no
+    // migration defines — without it the PSI import cannot run on a freshly reset database.
+    await seedPropertySalesRaw(dataSource);
+
     await seedClients(dataSource);
     await seedObjectionPackage(dataSource);
     await seedCaseClosedNoObjection(dataSource);
@@ -44,7 +49,6 @@ async function runSeeders(dataSource: DataSource): Promise<void> {
     await seedVgFollowUpTest(dataSource);
     await seedUpdateDatabaseTestFixture(dataSource);
   }
-
 }
 
 AppDataSource.initialize()
