@@ -62,6 +62,26 @@ export interface PsiInsertOutcome {
   readonly unmappedAreaType: number;
 }
 
+/**
+ * Mutable carrier for the counts a rolled-back week still legitimately observed.
+ *
+ * Its shape *is* the distinction it exists for. A failed week rolls back, so `recordCount` and
+ * `suppressedRows` are genuinely zero — nothing was stored, nothing was durably discarded. The four
+ * fields here are **parser observations**, not database state: a rollback does not un-malform a
+ * line or un-extract a file. Reporting them as zero on the failure path loses exactly the signal
+ * that explains the failure — `malformedLines` above all, since a jump in it means VG changed the
+ * record layout.
+ *
+ * One instance per week, created inside `processWeeks`' loop. Hoisting it above the loop would leak
+ * one week's counts into the next week's failure report.
+ */
+export interface PsiWeekProgress {
+  datFileCount: number;
+  malformedLines: number;
+  skippedRecords: number;
+  unmappedAreaType: number;
+}
+
 /** What downloading, parsing and inserting one week produced. */
 export interface PsiWeekCounts {
   readonly datFileCount: number;
