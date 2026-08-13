@@ -57,6 +57,11 @@ export class UpdateDatabaseService {
         ON c.table_schema = t.table_schema AND c.table_name = t.table_name
       WHERE t.table_schema = 'public'
         AND t.table_type = 'BASE TABLE'
+        -- Exclude Postgres generated columns (properties.address_normalized). They are only
+        -- validated for existence before an UPDATE is composed, so listing them tells Claude they
+        -- are writable; Postgres then rejects the UPDATE with "can only be updated to DEFAULT" and
+        -- the failure surfaces to the user as an opaque manual_review.
+        AND c.is_generated = 'NEVER'
       ORDER BY t.table_name, c.ordinal_position
     `);
 

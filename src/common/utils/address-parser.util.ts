@@ -54,6 +54,39 @@ export function parseNswAddressComponents(address: string): {
 }
 
 /**
+ * Collapses a free-text address down to a comparison key, for deciding whether two intake
+ * submissions describe the same property. Uppercases, replaces each run of non-alphanumerics with a
+ * single space, then drops a trailing state-and-postcode pair — so "Unit 4, 25 Terminus St, Castle
+ * Hill NSW 2154" and "UNIT 4  25 TERMINUS ST, CASTLE HILL" collapse to the same key.
+ *
+ * Two deliberate choices, both because a false *miss* only costs a duplicate row while a false
+ * *merge* writes the wrong land value into a VG lodgement:
+ *
+ *  - Separators become a space rather than being deleted. Deleting them collapses NSW's standard
+ *    strata notation into a street number — "4/25 Terminus St" and "425 Terminus St" are different
+ *    properties, and the intake DTO's own example is a unit address.
+ *  - A trailing 4-digit group is only stripped when a state token precedes it. An unconditional
+ *    strip eats deposited-plan numbers ("Lot 2 DP 1234" vs "DP 5678"), and lot/DP is a first-class
+ *    column on Property. The cost is that a bare trailing postcode with no state token is kept, so
+ *    "… CASTLE HILL 2154" and "… CASTLE HILL" are treated as different — a safe miss.
+ *
+ * This MUST stay equivalent to the `address_normalized` STORED generated column on `properties`
+ * (see the AddPropertyAddressNormalized migration). The lookup in DisputeIntakeOrchestrator compares
+ * this function's output against that column, so if the two ever diverge the match silently misses
+ * and duplicate rows come back — the exact bug this was written to fix.
+ *
+ * Can legitimately return '' (e.g. "NSW 2000", ",,,"), which is NOT a usable match key — callers
+ * must skip the address lookup when it does, or every junk address for one client merges together.
+ */
+export function normalizePropertyAddress(address: string): string {
+  return (address ?? '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9]+/g, ' ')
+    .trim()
+    .replace(/( |^)(NSW|VIC|QLD|WA|SA|TAS|ACT|NT) [0-9]{4}$/, '');
+}
+
+/**
  * Resolves a property's suburb for intake: the primary parser, falling back to a naive
  * comma-split (address format "<street>, <suburb>[, ...]") when the primary parser can't
  * isolate one (e.g. no recognizable street-type suffix). The fallback fragment is run through

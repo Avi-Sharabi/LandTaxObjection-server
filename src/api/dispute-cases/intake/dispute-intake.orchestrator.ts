@@ -20,7 +20,7 @@ import { AzureEmailService } from 'src/common/azure-email/azure-email.service';
 import { AccountantNotFoundException } from '../exceptions/accountant-not-found.exception';
 import { CaseReferenceGenerationFailedException } from '../exceptions/case-reference-generation-failed.exception';
 import { Client, ClientStatus } from '../../clients/entities/client.entity';
-import { resolveSuburbWithFallback } from 'src/common/utils/address-parser.util';
+import { normalizePropertyAddress, resolveSuburbWithFallback } from 'src/common/utils/address-parser.util';
 
 interface PropertyFlags {
   flag_heritage: boolean;
@@ -87,12 +87,14 @@ export class DisputeIntakeOrchestrator {
     );
 
     for (const prop of intakeDto.properties) {
-      const property = await this.createProperty(client.id, prop);
-
-      // create_dispute defaults to true when not provided
+      // create_dispute defaults to true when not provided. This guard runs *before* the property
+      // is persisted — it used to sit after it, which left an orphan property row with no case
+      // attached whenever a submitter unticked "create dispute".
       if (prop.create_dispute === false) {
         continue;
       }
+
+      const property = await this.findOrCreateProperty(client.id, prop);
 
       const flags = this.mapConstraintsToFlags(prop.constraints ?? []);
       const notice = await this.createValuationNotice(property.id, prop.valuation_notice, intakeDto.valuationYear, assessmentDocument.id, intakeDto.noticeDate);
@@ -101,6 +103,13 @@ export class DisputeIntakeOrchestrator {
       );
 
       await this.createLegalGrounds(disputeCase.id, prop.grounds ?? []);
+
+      // Deliberately last. submitIntakeApplication still has no transaction, so anything before
+      // this point can fail mid-loop; running the backfill here means a failed intake can only ever
+      // leave behind a new orphan row (the pre-existing behaviour) rather than permanently editing
+      // a property an already-lodged case depends on.
+      await this.backfillProperty(property, prop);
+
       caseReferences.push(caseReference);
       propertyAddresses.push(prop.address);
     }
@@ -165,7 +174,82 @@ export class DisputeIntakeOrchestrator {
     return this.assessmentDocumentsService.createInitialRecord(clientId, documentName, null);
   }
 
-  private async createProperty(clientId: string, prop: IntakePropertyDto): Promise<Property> {
+  /**
+   * A client's properties are meant to be shared across their dispute cases — `dispute_cases`
+   * carries the FK and `Property` has `@OneToMany dispute_cases`. This used to be an unconditional
+   * INSERT, so every submission minted a fresh row and a second case for a property the client
+   * already owned showed up as a duplicate property instead of a second case on the existing one.
+   */
+  private async findOrCreateProperty(clientId: string, prop: IntakePropertyDto): Promise<Property> {
+    const existing = await this.findExistingProperty(clientId, prop);
+    if (existing) {
+      return existing;
+    }
+
+    try {
+      return await this.insertProperty(clientId, prop);
+    } catch (err) {
+      if (!this.isUniqueViolation(err)) throw err;
+      // A concurrent submission inserted the same property between our lookup and this insert.
+      // Matched on the error code rather than a constraint name so this keeps working unchanged
+      // once the follow-up unique index lands.
+      const raced = await this.findExistingProperty(clientId, prop);
+      if (!raced) throw err;
+      this.logger.warn(
+        `[INTAKE] Property insert for client ${clientId} collided with a concurrent submission — reusing ${raced.id}.`,
+      );
+      return raced;
+    }
+  }
+
+  /**
+   * PID first when the submission carries one — it's the authoritative NSW identifier and survives
+   * address-formatting differences — then the normalized address. `state` is part of the address key
+   * because a false *miss* only reproduces the old duplicate behaviour, whereas a false *merge*
+   * corrupts data.
+   */
+  private async findExistingProperty(clientId: string, prop: IntakePropertyDto): Promise<Property | null> {
+    const addressKey = normalizePropertyAddress(prop.address);
+    const pid = prop.pid?.trim();
+
+    // Duplicates already exist in live data (that's what this fix stops creating more of), so both
+    // lookups order by created_at — otherwise successive intakes for one property can attach to
+    // different rows of the same duplicate group. ASC matches the merge target that
+    // src/database/scripts/find-duplicate-properties.sql reports.
+    const oldestFirst = { created_at: 'ASC' } as const;
+
+    if (pid) {
+      const byPid = await this.propertiesRepository.findOne({
+        where: { client_id: clientId, pid },
+        order: oldestFirst,
+      });
+      if (byPid) {
+        // A PID hit is only accepted when the address agrees. Treating PID as authoritative on its
+        // own means one mistyped digit silently attaches this case to a different property — and
+        // the wrong address and land value then flow into the objection package lodged with the VG.
+        // Falling through costs at most a duplicate row, which is the recoverable failure.
+        if (byPid.address_normalized === addressKey) {
+          return byPid;
+        }
+        this.logger.warn(
+          `[INTAKE] PID ${pid} matches property ${byPid.id} for client ${clientId}, but the submitted ` +
+          `address does not. Ignoring the PID match — check for a mistyped PID.`,
+        );
+      }
+    }
+
+    // normalizePropertyAddress can legitimately return '' (e.g. "NSW 2000", ",,,"), and @IsNotEmpty
+    // does not catch those. Matching on an empty key would merge every junk address for this client
+    // into one property, so there is nothing safe to look up.
+    if (!addressKey) return null;
+
+    return this.propertiesRepository.findOne({
+      where: { client_id: clientId, state: prop.state, address_normalized: addressKey },
+      order: oldestFirst,
+    });
+  }
+
+  private async insertProperty(clientId: string, prop: IntakePropertyDto): Promise<Property> {
     const property = this.propertiesRepository.create({
       client_id: clientId,
       address: prop.address,
@@ -176,6 +260,54 @@ export class DisputeIntakeOrchestrator {
       ownership_pct: prop.ownership_pct,
     });
     return this.propertiesRepository.save(property);
+  }
+
+  /**
+   * Fill blanks only. The stored row wins: an earlier dispute case may already have been lodged
+   * against these values, so a later submission must not rewrite them. "Blank" covers the empty
+   * string as well as null, because `postcode` is hardcoded to '' on insert and
+   * `resolveSuburbWithFallback` returns '' when it can't parse. A genuine disagreement is logged
+   * rather than silently applied.
+   */
+  private async backfillProperty(property: Property, prop: IntakePropertyDto): Promise<Property> {
+    const updates: Partial<Property> = {};
+
+    const incomingPid = prop.pid?.trim();
+    if (incomingPid) {
+      if (!property.pid) updates.pid = incomingPid;
+      else if (property.pid !== incomingPid) this.warnFieldConflict(property, 'pid', property.pid, incomingPid);
+    }
+
+    // Derived from the address rather than submitted, so a mismatch isn't a user disagreement.
+    const incomingSuburb = resolveSuburbWithFallback(prop.address);
+    if (incomingSuburb && !property.suburb) updates.suburb = incomingSuburb;
+
+    const incomingOwnership = prop.ownership_pct;
+    if (incomingOwnership !== null && incomingOwnership !== undefined) {
+      if (property.ownership_pct === null || property.ownership_pct === undefined) {
+        updates.ownership_pct = incomingOwnership;
+      } else if (Number(property.ownership_pct) !== Number(incomingOwnership)) {
+        // numeric(5,2) comes back as a string, so compare numerically or "100.00" vs 100 misfires.
+        this.warnFieldConflict(property, 'ownership_pct', property.ownership_pct, incomingOwnership);
+      }
+    }
+
+    if (Object.keys(updates).length === 0) return property;
+
+    Object.assign(property, updates);
+    return this.propertiesRepository.save(property);
+  }
+
+  private warnFieldConflict(property: Property, column: string, stored: unknown, incoming: unknown): void {
+    this.logger.warn(
+      `[INTAKE] Property ${property.id} already has ${column}=${String(stored)}; this submission says ` +
+      `${String(incoming)}. Keeping the stored value — resolve manually if the new value is correct.`,
+    );
+  }
+
+  private isUniqueViolation(err: unknown): boolean {
+    if (!(err instanceof QueryFailedError)) return false;
+    return (err as QueryFailedError & { code?: string }).code === '23505';
   }
 
   private async createValuationNotice(
