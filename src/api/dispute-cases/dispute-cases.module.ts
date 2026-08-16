@@ -10,6 +10,7 @@ import { User } from '../users/entities/user.entity';
 import { ValuationNotice } from '../valuation-notices/entities/valuation-notice.entity';
 import { DisputeCasesController } from './dispute-cases.controller';
 import { DisputeCasesService } from './dispute-cases.service';
+import { DisputeStatusTransitionService } from './dispute-status-transition.service';
 import { DisputeCase } from './entities/dispute-case.entity';
 import { AssessmentDocumentsModule } from '../assessment-documents/assessment-documents.module';
 import { PackageDocument } from '../objection-package/entities/package-document.entity';
@@ -20,7 +21,6 @@ import { XpmClientHandler } from './intake/xpm-client.handler';
 import { PdfStorageHandler } from './intake/pdf-storage.handler';
 import { DocumentExtractionHandler } from './intake/document-extraction.handler';
 import { fyiStorageService } from 'src/common/fyi-storage/fyi-storage.service';
-import { ApprovalReminderTask } from './approval-reminder.task';
 import { MsGraphModule } from 'src/common/ms-graph/ms-graph.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { AuditLogModule } from '../audit-log/audit-log.module';
@@ -79,6 +79,7 @@ import { DisputeEvidenceIssue } from '../supporting-evidence/entities/dispute-ev
   controllers: [DisputeCasesController],
   providers: [
     DisputeCasesService,
+    DisputeStatusTransitionService,
     AnalyzeAiQueueService,
     AnalyzeAiProcessor,
     ObjectionReasonMarkdownService,
@@ -93,10 +94,9 @@ import { DisputeEvidenceIssue } from '../supporting-evidence/entities/dispute-ev
     PdfStorageHandler,
     DocumentExtractionHandler,
     fyiStorageService,
-    ApprovalReminderTask,
     VgEmailMonitorTask,
     VgEmailAnalysisService,
     VGResponseMonitorScheduler,
   ],
 })
-export class DisputeCasesModule { }
+export class DisputeCasesModule {}

@@ -51,7 +51,8 @@ const CASES: TaxCaseSeed[] = [
       valuationNotice: 'c0a80105-0001-4000-a000-000000000004',
       disputeCase: 'c0a80105-0001-4000-a000-000000000005',
     },
-    clientName: 'Tax Test — TAX-001 — Individual, below threshold (tax_saving = 0)',
+    clientName:
+      'Tax Test — TAX-001 — Individual, below threshold (tax_saving = 0)',
     address: '1 TAX TEST STREET SYDNEY',
     suburb: 'Sydney',
     postcode: '2000',
@@ -74,7 +75,8 @@ const CASES: TaxCaseSeed[] = [
       valuationNotice: 'c0a80105-0002-4000-a000-000000000004',
       disputeCase: 'c0a80105-0002-4000-a000-000000000005',
     },
-    clientName: 'Tax Test — TAX-002 — Individual, standard (tax_saving = 16,000)',
+    clientName:
+      'Tax Test — TAX-002 — Individual, standard (tax_saving = 16,000)',
     address: '2 TAX TEST STREET PARRAMATTA',
     suburb: 'Parramatta',
     postcode: '2150',
@@ -97,7 +99,8 @@ const CASES: TaxCaseSeed[] = [
       valuationNotice: 'c0a80105-0003-4000-a000-000000000004',
       disputeCase: 'c0a80105-0003-4000-a000-000000000005',
     },
-    clientName: 'Tax Test — TAX-003 — Company/trust, no threshold (tax_saving = 8,000)',
+    clientName:
+      'Tax Test — TAX-003 — Company/trust, no threshold (tax_saving = 8,000)',
     address: '3 TAX TEST STREET NORTH SYDNEY',
     suburb: 'North Sydney',
     postcode: '2060',
@@ -120,7 +123,8 @@ const CASES: TaxCaseSeed[] = [
       valuationNotice: 'c0a80105-0004-4000-a000-000000000004',
       disputeCase: 'c0a80105-0004-4000-a000-000000000005',
     },
-    clientName: 'Tax Test — TAX-004 — Foreign individual, +4% surcharge (tax_saving = 56,000)',
+    clientName:
+      'Tax Test — TAX-004 — Foreign individual, +4% surcharge (tax_saving = 56,000)',
     address: '4 TAX TEST STREET BONDI',
     suburb: 'Bondi',
     postcode: '2026',
@@ -143,7 +147,8 @@ const CASES: TaxCaseSeed[] = [
       valuationNotice: 'c0a80105-0005-4000-a000-000000000004',
       disputeCase: 'c0a80105-0005-4000-a000-000000000005',
     },
-    clientName: 'Tax Test — TAX-005 — Individual, premium tier >$6.571M (tax_saving = 16,000)',
+    clientName:
+      'Tax Test — TAX-005 — Individual, premium tier >$6.571M (tax_saving = 16,000)',
     address: '5 TAX TEST STREET MOSMAN',
     suburb: 'Mosman',
     postcode: '2088',
@@ -162,7 +167,11 @@ const CASES: TaxCaseSeed[] = [
 
 const logger = new Logger('TaxSavingsTestSeeder');
 
-async function seedCase(dataSource: DataSource, c: TaxCaseSeed, accountantId: string): Promise<void> {
+async function seedCase(
+  dataSource: DataSource,
+  c: TaxCaseSeed,
+  accountantId: string,
+): Promise<void> {
   const clientRepo = dataSource.getRepository(Client);
 
   const existingClient = await clientRepo.findOneBy({ id: c.ids.client });
@@ -178,7 +187,10 @@ async function seedCase(dataSource: DataSource, c: TaxCaseSeed, accountantId: st
     );
   }
 
-  const [existingProp] = await dataSource.query(`SELECT id FROM properties WHERE id = $1`, [c.ids.property]);
+  const [existingProp] = await dataSource.query(
+    `SELECT id FROM properties WHERE id = $1`,
+    [c.ids.property],
+  );
   if (!existingProp) {
     await dataSource.query(
       `INSERT INTO properties
@@ -186,27 +198,42 @@ async function seedCase(dataSource: DataSource, c: TaxCaseSeed, accountantId: st
           ownership_pct, land_area_sqm, zoning, lot_dp)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
       [
-        c.ids.property, c.ids.client, c.address, c.suburb, 'NSW',
-        c.postcode, c.pid, 100.00, c.landAreaSqm,
-        'R2 Low Density Residential', `Lot 1 / DP ${c.pid}`,
+        c.ids.property,
+        c.ids.client,
+        c.address,
+        c.suburb,
+        'NSW',
+        c.postcode,
+        c.pid,
+        100.0,
+        c.landAreaSqm,
+        'R2 Low Density Residential',
+        `Lot 1 / DP ${c.pid}`,
       ],
     );
   }
 
-  const [existingDoc] = await dataSource.query(`SELECT id FROM assessment_documents WHERE id = $1`, [c.ids.assessmentDocument]);
+  const [existingDoc] = await dataSource.query(
+    `SELECT id FROM assessment_documents WHERE id = $1`,
+    [c.ids.assessmentDocument],
+  );
   if (!existingDoc) {
     await dataSource.query(
       `INSERT INTO assessment_documents (id, client_id, file_path, document_name)
        VALUES ($1,$2,$3,$4)`,
       [
-        c.ids.assessmentDocument, c.ids.client,
+        c.ids.assessmentDocument,
+        c.ids.client,
         `dispute-cases/${c.ids.disputeCase}/valuation-notice.pdf`,
         'Land Tax Assessment Notice',
       ],
     );
   }
 
-  const [existingNotice] = await dataSource.query(`SELECT id FROM valuation_notices WHERE id = $1`, [c.ids.valuationNotice]);
+  const [existingNotice] = await dataSource.query(
+    `SELECT id FROM valuation_notices WHERE id = $1`,
+    [c.ids.valuationNotice],
+  );
   if (!existingNotice) {
     await dataSource.query(
       `INSERT INTO valuation_notices
@@ -216,15 +243,28 @@ async function seedCase(dataSource: DataSource, c: TaxCaseSeed, accountantId: st
           ownership_type, is_foreign)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
       [
-        c.ids.valuationNotice, c.ids.property, c.ids.assessmentDocument, accountantId,
-        '2025-07-01', c.assessedLandValue, c.priorLandValue, 0,
-        c.appraisedValue, false, `INTAKE-2025-${c.pid}`, 'OBJECTION',
-        c.ownershipType, c.isForeign,
+        c.ids.valuationNotice,
+        c.ids.property,
+        c.ids.assessmentDocument,
+        accountantId,
+        '2025-07-01',
+        c.assessedLandValue,
+        c.priorLandValue,
+        0,
+        c.appraisedValue,
+        false,
+        `INTAKE-2025-${c.pid}`,
+        'OBJECTION',
+        c.ownershipType,
+        c.isForeign,
       ],
     );
   }
 
-  const [existingCase] = await dataSource.query(`SELECT id FROM dispute_cases WHERE id = $1`, [c.ids.disputeCase]);
+  const [existingCase] = await dataSource.query(
+    `SELECT id FROM dispute_cases WHERE id = $1`,
+    [c.ids.disputeCase],
+  );
   if (!existingCase) {
     await dataSource.query(
       `INSERT INTO dispute_cases
@@ -234,23 +274,40 @@ async function seedCase(dataSource: DataSource, c: TaxCaseSeed, accountantId: st
           yml_fee_share_pct, tax_saving, yml_revenue, client_savings)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
       [
-        c.ids.disputeCase, c.caseReference, c.ids.client, c.ids.property,
-        c.ids.valuationNotice, accountantId, 'NSW', 'appraisal',
-        '2025-09-30', false, c.assessedLandValue,
-        c.ymlFeeSharePct, null, null, null,
+        c.ids.disputeCase,
+        c.caseReference,
+        c.ids.client,
+        c.ids.property,
+        c.ids.valuationNotice,
+        accountantId,
+        'NSW',
+        'reports_uploaded',
+        '2025-09-30',
+        false,
+        c.assessedLandValue,
+        c.ymlFeeSharePct,
+        null,
+        null,
+        null,
       ],
     );
   }
 
-  logger.log(`  ${c.caseReference}  ${c.ids.disputeCase}  (expected: ${c.expectedTaxSaving})`);
+  logger.log(
+    `  ${c.caseReference}  ${c.ids.disputeCase}  (expected: ${c.expectedTaxSaving})`,
+  );
 }
 
-export async function seedTaxSavingsTest(dataSource: DataSource): Promise<void> {
+export async function seedTaxSavingsTest(
+  dataSource: DataSource,
+): Promise<void> {
   const userRepo = dataSource.getRepository(User);
 
   const accountant = await userRepo.findOneBy({ email: ACCOUNTANT_EMAIL });
   if (!accountant) {
-    throw new Error(`[TaxSavingsTestSeeder] "${ACCOUNTANT_EMAIL}" not found — run seedUsers() first.`);
+    throw new Error(
+      `[TaxSavingsTestSeeder] "${ACCOUNTANT_EMAIL}" not found — run seedUsers() first.`,
+    );
   }
 
   logger.log('\n── Tax savings test cases ───────────────────────────────');

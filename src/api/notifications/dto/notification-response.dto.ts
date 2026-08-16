@@ -7,7 +7,10 @@ export class NotificationResponseDto {
   @Expose()
   id: string;
 
-  @ApiProperty({ enum: NotificationType, example: NotificationType.APPROVAL_REMINDER })
+  @ApiProperty({
+    enum: NotificationType,
+    example: NotificationType.VG_RESPONSE_RECEIVED,
+  })
   @Expose()
   type: NotificationType;
 
@@ -15,7 +18,10 @@ export class NotificationResponseDto {
   @Expose()
   message: string;
 
-  @ApiProperty({ example: 'b2c3d4e5-f6a7-8901-bcde-f12345678901', nullable: true })
+  @ApiProperty({
+    example: 'b2c3d4e5-f6a7-8901-bcde-f12345678901',
+    nullable: true,
+  })
   @Expose()
   caseId: string | null;
 

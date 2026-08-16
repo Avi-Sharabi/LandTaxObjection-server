@@ -1,4 +1,11 @@
-import { Body, Controller, HttpCode, Post, Request, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  HttpCode,
+  Post,
+  Request,
+  UseGuards,
+} from '@nestjs/common';
 import {
   ApiBearerAuth,
   ApiOperation,
@@ -25,11 +32,28 @@ export class ValuationController {
   ) {}
 
   @Post('appraisal')
-  @ApiOperation({ summary: 'Submit analyst appraisal and compute OBJECTION / ADVISORY decision' })
-  @ApiResponse({ status: 201, type: AppraisalResponseDto, description: 'Appraisal recorded; dispute case status advanced' })
+  @ApiOperation({
+    summary:
+      'Submit analyst appraisal and compute OBJECTION / ADVISORY decision',
+  })
+  @ApiResponse({
+    status: 201,
+    type: AppraisalResponseDto,
+    description:
+      'Appraisal recorded on the valuation notice. The dispute case status is deliberately not ' +
+      'changed — advisory vs objection is carried by decision_outcome.',
+  })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
-  @ApiResponse({ status: 404, description: 'Valuation notice or dispute case not found' })
-  @ApiResponse({ status: 422, description: "Dispute case is not in 'appraisal' status" })
+  @ApiResponse({
+    status: 404,
+    description: 'Valuation notice or dispute case not found',
+  })
+  @ApiResponse({
+    status: 422,
+    description:
+      'The case is already lodged with the Valuer General — the appraisal that justified the ' +
+      'objection cannot be rewritten after the fact',
+  })
   async submitAppraisal(
     @Body() dto: SubmitAppraisalDto,
     @Request() req: { user: AuthResponseDto },
@@ -47,8 +71,16 @@ export class ValuationController {
       'and returns annual and 3-year cumulative client savings with YML fee analysis (Scenario 4). ' +
       'Fetches the applicable rate band from the land_tax_rates table.',
   })
-  @ApiResponse({ status: 200, type: LandTaxResponseDto, description: 'Full land tax computation result with savings analysis' })
-  @ApiResponse({ status: 400, description: 'Tax year not supported, or neither vg_assessed_value nor vg_year_values provided' })
+  @ApiResponse({
+    status: 200,
+    type: LandTaxResponseDto,
+    description: 'Full land tax computation result with savings analysis',
+  })
+  @ApiResponse({
+    status: 400,
+    description:
+      'Tax year not supported, or neither vg_assessed_value nor vg_year_values provided',
+  })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   async computeLandTax(
     @Body() dto: CalculateTaxDto,

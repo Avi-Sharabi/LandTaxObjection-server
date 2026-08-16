@@ -156,3 +156,13 @@ export class ComparableSale {
   @JoinColumn({ name: 'created_by_id' })
   created_by: User;
 }
+
+/**
+ * Hard floor on how many comparable sales a case needs before its analysis can complete.
+ *
+ * Lives beside the entity rather than in exceptions/, because it is no longer only an exception's
+ * threshold: DisputeStatusTransitionService.markAnalysed binds it as a query parameter and
+ * reports it in a user-facing blocker, and a feature module importing another module's
+ * exceptions/ folder for a domain constant is the wrong dependency.
+ */
+export const MINIMUM_COMPARABLES = 3;
