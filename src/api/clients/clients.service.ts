@@ -93,7 +93,10 @@ export class ClientsService {
   async findOne(id: string): Promise<Client> {
     const client = await this.clientsRepository.findOne({
       where: { id },
-      relations: ['assigned_accountant', 'properties', 'dispute_cases'],
+      // 'properties' intentionally dropped: the Properties tab now fetches its
+      // own paginated data from GET /properties?clientId=... instead of riding
+      // in on this payload unbounded. See PropertiesController.findAll.
+      relations: ['assigned_accountant', 'dispute_cases'],
     });
 
     if (!client) {

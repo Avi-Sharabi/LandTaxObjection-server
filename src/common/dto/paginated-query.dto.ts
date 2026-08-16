@@ -1,5 +1,6 @@
-import { IsOptional, IsInt, Min, Max, IsString, MaxLength, IsEnum, IsIn } from 'class-validator';
+import { IsOptional, IsInt, Min, Max, IsString, MaxLength, IsEnum, IsIn, IsUUID } from 'class-validator';
 import { Transform, Type } from 'class-transformer';
+import { OmitType } from '@nestjs/swagger';
 import { ClientStatus } from '../../api/clients/entities/client.entity';
 import { DisputeStatus, Jurisdiction } from '../../api/dispute-cases/entities/dispute-case.entity';
 
@@ -50,4 +51,15 @@ export class GetDisputeCasesQueryDto extends PaginatedQueryDto {
   @IsOptional()
   @IsIn(['active', 'due_this_week', 'overdue'])
   dashboardFilter?: 'active' | 'due_this_week' | 'overdue';
+}
+
+// search is not implemented on the properties list, so it's omitted rather than
+// inherited unused — forbidNonWhitelisted then rejects a stray ?search= with a
+// 400 instead of silently accepting and ignoring it.
+export class GetPropertiesQueryDto extends OmitType(PaginatedQueryDto, ['search'] as const) {
+  // IsUUID, not IsString: client_id is a uuid column, so a non-uuid value would
+  // reach Postgres and raise a 500 instead of being rejected as a 400.
+  @IsOptional()
+  @IsUUID()
+  clientId?: string;
 }
