@@ -9,9 +9,6 @@ import {
 import { User } from '../../users/entities/user.entity';
 
 export enum NotificationType {
-  APPROVAL_REQUESTED = 'approval_requested',
-  APPROVAL_REMINDER = 'approval_reminder',
-  APPROVAL_REMINDER_MAX_REACHED = 'approval_reminder_max_reached',
   VG_FOLLOW_UP_SENT = 'vg_follow_up_sent',
   VG_RESPONSE_RECEIVED = 'vg_response_received',
 }
