@@ -940,20 +940,16 @@ export class DisputeCasesService {
     }
   }
 
+  // Delegates to removeMany — see ClientsService.remove for why this shape exists
+  // (one place owns the semantics; a single id is just a batch of one).
   async remove(id: string, deletedById: string): Promise<{ message: string }> {
-    const exists = await this.disputeCasesRepository.findOne({ where: { id }, select: { id: true } });
-    if (!exists)
+    const { results } = await this.removeMany([id], deletedById);
+    if (results[0].status === 'not_found') {
       throw new NotFoundException(`Dispute case #${id} not found`);
-
-    const result = await this.disputeCasesRepository.update(
-      { id, deleted_at: IsNull() },
-      { deleted_at: new Date(), deleted_by: deletedById },
-    );
-
-    if (!result.affected) {
+    }
+    if (results[0].status === 'already_deleted') {
       throw new ConflictException(`Dispute case #${id} is already deleted`);
     }
-
     return { message: `Dispute case #${id} has been deleted` };
   }
 
@@ -961,25 +957,37 @@ export class DisputeCasesService {
     caseIds: string[],
     deletedById: string,
   ): Promise<BulkDeleteDisputeCasesResponseDto> {
-    const settled = await Promise.allSettled(
-      caseIds.map((id) => this.remove(id, deletedById)),
-    );
+    const uniqueIds = [...new Set(caseIds)];
+    const now = new Date();
 
-    const results: BulkDeleteDisputeCasesResultDto[] = settled.map((outcome, i) => {
-      const id = caseIds[i];
-      if (outcome.status === 'fulfilled') {
-        return { id, status: 'deleted' };
-      }
-      const err = outcome.reason;
-      if (err instanceof NotFoundException) {
-        return { id, status: 'not_found' };
-      }
-      if (err instanceof ConflictException) {
-        return { id, status: 'already_deleted' };
-      }
-      this.logger.error(`[BulkDelete] Failed to delete dispute case #${id}: ${err instanceof Error ? err.message : String(err)}`);
-      return { id, status: 'error' };
+    // Single table, no cascade — one classification read plus one set-based
+    // UPDATE, instead of a Promise.allSettled loop of N single-row updates.
+    // withDeleted: true is required — @DeleteDateColumn auto-filters plain finds.
+    const rows = await this.disputeCasesRepository.find({
+      where: { id: In(uniqueIds) },
+      select: { id: true, deleted_at: true },
+      withDeleted: true,
     });
+    const deletedAtById = new Map(rows.map((c) => [c.id, c.deleted_at]));
+    const liveIds = uniqueIds.filter((id) => deletedAtById.get(id) === null);
+
+    if (liveIds.length > 0) {
+      await this.disputeCasesRepository.update(
+        { id: In(liveIds), deleted_at: IsNull() },
+        { deleted_at: now, deleted_by: deletedById },
+      );
+    }
+
+    // See ClientsService.removeMany for the concurrency note this mirrors: status
+    // reflects the classification snapshot, not a re-check after the UPDATE.
+    const results: BulkDeleteDisputeCasesResultDto[] = uniqueIds.map((id) => ({
+      id,
+      status: !deletedAtById.has(id)
+        ? 'not_found'
+        : deletedAtById.get(id) === null
+          ? 'deleted'
+          : 'already_deleted',
+    }));
 
     const deleted = results.filter((r) => r.status === 'deleted').length;
 

@@ -19,6 +19,9 @@ export class BulkDeleteDisputeCasesResultDto {
   @ApiProperty()
   id: string;
 
+  // 'error' is retained for API-contract compatibility only; removeMany no longer
+  // loops per id, so an unexpected failure now rejects the whole request instead
+  // of marking a single id.
   @ApiProperty({ enum: ['deleted', 'not_found', 'already_deleted', 'error'] })
   status: 'deleted' | 'not_found' | 'already_deleted' | 'error';
 }

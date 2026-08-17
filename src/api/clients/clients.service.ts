@@ -2,7 +2,14 @@ import { ConflictException, Injectable, Logger, NotFoundException } from '@nestj
 import { InjectRepository } from '@nestjs/typeorm';
 import { AzureBlobService } from 'src/common/azure-blob/azure-blob.service';
 import { XpmService } from 'src/common/xpm/xpm.service';
-import { DataSource, FindOptionsWhere, ILike, IsNull, Repository } from 'typeorm';
+import {
+  DataSource,
+  FindOptionsWhere,
+  ILike,
+  In,
+  IsNull,
+  Repository,
+} from 'typeorm';
 import { DisputeCase } from '../dispute-cases/entities/dispute-case.entity';
 import { User } from '../users/entities/user.entity';
 import { AcceptTCDto } from './dto/accept-tc.dto';
@@ -198,30 +205,19 @@ export class ClientsService {
     };
   }
 
+  // Delegates to removeMany so there is exactly one place that decides lock order
+  // (cases before client) and one place that owns the cascade. Two independent
+  // implementations previously took those locks in opposite orders — this one
+  // client-then-cases, removeMany's old per-id loop cases-then-client — which is a
+  // deadlock waiting for a request on each path to hit the same client at once.
   async remove(id: string, deletedById: string): Promise<{ message: string }> {
-    const exists = await this.clientsRepository.findOne({ where: { id }, select: { id: true } });
-    if (!exists) throw new NotFoundException(`Client #${id} not found`);
-
-    const now = new Date();
-
-    await this.dataSource.transaction(async (manager) => {
-      await manager.update(
-        DisputeCase,
-        { client_id: id, deleted_at: IsNull() },
-        { deleted_at: now, deleted_by: deletedById },
-      );
-
-      const clientResult = await manager.update(
-        Client,
-        { id, deleted_at: IsNull() },
-        { deleted_at: now, deleted_by: deletedById },
-      );
-
-      if (!clientResult.affected) {
-        throw new ConflictException(`Client #${id} is already deleted`);
-      }
-    });
-
+    const { results } = await this.removeMany([id], deletedById);
+    if (results[0].status === 'not_found') {
+      throw new NotFoundException(`Client #${id} not found`);
+    }
+    if (results[0].status === 'already_deleted') {
+      throw new ConflictException(`Client #${id} is already deleted`);
+    }
     return { message: `Client #${id} has been deleted` };
   }
 
@@ -229,24 +225,52 @@ export class ClientsService {
     ids: string[],
     deletedById: string,
   ): Promise<BulkDeleteClientsResponseDto> {
-    const settled = await Promise.allSettled(
-      ids.map((id) => this.remove(id, deletedById)),
-    );
+    const uniqueIds = [...new Set(ids)];
+    const now = new Date();
 
-    const results: BulkDeleteClientsResultDto[] = settled.map((outcome, i) => {
-      const id = ids[i];
-      if (outcome.status === 'fulfilled') {
-        return { id, status: 'deleted' };
+    // One transaction for the whole batch: a classification read, then two
+    // set-based UPDATEs — instead of a transaction per client (~5 round trips
+    // each, unbounded concurrency against a pg pool of 10).
+    const results = await this.dataSource.transaction(async (manager) => {
+      // withDeleted: true is required — @DeleteDateColumn auto-filters plain finds.
+      const rows = await manager.find(Client, {
+        where: { id: In(uniqueIds) },
+        select: { id: true, deleted_at: true },
+        withDeleted: true,
+      });
+      const deletedAtById = new Map(rows.map((c) => [c.id, c.deleted_at]));
+      const liveIds = uniqueIds.filter((id) => deletedAtById.get(id) === null);
+
+      if (liveIds.length > 0) {
+        // Cases before client, matching remove()'s only lock order.
+        await manager.update(
+          DisputeCase,
+          { client_id: In(liveIds), deleted_at: IsNull() },
+          { deleted_at: now, deleted_by: deletedById },
+        );
+        await manager.update(
+          Client,
+          { id: In(liveIds), deleted_at: IsNull() },
+          { deleted_at: now, deleted_by: deletedById },
+        );
       }
-      const err = outcome.reason;
-      if (err instanceof NotFoundException) {
-        return { id, status: 'not_found' };
-      }
-      if (err instanceof ConflictException) {
-        return { id, status: 'already_deleted' };
-      }
-      this.logger.error(`[BulkDelete] Failed to delete client #${id}: ${err instanceof Error ? err.message : String(err)}`);
-      return { id, status: 'error' };
+
+      // Status reflects the classification snapshot, not a re-check after the
+      // UPDATE. Under two concurrent deletes of the same id, the loser's UPDATE
+      // criteria (deleted_at: IsNull() above) still protects it from being
+      // touched twice — but the loser's response here still reports "deleted"
+      // rather than "already_deleted". Data is correct either way; only the
+      // reported status can be stale, and only across two overlapping requests
+      // for the same client, which this accountant-only, non-concurrent UI can't
+      // produce today.
+      return uniqueIds.map<BulkDeleteClientsResultDto>((id) => ({
+        id,
+        status: !deletedAtById.has(id)
+          ? 'not_found'
+          : deletedAtById.get(id) === null
+            ? 'deleted'
+            : 'already_deleted',
+      }));
     });
 
     const deleted = results.filter((r) => r.status === 'deleted').length;
