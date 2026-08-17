@@ -6,22 +6,23 @@ const logger = new Logger('VgFollowUpTestSeeder');
 
 // ─── Shared entity IDs ────────────────────────────────────────────────────────
 const IDS = {
-  client:             'a1b2c3d4-f000-4000-b000-000000000001',
-  property:           'a1b2c3d4-f000-4000-b000-000000000002',
+  client: 'a1b2c3d4-f000-4000-b000-000000000001',
+  property: 'a1b2c3d4-f000-4000-b000-000000000002',
   assessmentDocument: 'a1b2c3d4-f000-4000-b000-000000000003',
-  valuationNotice:    'a1b2c3d4-f000-4000-b000-000000000004',
+  valuationNotice: 'a1b2c3d4-f000-4000-b000-000000000004',
 
   // One case per test scenario
-  caseT1Happy:      'a1b2c3d4-f000-4000-b000-000000000010',
-  caseT2TooRecent:  'a1b2c3d4-f000-4000-b000-000000000020',
-  caseT3TooOld:     'a1b2c3d4-f000-4000-b000-000000000030',
+  caseT1Happy: 'a1b2c3d4-f000-4000-b000-000000000010',
+  caseT2TooRecent: 'a1b2c3d4-f000-4000-b000-000000000020',
+  caseT3TooOld: 'a1b2c3d4-f000-4000-b000-000000000030',
   caseT4NoAssessor: 'a1b2c3d4-f000-4000-b000-000000000040',
   caseT5VgReceived: 'a1b2c3d4-f000-4000-b000-000000000050',
-  caseT6Cadence:    'a1b2c3d4-f000-4000-b000-000000000060',
-  caseT7Boundary:   'a1b2c3d4-f000-4000-b000-000000000070',
+  caseT6Cadence: 'a1b2c3d4-f000-4000-b000-000000000060',
+  caseT7Boundary: 'a1b2c3d4-f000-4000-b000-000000000070',
+  caseT8Resubmit: 'a1b2c3d4-f000-4000-b000-000000000080',
 } as const;
 
-type CaseId = typeof IDS[keyof typeof IDS];
+type CaseId = (typeof IDS)[keyof typeof IDS];
 
 interface ScenarioCase {
   id: CaseId;
@@ -34,6 +35,11 @@ interface ScenarioCase {
   // null = no assigned assessor (Test 4)
   assignedAccountantId: string | null;
   lodgmentRef: string | null;
+  // resubmitted_at offset in days from now; null = never resubmitted. The follow-up query uses
+  // COALESCE(last_vg_follow_up_sent_at, resubmitted_at, submitted_at), so this takes precedence
+  // over submitted_at when no follow-up has been sent for the current round.
+  resubmittedDaysAgo?: number | null;
+  resubmissionCount?: number;
 }
 
 function daysAgo(n: number): Date {
@@ -45,114 +51,199 @@ async function upsertCase(
   c: ScenarioCase,
   description: string,
 ): Promise<void> {
-  const submittedAt     = daysAgo(c.submittedDaysAgo);
-  const lastFollowUpAt  = c.lastFollowUpDaysAgo !== null ? daysAgo(c.lastFollowUpDaysAgo) : null;
+  const submittedAt = daysAgo(c.submittedDaysAgo);
+  const lastFollowUpAt =
+    c.lastFollowUpDaysAgo !== null ? daysAgo(c.lastFollowUpDaysAgo) : null;
+  const resubmittedAt =
+    c.resubmittedDaysAgo != null ? daysAgo(c.resubmittedDaysAgo) : null;
+  const resubmissionCount = c.resubmissionCount ?? 0;
 
   const [existing] = await dataSource.query(
-    `SELECT id FROM dispute_cases WHERE id = $1`, [c.id],
+    `SELECT id FROM dispute_cases WHERE id = $1`,
+    [c.id],
   );
 
   if (!existing) {
-    await dataSource.query(`
+    await dataSource.query(
+      `
       INSERT INTO dispute_cases
         (id, case_reference, client_id, property_id, valuation_notice_id,
          assigned_accountant_id, jurisdiction, status, statutory_deadline,
          no_legal_ground_flagged, submitted_at, lodgment_reference_number,
-         last_vg_follow_up_sent_at, vg_follow_up_count)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
-    `, [
-      c.id, c.ref, IDS.client, IDS.property, IDS.valuationNotice,
-      c.assignedAccountantId, 'VIC', c.status, '2027-06-30',
-      false, submittedAt, c.lodgmentRef,
-      lastFollowUpAt, c.followUpCount,
-    ]);
+         last_vg_follow_up_sent_at, vg_follow_up_count,
+         resubmitted_at, resubmission_count)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
+    `,
+      [
+        c.id,
+        c.ref,
+        IDS.client,
+        IDS.property,
+        IDS.valuationNotice,
+        c.assignedAccountantId,
+        'VIC',
+        c.status,
+        '2027-06-30',
+        false,
+        submittedAt,
+        c.lodgmentRef,
+        lastFollowUpAt,
+        c.followUpCount,
+        resubmittedAt,
+        resubmissionCount,
+      ],
+    );
     logger.log(`  Seeded  ${c.ref}  [${description}]`);
   } else {
     // Always reset so re-running the seeder restores the test precondition
-    await dataSource.query(`
+    await dataSource.query(
+      `
       UPDATE dispute_cases SET
         status                    = $1,
         submitted_at              = $2,
         last_vg_follow_up_sent_at = $3,
         vg_follow_up_count        = $4,
         assigned_accountant_id    = $5,
-        lodgment_reference_number = $6
+        lodgment_reference_number = $6,
+        resubmitted_at            = $8,
+        resubmission_count        = $9
       WHERE id = $7
-    `, [c.status, submittedAt, lastFollowUpAt, c.followUpCount, c.assignedAccountantId, c.lodgmentRef, c.id]);
+    `,
+      [
+        c.status,
+        submittedAt,
+        lastFollowUpAt,
+        c.followUpCount,
+        c.assignedAccountantId,
+        c.lodgmentRef,
+        c.id,
+        resubmittedAt,
+        resubmissionCount,
+      ],
+    );
 
     // Remove any audit rows written by previous test runs so counts are predictable
-    await dataSource.query(`
+    await dataSource.query(
+      `
       DELETE FROM audit_logs
       WHERE case_id = $1 AND performed_by = '00000000-0000-0000-0000-000000000000'
-    `, [c.id]);
+    `,
+      [c.id],
+    );
 
     logger.log(`  Reset   ${c.ref}  [${description}]`);
   }
 }
 
-export async function seedVgFollowUpTest(dataSource: DataSource): Promise<void> {
+export async function seedVgFollowUpTest(
+  dataSource: DataSource,
+): Promise<void> {
   // ── 1. Resolve assessor ──────────────────────────────────────────────────────
   const assessor = await dataSource
     .getRepository(User)
     .findOneBy({ email: 'pol.imbing@ymlgroup.com.au' });
   if (!assessor) {
-    throw new Error('[VgFollowUpTestSeeder] pol.imbing not found — run seedUsers() first.');
+    throw new Error(
+      '[VgFollowUpTestSeeder] pol.imbing not found — run seedUsers() first.',
+    );
   }
   logger.log(`Resolved assessor: ${assessor.fullName} (${assessor.id})`);
 
   // ── 2. Shared client ─────────────────────────────────────────────────────────
   const [existingClient] = await dataSource.query(
-    `SELECT id FROM clients WHERE id = $1`, [IDS.client],
+    `SELECT id FROM clients WHERE id = $1`,
+    [IDS.client],
   );
   if (!existingClient) {
-    await dataSource.query(`
+    await dataSource.query(
+      `
       INSERT INTO clients (id, name, email, status, assigned_accountant_id)
       VALUES ($1, $2, $3, $4, $5)
-    `, [IDS.client, 'FUP Test Client', assessor.email, 'active', assessor.id]);
+    `,
+      [IDS.client, 'FUP Test Client', assessor.email, 'active', assessor.id],
+    );
     logger.log('  Seeded shared client');
   }
 
   // ── 3. Shared property ───────────────────────────────────────────────────────
   const [existingProperty] = await dataSource.query(
-    `SELECT id FROM properties WHERE id = $1`, [IDS.property],
+    `SELECT id FROM properties WHERE id = $1`,
+    [IDS.property],
   );
   if (!existingProperty) {
-    await dataSource.query(`
+    await dataSource.query(
+      `
       INSERT INTO properties
         (id, client_id, address, suburb, state, postcode, pid, ownership_pct, land_area_sqm, zoning)
       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)
-    `, [IDS.property, IDS.client, '99 Follow-Up Street', 'Melbourne', 'VIC', '3000', '9900099', 100.00, null, null]);
+    `,
+      [
+        IDS.property,
+        IDS.client,
+        '99 Follow-Up Street',
+        'Melbourne',
+        'VIC',
+        '3000',
+        '9900099',
+        100.0,
+        null,
+        null,
+      ],
+    );
     logger.log('  Seeded shared property');
   }
 
   // ── 4. Shared assessment document ────────────────────────────────────────────
   const [existingDoc] = await dataSource.query(
-    `SELECT id FROM assessment_documents WHERE id = $1`, [IDS.assessmentDocument],
+    `SELECT id FROM assessment_documents WHERE id = $1`,
+    [IDS.assessmentDocument],
   );
   if (!existingDoc) {
-    await dataSource.query(`
+    await dataSource.query(
+      `
       INSERT INTO assessment_documents (id, client_id, file_path, document_name)
       VALUES ($1,$2,$3,$4)
-    `, [IDS.assessmentDocument, IDS.client, `dispute-cases/${IDS.assessmentDocument}/valuation-notice.pdf`, 'Land Tax Assessment Notice']);
+    `,
+      [
+        IDS.assessmentDocument,
+        IDS.client,
+        `dispute-cases/${IDS.assessmentDocument}/valuation-notice.pdf`,
+        'Land Tax Assessment Notice',
+      ],
+    );
     logger.log('  Seeded shared assessment document');
   }
 
   // ── 5. Shared valuation notice ───────────────────────────────────────────────
   const [existingNotice] = await dataSource.query(
-    `SELECT id FROM valuation_notices WHERE id = $1`, [IDS.valuationNotice],
+    `SELECT id FROM valuation_notices WHERE id = $1`,
+    [IDS.valuationNotice],
   );
   if (!existingNotice) {
-    await dataSource.query(`
+    await dataSource.query(
+      `
       INSERT INTO valuation_notices
         (id, property_id, source_document_id, appraised_by_id, valuation_date,
          assessed_land_value, appraised_value, valuation_delta, decision_outcome,
          is_exempt, notice_reference, analyst_notes, appraised_at)
       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-    `, [
-      IDS.valuationNotice, IDS.property, IDS.assessmentDocument, assessor.id,
-      '2024-07-01', 2_000_000, 1_600_000, -400_000,
-      'ADVISORY', false, 'SEED-FUP-NOTICE-001', '', new Date().toISOString(),
-    ]);
+    `,
+      [
+        IDS.valuationNotice,
+        IDS.property,
+        IDS.assessmentDocument,
+        assessor.id,
+        '2024-07-01',
+        2_000_000,
+        1_600_000,
+        -400_000,
+        'ADVISORY',
+        false,
+        'SEED-FUP-NOTICE-001',
+        '',
+        new Date().toISOString(),
+      ],
+    );
     logger.log('  Seeded shared valuation notice');
   }
 
@@ -162,7 +253,7 @@ export async function seedVgFollowUpTest(dataSource: DataSource): Promise<void> 
       {
         id: IDS.caseT1Happy,
         ref: 'FUPTEST-T1-HAPPY',
-        status: 'submitted_to_vg',
+        status: 'objection_submitted',
         submittedDaysAgo: 91,
         lastFollowUpDaysAgo: null,
         followUpCount: 0,
@@ -175,7 +266,7 @@ export async function seedVgFollowUpTest(dataSource: DataSource): Promise<void> 
       {
         id: IDS.caseT2TooRecent,
         ref: 'FUPTEST-T2-EARLY',
-        status: 'submitted_to_vg',
+        status: 'objection_submitted',
         submittedDaysAgo: 89,
         lastFollowUpDaysAgo: null,
         followUpCount: 0,
@@ -188,7 +279,7 @@ export async function seedVgFollowUpTest(dataSource: DataSource): Promise<void> 
       {
         id: IDS.caseT3TooOld,
         ref: 'FUPTEST-T3-REPEAT',
-        status: 'submitted_to_vg',
+        status: 'objection_submitted',
         submittedDaysAgo: 100,
         lastFollowUpDaysAgo: 6,
         followUpCount: 1,
@@ -201,7 +292,7 @@ export async function seedVgFollowUpTest(dataSource: DataSource): Promise<void> 
       {
         id: IDS.caseT4NoAssessor,
         ref: 'FUPTEST-T4-NOASGN',
-        status: 'submitted_to_vg',
+        status: 'objection_submitted',
         submittedDaysAgo: 91,
         lastFollowUpDaysAgo: null,
         followUpCount: 0,
@@ -227,7 +318,7 @@ export async function seedVgFollowUpTest(dataSource: DataSource): Promise<void> 
       {
         id: IDS.caseT6Cadence,
         ref: 'FUPTEST-T6-TOOSOON',
-        status: 'submitted_to_vg',
+        status: 'objection_submitted',
         submittedDaysAgo: 100,
         lastFollowUpDaysAgo: 3,
         followUpCount: 1,
@@ -240,7 +331,7 @@ export async function seedVgFollowUpTest(dataSource: DataSource): Promise<void> 
       {
         id: IDS.caseT7Boundary,
         ref: 'FUPTEST-T7-MAXCOUNT',
-        status: 'submitted_to_vg',
+        status: 'objection_submitted',
         submittedDaysAgo: 125,
         lastFollowUpDaysAgo: 6,
         followUpCount: 5,
@@ -248,6 +339,23 @@ export async function seedVgFollowUpTest(dataSource: DataSource): Promise<void> 
         lodgmentRef: 'LR-FUP-T7-0001',
       },
       'T7 — max follow-ups reached (count=5) → excluded by count cap [SKIPPED]',
+    ],
+    [
+      {
+        id: IDS.caseT8Resubmit,
+        ref: 'FUPTEST-T8-RESUBMIT',
+        status: 'ai_further_submission',
+        // Original lodgement is ancient and its follow-up budget was spent, but the further
+        // submission reset both. Only the resubmitted_at term in the COALESCE makes this due.
+        submittedDaysAgo: 300,
+        lastFollowUpDaysAgo: null,
+        followUpCount: 0,
+        resubmittedDaysAgo: 91,
+        resubmissionCount: 1,
+        assignedAccountantId: assessor.id,
+        lodgmentRef: 'LR-FUP-T8-0001',
+      },
+      'T8 — further submission 91 days ago, counters reset → due for follow-up #1 [PICKED]',
     ],
   ];
 
@@ -273,12 +381,14 @@ export async function seedVgFollowUpTest(dataSource: DataSource): Promise<void> 
   │  │ FUPTEST-T5-VGRECV       │ Status vg_response_received → SKIP      │  no  │  no    │  │
   │  │ FUPTEST-T6-TOOSOON      │ Last sent 3 days ago → 5-day gate, SKIP │  no  │  no    │  │
   │  │ FUPTEST-T7-MAXCOUNT     │ count=5 → max reached, SKIP             │  no  │  no    │  │
+  │  │ FUPTEST-T8-RESUBMIT     │ Further submission 91d ago → follow-up  │  yes │  yes   │  │
   │  └─────────────────────────┴─────────────────────────────────────────┴──────┴────────┘  │
   │                                                                                          │
-  │  Response should be: { "checked": 3, "sent": 2, "failed": 0 }                           │
-  │  VG inbox (VG_SUBMISSION_EMAIL) should receive 2 emails:                    │
-  │    [FUPTEST-T1-HAPPY]   Follow-Up Enquiry #1                                │
-  │    [FUPTEST-T3-REPEAT]  Follow-Up Enquiry #2                                │
+  │  Response should be: { "checked": 4, "sent": 3, "failed": 0 }                           │
+  │  VG inbox (VG_SUBMISSION_EMAIL) should receive 3 emails:                    │
+  │    [FUPTEST-T1-HAPPY]     Follow-Up Enquiry #1                              │
+  │    [FUPTEST-T3-REPEAT]    Follow-Up Enquiry #2                              │
+  │    [FUPTEST-T8-RESUBMIT]  Follow-Up Enquiry #1                              │
   │  Assessor (${assessor.email}) gets in-app notifications only.               │
   │                                                                                          │
   │  Re-run the seeder at any time to reset all cases back to their initial state.           │

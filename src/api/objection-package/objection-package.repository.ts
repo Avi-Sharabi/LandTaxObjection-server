@@ -20,7 +20,12 @@ export class ObjectionPackageRepository {
     });
   }
 
+  // valuation_notice is required: without the relation the decision_outcome gate silently no-ops
+  // and advisory cases become package-eligible.
   findDisputeCase(id: string): Promise<DisputeCase | null> {
-    return this.disputeCaseRepo.findOne({ where: { id } });
+    return this.disputeCaseRepo.findOne({
+      where: { id },
+      relations: { valuation_notice: true },
+    });
   }
 }

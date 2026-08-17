@@ -5,10 +5,15 @@ import { APIError } from '@anthropic-ai/sdk';
 import { SkillRegistryService } from 'src/mcp/skill-registry.service';
 import { AnthropicService } from 'src/ai/anthropic.service';
 import { DisputeCasesService } from '../dispute-cases.service';
-import { DisputeStatus } from '../entities/dispute-case.entity';
+import { OutcomeResult } from '../entities/dispute-case.entity';
+import { VG_EMAIL_MATCHABLE_STATUSES } from '../dispute-status';
 import { MsGraphService } from 'src/common/ms-graph/ms-graph.service';
 
-export type VgEmailOutcome = 'approved' | 'declined' | 'needs_review';
+export type VgEmailOutcome =
+  | 'approved'
+  | 'partially_agreed'
+  | 'declined'
+  | 'needs_review';
 
 export interface VgEmailResult {
   pid: string | null;
@@ -29,8 +34,24 @@ interface PrefetchedCase {
   lodgment_reference_number: string | null;
 }
 
+// Derived from the canonical status metadata rather than hand-written literals. These values
+// are bound into raw SQL (`dc.status = ANY($n)`), where a stale literal would return zero rows
+// WITHOUT erroring — silently making every inbound VG reply unresolvable.
+const ACTIVE_VG_STATUSES: string[] = [...VG_EMAIL_MATCHABLE_STATUSES];
 
-const ACTIVE_VG_STATUSES = ['submitted_to_vg', 'for_review'];
+/**
+ * Classifier verdict -> the financial outcome it implies, where it implies one. Also the single
+ * definition of the verdict vocabulary — parseResponse validates against these keys.
+ *
+ * The monitor deliberately does NOT write a case status: it records the verdict as data, notifies
+ * the accountant, and leaves a human to move the case through PATCH /:id/status.
+ */
+const OUTCOME_TO_RESULT: Record<VgEmailOutcome, OutcomeResult | null> = {
+  approved: OutcomeResult.UPHELD,
+  partially_agreed: OutcomeResult.PARTIALLY_UPHELD,
+  declined: OutcomeResult.REJECTED,
+  needs_review: null,
+};
 
 @Injectable()
 export class VgEmailAnalysisService implements OnModuleInit {
@@ -85,50 +106,27 @@ export class VgEmailAnalysisService implements OnModuleInit {
       }
     }
 
-    if (result.outcome === 'approved' || result.outcome === 'declined') {
-      if (caseId) {
-        const newStatus =
-          result.outcome === 'approved'
-            ? DisputeStatus.VG_APPROVED
-            : DisputeStatus.VG_DECLINED;
-        try {
-          await this.disputeCasesService.updateVgOutcome(
-            caseId,
-            newStatus,
-            result.reasoning,
-          );
-          this.logger.log(`[VG-ANALYSIS] Case ${caseId} → ${newStatus}`);
-        } catch (err) {
-          this.logger.error(
-            `[VG-ANALYSIS] updateVgOutcome failed for caseId=${caseId} — ${(err as Error).message}`,
-          );
-        }
-      } else {
-        this.logger.warn(
-          `[VG-ANALYSIS] outcome=${result.outcome} but no case resolved — status unchanged`,
+    if (caseId) {
+      try {
+        await this.disputeCasesService.recordVgEmailClassification(
+          caseId,
+          result.outcome,
+          OUTCOME_TO_RESULT[result.outcome],
+          result.reasoning,
+          result.confidence,
+        );
+        this.logger.log(
+          `[VG-ANALYSIS] Case ${caseId} classified as ${result.outcome} — status unchanged, awaiting a human`,
+        );
+      } catch (err) {
+        this.logger.error(
+          `[VG-ANALYSIS] recordVgEmailClassification failed for caseId=${caseId} — ${(err as Error).message}`,
         );
       }
     } else {
-      if (caseId) {
-        try {
-          await this.disputeCasesService.updateVgOutcome(
-            caseId,
-            DisputeStatus.FOR_REVIEW,
-            result.reasoning,
-          );
-          this.logger.log(
-            `[VG-ANALYSIS] Case ${caseId} → ${DisputeStatus.FOR_REVIEW}`,
-          );
-        } catch (err) {
-          this.logger.error(
-            `[VG-ANALYSIS] updateVgOutcome failed for caseId=${caseId} — ${(err as Error).message}`,
-          );
-        }
-      } else {
-        this.logger.log(
-          `[VG-ANALYSIS] outcome=needs_review — no case resolved, status unchanged`,
-        );
-      }
+      this.logger.warn(
+        `[VG-ANALYSIS] outcome=${result.outcome} but no case resolved — nothing recorded`,
+      );
     }
 
     await this.safeMarkAsRead(messageId);
@@ -412,8 +410,11 @@ ${JSON.stringify(prefetchedCase, null, 2)}
     }
 
     if (dbQueried) {
+      const matchableStatuses = ACTIVE_VG_STATUSES.map((s) => `\`${s}\``).join(
+        ' / ',
+      );
       return `### Case Lookup — no match found
-The server queried the database using identifiers from this email and found NO matching case in \`submitted_to_vg\` or \`for_review\` status. Set \`case_id\` to \`null\`. Do NOT query via MCP — the server result is authoritative.`;
+The server queried the database using identifiers from this email and found NO matching case in ${matchableStatuses} status. Set \`case_id\` to \`null\`. Do NOT query via MCP — the server result is authoritative.`;
     }
 
     return '';
@@ -445,7 +446,15 @@ The server queried the database using identifiers from this email and found NO m
 Body:
 ${plainBody}
 ${contextSection}Return a single raw JSON object — no prose, no markdown fences.
-Fields: pid, address, outcome ("approved"|"declined"|"needs_review"), confidence (float 0.0–1.0), reasoning (one sentence citing the specific phrase that drove the decision), case_id (UUID or null), conflict_detected (boolean).`;
+Fields: pid, address, outcome ("approved"|"partially_agreed"|"declined"|"needs_review"), confidence (float 0.0–1.0), reasoning (one sentence citing the specific phrase that drove the decision), case_id (UUID or null), conflict_detected (boolean).
+
+Choosing "outcome" — this is a triage signal for the assessor, NOT a status change. Your verdict is
+recorded against the case and the assigned accountant is notified; a person then decides what the
+case's status becomes. Never describe your verdict as advancing or closing the case.
+- "approved" — the VG accepts the objection in full, or reduces the land value to at or below the value we contended for.
+- "partially_agreed" — the VG accepts the objection in part: it reduces the assessed land value, but to a figure still ABOVE the value we contended for, or it allows some grounds and rejects others. Any reduction short of what was sought is partial, not approved.
+- "declined" — the VG rejects the objection and leaves the assessed land value unchanged.
+- "needs_review" — the email does not clearly state a determination, or you cannot tell which of the above applies. Never guess between "approved" and "partially_agreed": if the email states a new value but you cannot establish how it compares to the value contended for, return "needs_review".`;
   }
 
   private parseResponse(raw: string): VgEmailResult {
@@ -461,9 +470,11 @@ Fields: pid, address, outcome ("approved"|"declined"|"needs_review"), confidence
 
     const p = item as Record<string, unknown>;
     const outcome = p['outcome'];
+    // Validated against OUTCOME_TO_RESULT so the vocabulary has one definition, not two.
+    // Anything unrecognised falls back to needs_review rather than a guessed outcome.
     const validOutcome: VgEmailOutcome =
-      outcome === 'approved' || outcome === 'declined'
-        ? outcome
+      typeof outcome === 'string' && outcome in OUTCOME_TO_RESULT
+        ? (outcome as VgEmailOutcome)
         : 'needs_review';
 
     const rawCaseId = p['case_id'];

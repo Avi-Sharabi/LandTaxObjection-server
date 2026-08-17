@@ -52,8 +52,8 @@ Use the match priority hierarchy:
 | 4 | Canonical address | Strong operational identifier |
 | 5 | Assessment amount + address | Financial confirmation |
 
-Never update without a confirmed UUID match. If only partial identifiers are available,
-route to `FOR_REVIEW` status for human confirmation.
+Never update without a confirmed UUID match. If only partial identifiers are available, write
+nothing and flag for human confirmation.
 
 ---
 
@@ -69,40 +69,62 @@ Before any `UPDATE`:
 
 ---
 
-### Step 3 — Allowed Status Transitions (dispute_cases)
+### Step 3 — `dispute_cases.status` is NOT AI-writable
 
-The full status flow:
+> **You must never write `dispute_cases.status`.** The database rejects it: the column is on the
+> protected list in `UpdateDatabaseService`, and an attempt returns
+> `action_required: "use_transition_endpoint"`.
+>
+> Status changes carry side effects — a lodgement reference, an email to the Valuer General, an
+> advisory letter to the client, follow-up counter resets, an audit row — and a bare `UPDATE`
+> performs none of them, leaving the case in a state the rest of the system believes is impossible.
+> A person changes status through `PATCH /api/v1/dispute-cases/:id/status`.
+>
+> What you CAN do with a VG response is record the facts: append to `vg_response_notes` and set
+> `outcome`. A human then moves the case.
+
+The lifecycle exists here only so you can *read* a case's position. There are 9 statuses, and the
+flow is **cyclic** — a YML further submission re-enters the VG loop, so a case can pass through
+`vg_response_received` more than once. The authoritative definition is
+`DISPUTE_STATUS_TRANSITIONS` in `src/api/dispute-cases/dispute-status.ts`.
 
 ```
-pending_tnc
-  → draft
-    → grounds_selection
-      → evidence_compilation
-        → appraisal
-          → advisory_letter_issued
-          → objection_package_prepared
-            → awaiting_client_approval
-              → client_approved
-                → submitted_to_vg
-                  → vg_response_received  [automated by email monitor]
-                    → vg_approved         [automated by AI classifier]
-                    → vg_declined         [automated by AI classifier]
-                    → for_review          [automated — low confidence]
-                      → outcome_received
-                        → closed
-  → closed_no_objection  [from any status — manual decision]
+created                                 [intake]
+  → tnc_agreed                          [terms of engagement agreed — manual]
+    → reports_uploaded                  [land value search + sales report on file — automatic
+                                         on POST /api/v1/assessment-documents/batch]
+      → analysed                        [automatic when the analyze-ai job completes]
+        → objection_submitted           [lodged with the VG — manual]
+          → vg_response_received        [a reply arrived; no outcome asserted yet — manual]
+            → ai_further_submission     [further submission lodged — manual]
+              → vg_response_received    [loop back; the cycle may repeat]
+            → vg_agreed                 [VG accepted the objection — manual]
+              → case_closed
+  → case_closed                         [from any open status — manual]
 ```
 
-**AI classifiers may only set:** `vg_approved`, `vg_declined`, `for_review`
+Notes that matter when reading a status:
 
-**AI classifiers must not set:** `closed`, `submitted_to_vg`, `pending_tnc`, or any
-status that requires human action or financial commitment.
+- **There is no "declined" or "partially agreed" status.** An unfavourable or partial reply is
+  `vg_response_received`; the substance lives in `outcome` (`rejected` / `partially_upheld`) and in
+  `vg_response_notes`.
+- **`vg_response_received` is the human review queue.** A case sits there until a person decides
+  whether to make a further submission, record agreement, or close.
+- **There is no client-approval step.** The objection package is never sent to the client for
+  approval; the accountant lodges on their own authority. Do not look for an approval column.
+- **Advisory vs objection is not a status.** It is `valuation_notices.decision_outcome`
+  (`ADVISORY` | `OBJECTION`).
+- **A no-objection close is not a status.** It is `case_closed` with `advisory_view_token` set.
+- **Lodgement is not a status.** It is `submitted_at` being non-null.
 
 ---
 
 ### Step 4 — Write-Back Scope
 
-**All tables and columns in the database are writable.** There are no blocked tables or restricted columns. Apply the instruction exactly as given — update whichever table and columns are specified or implied by the user's request.
+Apply the instruction exactly as given — update whichever table and columns the request specifies or
+implies. Everything is writable except the one column named in Step 3. An attempt to write it returns
+`action_required: "use_transition_endpoint"` — do not retry it, and do not try to reach the same end
+state through another column.
 
 ---
 
@@ -115,9 +137,9 @@ Every AI write-back must return this structure:
   "success": true,
   "table": "dispute_cases",
   "record_id": "uuid",
-  "fields_updated": ["status", "outcome"],
-  "previous_values": { "status": "vg_response_received" },
-  "new_values": { "status": "vg_approved", "outcome": "upheld" },
+  "fields_updated": ["outcome", "vg_response_notes"],
+  "previous_values": { "outcome": null },
+  "new_values": { "outcome": "upheld", "vg_response_notes": "…" },
   "audit_logged": true,
   "timestamp": "2026-05-18T10:00:00.000Z"
 }
@@ -130,49 +152,9 @@ On failure:
   "success": false,
   "table": "dispute_cases",
   "record_id": "uuid",
-  "reason": "Status transition not allowed: current status is 'closed'",
-  "action_required": "manual_review",
+  "reason": "dispute_cases.status is not AI-writable",
+  "action_required": "use_transition_endpoint",
   "timestamp": "2026-05-18T10:00:00.000Z"
-}
-```
-
----
-
-### Step 6 — Idempotency
-
-Before writing, generate a deduplication hash:
-
-```text
-SHA256(table + record_id + field_name + new_value + source_event_id)
-```
-
-Store processed hashes in a `processed_events` log (or use the `audit_logs` table
-with a `meta` field). Reject duplicate writes silently and return `success: true`
-with a `duplicate: true` flag.
-
----
-
-### Step 7 — Audit Log Requirement
-
-Every AI-initiated status change or financial value write on `dispute_cases` or
-`valuation_notices` **must** create a corresponding row in `audit_logs`.
-
-If the audit log insert fails, roll back the main write. Both writes should occur
-inside a TypeORM `QueryRunner` transaction:
-
-```typescript
-const queryRunner = dataSource.createQueryRunner();
-await queryRunner.connect();
-await queryRunner.startTransaction();
-try {
-  await queryRunner.manager.update(DisputeCase, id, payload);
-  await queryRunner.manager.insert(AuditLog, auditPayload);
-  await queryRunner.commitTransaction();
-} catch (err) {
-  await queryRunner.rollbackTransaction();
-  throw err;
-} finally {
-  await queryRunner.release();
 }
 ```
 
@@ -181,7 +163,8 @@ try {
 ## Key Reminders
 
 - **Schema changes are developer-only** — AI must never create migrations, add columns, create tables, or modify seeders
-- **AI status writes are restricted** to `vg_approved`, `vg_declined`, `for_review` only
+- **`dispute_cases.status` is never AI-writable** — it is rejected in code. Record the facts
+  (`outcome`, `vg_response_notes`) and leave the status to a person
 - **Append-only fields** (`vg_response_notes`, `analyst_notes`) must never be overwritten
-- **All AI writes require a transaction** that includes the audit log insert
-- **`for_review` is the safe fallback** — when confidence is low or identifiers conflict, always route there
+- **When confidence is low or identifiers conflict, write nothing and flag for review** — do not
+  assert an outcome you cannot support
