@@ -87,10 +87,37 @@ export class ClientsService {
       take: limit,
     });
 
-    return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
+    const totalPages = Math.ceil(total / limit);
+
+    // IN (:...ids) renders as IN () — a syntax error — on an empty array, which an
+    // out-of-range page or a search matching nothing produces.
+    if (data.length === 0) {
+      return { data: [], total, page, limit, totalPages };
+    }
+
+    // One grouped aggregate for the whole page rather than a request per client (the
+    // problem this exists to fix). QueryBuilder appends dc.deleted_at IS NULL itself
+    // (DisputeCase has @DeleteDateColumn) — this is the exact set remove() soft-deletes.
+    // COUNT(*)::int casts server-side so pg returns a number, not an int8 string.
+    const counts = await this.disputeCasesRepository
+      .createQueryBuilder('dc')
+      .select('dc.client_id', 'client_id')
+      .addSelect('COUNT(*)::int', 'count')
+      .where('dc.client_id IN (:...ids)', { ids: data.map((c) => c.id) })
+      .groupBy('dc.client_id')
+      .getRawMany<{ client_id: string; count: number }>();
+
+    // Clients with no cases are absent from a grouped result entirely, hence ?? 0.
+    const countByClientId = new Map(counts.map((r) => [r.client_id, r.count]));
+    const withCounts = data.map((c) => ({
+      ...c,
+      dispute_case_count: countByClientId.get(c.id) ?? 0,
+    }));
+
+    return { data: withCounts, total, page, limit, totalPages };
   }
 
-  async findOne(id: string): Promise<Client> {
+  async findOne(id: string): Promise<Client & { dispute_case_count: number }> {
     const client = await this.clientsRepository.findOne({
       where: { id },
       relations: ['assigned_accountant', 'properties', 'dispute_cases'],
@@ -100,7 +127,10 @@ export class ClientsService {
       throw new NotFoundException(`Client #${id} not found`);
     }
 
-    return client;
+    // Free — dispute_cases is already loaded above and is already soft-delete
+    // filtered (TypeORM appends deleted_at IS NULL to the join for any relation whose
+    // entity has @DeleteDateColumn), so this needs no second query.
+    return Object.assign(client, { dispute_case_count: client.dispute_cases.length });
   }
 
   async update(id: string, updateClientDto: UpdateClientInfoDto): Promise<Client> {

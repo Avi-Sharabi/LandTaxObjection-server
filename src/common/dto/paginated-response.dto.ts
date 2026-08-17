@@ -9,7 +9,9 @@ export class PaginatedResponseDto<T> {
   totalPages: number;
 }
 
-export type ClientListItem = Pick<Client, 'id' | 'name' | 'email' | 'phone' | 'city' | 'region' | 'status' | 'created_at'>;
+export type ClientListItem = Pick<Client, 'id' | 'name' | 'email' | 'phone' | 'city' | 'region' | 'status' | 'created_at'> & {
+  dispute_case_count: number;
+};
 
 export class PaginatedClientsResponseDto extends PaginatedResponseDto<ClientListItem> { }
 
