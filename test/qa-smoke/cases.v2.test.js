@@ -13,7 +13,7 @@ const EMAIL    = process.env.LOGIN_EMAIL;
 const PASSWORD = process.env.LOGIN_PASSWORD;
 
 const CASE_REF_FULL = 'LTD-2026-000003';  // known overdue case, NSW, $29,333.3, 66d overdue
-const CASE_REF_EDIT = 'LTD-2026-000006';  // Draft, $5,000,000, NSW
+const CASE_REF_EDIT = 'LTD-2026-000006';  // Created, $5,000,000, NSW
 const CASE_DEADLINE = new Date('2026-04-06'); // LTD-2026-000003 deadline for TC-CASE-032
 
 const wait = ms => new Promise(r => setTimeout(r, ms));
@@ -222,7 +222,7 @@ describe('TC-CASE: Cases List Page — E2E', () => {
       );
       expect(hasBadge).toBe(true);
 
-      // Action icons — cases early in the workflow (Draft/Pending T&C) only get a
+      // Action icons — cases early in the workflow (Created) only get a
       // view icon (no edit/delete yet), so checking rows[0] specifically is
       // coupled to whichever case happens to sort first. Check that at least one
       // visible row has the full action set instead.
@@ -323,27 +323,27 @@ describe('TC-CASE: Cases List Page — E2E', () => {
       expect(restoredCount).toBeGreaterThan(0);
     }, 60000);
 
-    test('TC-CASE-006: filter cases by Status = Draft', async () => {
+    test('TC-CASE-006: filter cases by Status = Created', async () => {
       const casesPage = await loginAndGoToCases();
 
-      await casesPage.selectFilter('Status', 'Draft');
+      await casesPage.selectFilter('Status', 'Created');
 
       // Poll until the table actually reflects the filter — either it's settled on
-      // an all-Draft set of rows, or it's genuinely empty. A fixed sleep here was
+      // an all-Created set of rows, or it's genuinely empty. A fixed sleep here was
       // flaky under load: it could read stale (pre-filter) rows if the app was slow.
       const rowTexts = await waitFor(async () => {
         const texts = await casesPage.getAllRowTexts();
         if (texts.length === 0) return texts;
-        return texts.every(t => /draft/i.test(t)) ? texts : null;
+        return texts.every(t => /created/i.test(t)) ? texts : null;
       }) || await casesPage.getAllRowTexts();
 
       if (rowTexts.length === 0) {
-        console.warn('[TC-006] No Draft cases on staging — verifying empty state is graceful');
+        console.warn('[TC-006] No Created cases on staging — verifying empty state is graceful');
         const isEmpty = await casesPage.isEmptyStateVisible();
         expect(typeof isEmpty).toBe('boolean');
       } else {
-        const allDraft = rowTexts.every(t => /draft/i.test(t));
-        expect(allDraft).toBe(true);
+        const allCreated = rowTexts.every(t => /created/i.test(t));
+        expect(allCreated).toBe(true);
       }
 
       // Reset to All
@@ -384,7 +384,7 @@ describe('TC-CASE: Cases List Page — E2E', () => {
       await wait(500);
       const afterSearch = await casesPage.getRowCount();
 
-      await casesPage.selectFilter('Status', 'Draft');
+      await casesPage.selectFilter('Status', 'Created');
       const afterStatus = await casesPage.getRowCount();
       expect(afterStatus).toBeLessThanOrEqual(afterSearch);
 
@@ -398,7 +398,7 @@ describe('TC-CASE: Cases List Page — E2E', () => {
           const rows = [...document.querySelectorAll('tbody tr:not([class*="head"])')];
           return rows.every(r => {
             const t = r.textContent.toLowerCase();
-            return t.includes('ltd-2026') && t.includes('draft') && t.includes('nsw');
+            return t.includes('ltd-2026') && t.includes('created') && t.includes('nsw');
           });
         });
         expect(allMatch).toBe(true);
@@ -533,7 +533,7 @@ describe('TC-CASE: Cases List Page — E2E', () => {
       // Force empty state by searching for a non-existent term while applying a filter
       await casesPage.search('ZZZNOMATCH');
       await wait(300);
-      await casesPage.selectFilter('Status', 'Draft').catch(() => {});
+      await casesPage.selectFilter('Status', 'Created').catch(() => {});
 
       const isEmpty = await waitFor(() => casesPage.isEmptyStateVisible());
       expect(isEmpty).toBe(true);
@@ -565,7 +565,7 @@ describe('TC-CASE: Cases List Page — E2E', () => {
       const casesPage = await loginAndGoToCases();
 
       await casesPage.search('LTD-9999-ZZZZZZ');
-      await casesPage.selectFilter('Status', 'Draft').catch(() => {});
+      await casesPage.selectFilter('Status', 'Created').catch(() => {});
       await casesPage.selectFilter('Jurisdiction', 'NSW').catch(() => {});
 
       const isEmpty = await waitFor(() => casesPage.isEmptyStateVisible());
@@ -711,7 +711,7 @@ describe('TC-CASE: Cases List Page — E2E', () => {
       const casesPage = await loginAndGoToCases();
 
       // Rapid sequential filter selections
-      for (const status of ['Draft', 'Appraisal', 'All Statuses']) {
+      for (const status of ['Created', 'Analysed', 'All Statuses']) {
         await casesPage.selectFilter('Status', status).catch(() => {});
         await wait(200);
       }
@@ -866,25 +866,25 @@ describe('TC-CASE: Cases List Page — E2E', () => {
     test('TC-CASE-036: pagination count and label update correctly when filters are active', async () => {
       const casesPage = await loginAndGoToCases();
 
-      await casesPage.selectFilter('Status', 'Draft');
+      await casesPage.selectFilter('Status', 'Created');
       await wait(500);
 
       const filteredLabel = await casesPage.getCountLabelText();
       const filteredTotal = filteredLabel.match(/of\s*(\d+)/i)?.[1];
-      console.info('[TC-036] Filtered label (Draft):', filteredLabel);
+      console.info('[TC-036] Filtered label (Created):', filteredLabel);
 
       if (filteredTotal && parseInt(filteredTotal) > 10) {
         await casesPage.clickNextPage().catch(() => {});
         const page2Label = await casesPage.getCountLabelText();
-        // Page 2 of Draft cases must not include non-Draft rows
-        const allDraft = await page.evaluate(() => {
+        // Page 2 of Created cases must not include non-Created rows
+        const allCreated = await page.evaluate(() => {
           const rows = [...document.querySelectorAll('tbody tr:not([class*="head"])')];
-          return rows.every(r => /draft/i.test(r.textContent));
+          return rows.every(r => /created/i.test(r.textContent));
         });
-        expect(allDraft).toBe(true);
+        expect(allCreated).toBe(true);
         console.info('[TC-036] Page 2 label:', page2Label);
       } else {
-        console.info('[TC-036] Fewer than 10 Draft cases — multi-page test skipped');
+        console.info('[TC-036] Fewer than 10 Created cases — multi-page test skipped');
       }
 
       // Reset filter — pagination resets to full list
@@ -936,7 +936,7 @@ describe('TC-CASE: Cases List Page — E2E', () => {
     test('TC-CASE-079: pencil icon on a list row opens the Edit Case dialog without saving changes', async () => {
       const casesPage = await loginAndGoToCases();
 
-      // Not every row renders an edit icon (Draft/Pending T&C rows may only show view) —
+      // Not every row renders an edit icon (early-lifecycle rows may only show view) —
       // resolve a row that actually has one rather than assuming row 0.
       const caseRef = await page.evaluate(() => {
         const rows = [...document.querySelectorAll('tbody tr')].filter(r => r.querySelector('td'));

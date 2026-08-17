@@ -130,11 +130,66 @@ interface RptScenarioParams {
 
 function baseComparables(): RptComp[] {
   return [
-    { house: '9', street: 'Tallowood Street', locality: 'Panania', postcode: '2213', zone: 'R2', contractDate: '2025-02-15', purchasePrice: 523800, areaM2: 460, vacant: true, dealingNumber: 'D1123456' },
-    { house: '4', street: 'Hollywood Drive', locality: 'Revesby', postcode: '2212', zone: 'R2', contractDate: '2025-04-03', purchasePrice: 571000, areaM2: 505, vacant: true, dealingNumber: 'D2233445' },
-    { house: '31', street: 'Milperra Road', locality: 'Panania', postcode: '2213', zone: 'R2', contractDate: '2025-05-22', purchasePrice: 980000, areaM2: 470, vacant: false, dealingNumber: 'D3344556' },
-    { house: '12', street: 'Farnell Avenue', locality: 'Panania', postcode: '2213', zone: 'R2', contractDate: '2025-06-30', purchasePrice: 520800, areaM2: 452, vacant: true, dealingNumber: 'D4455667' },
-    { house: '2/45', street: 'Marco Avenue', locality: 'Revesby Heights', postcode: '2212', zone: 'R2', contractDate: '2025-07-10', purchasePrice: 598500, areaM2: 500, vacant: true, dealingNumber: 'D5566778' },
+    {
+      house: '9',
+      street: 'Tallowood Street',
+      locality: 'Panania',
+      postcode: '2213',
+      zone: 'R2',
+      contractDate: '2025-02-15',
+      purchasePrice: 523800,
+      areaM2: 460,
+      vacant: true,
+      dealingNumber: 'D1123456',
+    },
+    {
+      house: '4',
+      street: 'Hollywood Drive',
+      locality: 'Revesby',
+      postcode: '2212',
+      zone: 'R2',
+      contractDate: '2025-04-03',
+      purchasePrice: 571000,
+      areaM2: 505,
+      vacant: true,
+      dealingNumber: 'D2233445',
+    },
+    {
+      house: '31',
+      street: 'Milperra Road',
+      locality: 'Panania',
+      postcode: '2213',
+      zone: 'R2',
+      contractDate: '2025-05-22',
+      purchasePrice: 980000,
+      areaM2: 470,
+      vacant: false,
+      dealingNumber: 'D3344556',
+    },
+    {
+      house: '12',
+      street: 'Farnell Avenue',
+      locality: 'Panania',
+      postcode: '2213',
+      zone: 'R2',
+      contractDate: '2025-06-30',
+      purchasePrice: 520800,
+      areaM2: 452,
+      vacant: true,
+      dealingNumber: 'D4455667',
+    },
+    {
+      house: '2/45',
+      street: 'Marco Avenue',
+      locality: 'Revesby Heights',
+      postcode: '2212',
+      zone: 'R2',
+      contractDate: '2025-07-10',
+      purchasePrice: 598500,
+      areaM2: 500,
+      vacant: true,
+      dealingNumber: 'D5566778',
+    },
   ];
 }
 
@@ -150,7 +205,8 @@ function baseGrounds(cpvDocId: string): RptGround[] {
     groundNumber: n,
     label: GROUND_LABELS[n],
     isTick: n === 1,
-    verificationStatus: n === 1 ? 'EVIDENCE_OBTAINED' : 'AI_DETECTED_UNVERIFIED',
+    verificationStatus:
+      n === 1 ? 'EVIDENCE_OBTAINED' : 'AI_DETECTED_UNVERIFIED',
     concessionType: null,
     concessionClassification: null,
     concessionTypeNote: null,
@@ -167,7 +223,10 @@ function withGroundOverride(
   return grounds.map((g) => (g.groundNumber === groundNumber ? fn(g) : g));
 }
 
-function baseCaseDocuments(assessmentDocId: string, cpvDocId: string): RptCaseDocument[] {
+function baseCaseDocuments(
+  assessmentDocId: string,
+  cpvDocId: string,
+): RptCaseDocument[] {
   return [
     {
       id: assessmentDocId,
@@ -177,7 +236,8 @@ function baseCaseDocuments(assessmentDocId: string, cpvDocId: string): RptCaseDo
     },
     {
       id: cpvDocId,
-      document_name: 'Independent CPV Valuation Report — 22 Bexhill Avenue, Panania (dated 10 July 2025)',
+      document_name:
+        'Independent CPV Valuation Report — 22 Bexhill Avenue, Panania (dated 10 July 2025)',
       created_at: '2025-07-10T00:00:00.000Z',
       document_type: 'cpv_report',
     },
@@ -347,7 +407,10 @@ export async function seedRptScenario(
     );
   }
 
-  const [existingProp] = await dataSource.query(`SELECT id FROM properties WHERE id = $1`, [i.property]);
+  const [existingProp] = await dataSource.query(
+    `SELECT id FROM properties WHERE id = $1`,
+    [i.property],
+  );
   if (!existingProp) {
     await dataSource.query(
       `INSERT INTO properties
@@ -355,31 +418,60 @@ export async function seedRptScenario(
           ownership_pct, land_area_sqm, land_area_eplanning_sqm, zoning, lot_dp)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
       [
-        i.property, i.client, p.address, p.suburb, 'NSW', p.postcode, p.pid,
-        100.00, p.landAreaSqm, p.landAreaSqm, `${p.zoningCode} ${p.zoningLabel}`, p.lotDp,
+        i.property,
+        i.client,
+        p.address,
+        p.suburb,
+        'NSW',
+        p.postcode,
+        p.pid,
+        100.0,
+        p.landAreaSqm,
+        p.landAreaSqm,
+        `${p.zoningCode} ${p.zoningLabel}`,
+        p.lotDp,
       ],
     );
   }
 
-  const [existingDoc] = await dataSource.query(`SELECT id FROM assessment_documents WHERE id = $1`, [i.assessmentDoc]);
+  const [existingDoc] = await dataSource.query(
+    `SELECT id FROM assessment_documents WHERE id = $1`,
+    [i.assessmentDoc],
+  );
   if (!existingDoc) {
     await dataSource.query(
       `INSERT INTO assessment_documents (id, client_id, file_path, document_name)
        VALUES ($1,$2,$3,$4)`,
-      [i.assessmentDoc, i.client, `dispute-cases/${i.assessmentDoc}/land-tax-notice.pdf`, 'Land Tax Assessment Notice 2026'],
+      [
+        i.assessmentDoc,
+        i.client,
+        `dispute-cases/${i.assessmentDoc}/land-tax-notice.pdf`,
+        'Land Tax Assessment Notice 2026',
+      ],
     );
   }
 
-  const [existingCpvDoc] = await dataSource.query(`SELECT id FROM assessment_documents WHERE id = $1`, [i.cpvDoc]);
+  const [existingCpvDoc] = await dataSource.query(
+    `SELECT id FROM assessment_documents WHERE id = $1`,
+    [i.cpvDoc],
+  );
   if (!existingCpvDoc) {
     await dataSource.query(
       `INSERT INTO assessment_documents (id, client_id, file_path, document_name)
        VALUES ($1,$2,$3,$4)`,
-      [i.cpvDoc, i.client, `dispute-cases/${i.cpvDoc}/cpv-valuation-report.pdf`, 'Independent CPV Valuation Report'],
+      [
+        i.cpvDoc,
+        i.client,
+        `dispute-cases/${i.cpvDoc}/cpv-valuation-report.pdf`,
+        'Independent CPV Valuation Report',
+      ],
     );
   }
 
-  const [existingNotice] = await dataSource.query(`SELECT id FROM valuation_notices WHERE id = $1`, [i.valuationNotice]);
+  const [existingNotice] = await dataSource.query(
+    `SELECT id FROM valuation_notices WHERE id = $1`,
+    [i.valuationNotice],
+  );
   if (!existingNotice) {
     await dataSource.query(
       `INSERT INTO valuation_notices
@@ -388,15 +480,27 @@ export async function seedRptScenario(
           is_exempt, notice_reference, decision_outcome)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
       [
-        i.valuationNotice, i.property, i.assessmentDoc, accountantId,
-        p.valuationDate, p.noticeIssueDate,
-        p.assessedLandValue, p.priorLandValue, p.landValue2yrPrior, p.landAreaSqm,
-        false, p.noticeReference, 'OBJECTION',
+        i.valuationNotice,
+        i.property,
+        i.assessmentDoc,
+        accountantId,
+        p.valuationDate,
+        p.noticeIssueDate,
+        p.assessedLandValue,
+        p.priorLandValue,
+        p.landValue2yrPrior,
+        p.landAreaSqm,
+        false,
+        p.noticeReference,
+        'OBJECTION',
       ],
     );
   }
 
-  const [existingCase] = await dataSource.query(`SELECT id FROM dispute_cases WHERE id = $1`, [i.disputeCase]);
+  const [existingCase] = await dataSource.query(
+    `SELECT id FROM dispute_cases WHERE id = $1`,
+    [i.disputeCase],
+  );
   if (!existingCase) {
     await dataSource.query(
       `INSERT INTO dispute_cases
@@ -405,9 +509,18 @@ export async function seedRptScenario(
           statutory_deadline, no_legal_ground_flagged, original_assessed_value, flag_flood_zone)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
       [
-        i.disputeCase, p.caseReference, i.client, i.property,
-        i.valuationNotice, accountantId, 'NSW', 'appraisal',
-        p.statutoryDeadline, false, p.assessedLandValue, p.flagFloodZone ?? false,
+        i.disputeCase,
+        p.caseReference,
+        i.client,
+        i.property,
+        i.valuationNotice,
+        accountantId,
+        'NSW',
+        'reports_uploaded',
+        p.statutoryDeadline,
+        false,
+        p.assessedLandValue,
+        p.flagFloodZone ?? false,
       ],
     );
   }
@@ -421,9 +534,13 @@ export async function seedRptScenario(
     [i.disputeCase, JSON.stringify(ctx)],
   );
 
-  await dataSource.query(`DELETE FROM comparable_sales WHERE dispute_case_id = $1`, [i.disputeCase]);
+  await dataSource.query(
+    `DELETE FROM comparable_sales WHERE dispute_case_id = $1`,
+    [i.disputeCase],
+  );
   for (const c of p.comparables) {
-    const { adjustedRatePerSqm, adjustedLandValue, explanation } = computeComp(c);
+    const { adjustedRatePerSqm, adjustedLandValue, explanation } =
+      computeComp(c);
     await dataSource.query(
       `INSERT INTO comparable_sales
          (id, dispute_case_id, created_by_id,
@@ -433,16 +550,29 @@ export async function seedRptScenario(
           adjusted_rate_per_sqm, adjusted_land_value, explanation)
        VALUES (gen_random_uuid(), $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15)`,
       [
-        i.disputeCase, accountantId,
-        c.house ?? null, c.street, c.locality, c.postcode ?? null,
-        c.zone ?? null, c.contractDate, c.purchasePrice, c.areaM2,
-        c.vacant ? 'V' : 'R', c.dealingNumber ?? null,
-        adjustedRatePerSqm, adjustedLandValue, explanation,
+        i.disputeCase,
+        accountantId,
+        c.house ?? null,
+        c.street,
+        c.locality,
+        c.postcode ?? null,
+        c.zone ?? null,
+        c.contractDate,
+        c.purchasePrice,
+        c.areaM2,
+        c.vacant ? 'V' : 'R',
+        c.dealingNumber ?? null,
+        adjustedRatePerSqm,
+        adjustedLandValue,
+        explanation,
       ],
     );
   }
 
-  await dataSource.query(`DELETE FROM dispute_objection_reasons WHERE dispute_case_id = $1`, [i.disputeCase]);
+  await dataSource.query(
+    `DELETE FROM dispute_objection_reasons WHERE dispute_case_id = $1`,
+    [i.disputeCase],
+  );
   for (const g of p.grounds) {
     await dataSource.query(
       `INSERT INTO dispute_objection_reasons
@@ -451,16 +581,25 @@ export async function seedRptScenario(
           verification_status, analysis, evidence_files, run_id)
        VALUES (gen_random_uuid(), $1,$2,$3,$4,$5,$6,$7,$8,$9,$10::jsonb,$11)`,
       [
-        i.disputeCase, g.groundNumber, g.label, g.isTick,
-        g.concessionType, g.concessionClassification, g.concessionTypeNote,
-        g.verificationStatus, g.analysis,
+        i.disputeCase,
+        g.groundNumber,
+        g.label,
+        g.isTick,
+        g.concessionType,
+        g.concessionClassification,
+        g.concessionTypeNote,
+        g.verificationStatus,
+        g.analysis,
         g.evidenceFiles ? JSON.stringify(g.evidenceFiles) : null,
         p.seq,
       ],
     );
   }
 
-  await dataSource.query(`DELETE FROM dispute_evidence_issues WHERE dispute_case_id = $1`, [i.disputeCase]);
+  await dataSource.query(
+    `DELETE FROM dispute_evidence_issues WHERE dispute_case_id = $1`,
+    [i.disputeCase],
+  );
   for (const e of p.evidenceIssues) {
     await dataSource.query(
       `INSERT INTO dispute_evidence_issues
@@ -468,8 +607,13 @@ export async function seedRptScenario(
           trigger, text_box_content, documents_to_attach, run_id)
        VALUES (gen_random_uuid(), $1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9)`,
       [
-        i.disputeCase, e.issueType, e.isTick, e.confidence ?? null, e.verificationStatus ?? null,
-        e.trigger ?? null, e.textBoxContent ?? null,
+        i.disputeCase,
+        e.issueType,
+        e.isTick,
+        e.confidence ?? null,
+        e.verificationStatus ?? null,
+        e.trigger ?? null,
+        e.textBoxContent ?? null,
         e.documentsToAttach ? JSON.stringify(e.documentsToAttach) : null,
         p.seq,
       ],
@@ -506,7 +650,7 @@ const RPT_B1: RptScenarioParams = {
     analysis:
       "Independent CPV Valuer's Report (10 July 2025) assesses land value at $540,000 against " +
       "VG's $620,000. Two independently-sourced saving estimates are on file for this scenario " +
-      "and both must be transcribed exactly as their source states, without reconciling them: " +
+      'and both must be transcribed exactly as their source states, without reconciling them: ' +
       "the accountant's preliminary intake note states an annual saving of approximately $9,200 " +
       '— use this figure verbatim in the executive summary. A later, separate financial-' +
       'scenarios worksheet recalculates the same scenario at approximately $7,800 — use this ' +
@@ -529,7 +673,7 @@ const RPT_B2: RptScenarioParams = {
       "An independent CPV valuer's rate-analysis note is on file and must be transcribed " +
       'verbatim into cpv.rate_analysis: "The adopted rate of $1,208/m² reflects the comparable ' +
       'midpoint of $1,164/m² adjusted downward for site-specific constraints." Adopt the CPV ' +
-      'method value of $580,000 for the 480 m² lot (= $1,208/m²) to match this valuer\'s stated ' +
+      "method value of $580,000 for the 480 m² lot (= $1,208/m²) to match this valuer's stated " +
       "rate, and reproduce the valuer's own wording in cpv.rate_analysis exactly as quoted.",
     evidenceFiles: [rptIds(3).cpvDoc],
   })),
@@ -681,8 +825,10 @@ const RPT_B12: RptScenarioParams = {
       isTick: true,
       confidence: 'MEDIUM',
       verificationStatus: 'AI_DETECTED_UNVERIFIED',
-      trigger: 'NSW Flood Data Portal — 1-in-100-year flood extent intersects the southern boundary of the lot',
-      textBoxContent: 'Property partially within mapped flood extent; status unverified pending council Section 10.7 flood certificate.',
+      trigger:
+        'NSW Flood Data Portal — 1-in-100-year flood extent intersects the southern boundary of the lot',
+      textBoxContent:
+        'Property partially within mapped flood extent; status unverified pending council Section 10.7 flood certificate.',
       documentsToAttach: null,
     },
   ],
@@ -699,7 +845,7 @@ const RPT_B12: RptScenarioParams = {
     concessionClassification: null,
     concessionTypeNote: null,
     analysis:
-      "Site inspection note (on file — reflect this characterisation in hbu.statement or a " +
+      'Site inspection note (on file — reflect this characterisation in hbu.statement or a ' +
       'weaknesses[].argument): "The flood constraint affecting this property is demonstrably ' +
       'established," notwithstanding that its verification status is recorded as unverified.',
     evidenceFiles: null,
@@ -708,22 +854,41 @@ const RPT_B12: RptScenarioParams = {
 
 // ─── Main export ─────────────────────────────────────────────────────────────
 
-export async function seedValuationReportTests(dataSource: DataSource): Promise<void> {
+export async function seedValuationReportTests(
+  dataSource: DataSource,
+): Promise<void> {
   const userRepo = dataSource.getRepository(User);
   const accountant = await userRepo.findOneBy({ email: ACCOUNTANT_EMAIL });
   if (!accountant) {
-    throw new Error(`[ValuationReportTestSeeder] "${ACCOUNTANT_EMAIL}" not found — run seedUsers() first.`);
+    throw new Error(
+      `[ValuationReportTestSeeder] "${ACCOUNTANT_EMAIL}" not found — run seedUsers() first.`,
+    );
   }
 
   const clientRepo = dataSource.getRepository(Client);
-  logger.log('\n── Valuation report generation tests: Fixture A + B1-B12 ───────');
+  logger.log(
+    '\n── Valuation report generation tests: Fixture A + B1-B12 ───────',
+  );
 
   for (const scenario of [
-    RPT_A, RPT_B1, RPT_B2, RPT_B3, RPT_B4, RPT_B5, RPT_B6,
-    RPT_B7, RPT_B8, RPT_B9, RPT_B10, RPT_B11, RPT_B12,
+    RPT_A,
+    RPT_B1,
+    RPT_B2,
+    RPT_B3,
+    RPT_B4,
+    RPT_B5,
+    RPT_B6,
+    RPT_B7,
+    RPT_B8,
+    RPT_B9,
+    RPT_B10,
+    RPT_B11,
+    RPT_B12,
   ]) {
     await seedRptScenario(dataSource, clientRepo, accountant.id, scenario);
   }
 
-  logger.log('Valuation report generation test seeding complete — 13 scenarios seeded.');
+  logger.log(
+    'Valuation report generation test seeding complete — 13 scenarios seeded.',
+  );
 }

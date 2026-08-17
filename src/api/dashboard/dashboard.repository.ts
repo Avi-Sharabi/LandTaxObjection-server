@@ -1,21 +1,26 @@
 import { Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Between, IsNull, LessThan, MoreThanOrEqual, Not, In, Repository } from 'typeorm';
-import { DisputeCase, DisputeStatus } from '../dispute-cases/entities/dispute-case.entity';
+import {
+  Between,
+  IsNull,
+  LessThan,
+  MoreThanOrEqual,
+  Not,
+  In,
+  Repository,
+} from 'typeorm';
+import { DisputeCase } from '../dispute-cases/entities/dispute-case.entity';
+import { DASHBOARD_INACTIVE_STATUSES } from '../dispute-cases/dispute-status';
 import { DeadlineRiskCaseDto } from './dto/dashboard-response.dto';
-
-const TERMINAL_STATUSES: DisputeStatus[] = [
-  DisputeStatus.CLOSED,
-  DisputeStatus.CLOSED_NO_OBJECTION,
-  DisputeStatus.VG_APPROVED,
-  DisputeStatus.VG_DECLINED,
-];
 
 const DEADLINE_RISK_LIMIT = 8;
 
+// Only case_closed is excluded. vg_agreed is deliberately still ACTIVE: agreeing the objection
+// leaves real work outstanding (fee, invoice, closing the file), so the case belongs on these
+// counters until it is actually closed.
 const ACTIVE_CASE_WHERE = {
   deleted_at: IsNull(),
-  status: Not(In(TERMINAL_STATUSES)),
+  status: Not(In(DASHBOARD_INACTIVE_STATUSES)),
 };
 
 @Injectable()
@@ -29,7 +34,10 @@ export class DashboardRepository {
     return this.repo.count({ where: ACTIVE_CASE_WHERE });
   }
 
-  async getDeadlineCounts(): Promise<{ due_this_week_count: number; overdue_count: number }> {
+  async getDeadlineCounts(): Promise<{
+    due_this_week_count: number;
+    overdue_count: number;
+  }> {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
@@ -38,8 +46,15 @@ export class DashboardRepository {
     weekEnd.setHours(23, 59, 59, 999);
 
     const [due_this_week_count, overdue_count] = await Promise.all([
-      this.repo.count({ where: { ...ACTIVE_CASE_WHERE, statutory_deadline: Between(today, weekEnd) } }),
-      this.repo.count({ where: { ...ACTIVE_CASE_WHERE, statutory_deadline: LessThan(today) } }),
+      this.repo.count({
+        where: {
+          ...ACTIVE_CASE_WHERE,
+          statutory_deadline: Between(today, weekEnd),
+        },
+      }),
+      this.repo.count({
+        where: { ...ACTIVE_CASE_WHERE, statutory_deadline: LessThan(today) },
+      }),
     ]);
 
     return { due_this_week_count, overdue_count };
@@ -47,7 +62,10 @@ export class DashboardRepository {
 
   async getDeadlineRiskCases(): Promise<DeadlineRiskCaseDto[]> {
     const cases = await this.repo.find({
-      where: { ...ACTIVE_CASE_WHERE, statutory_deadline: MoreThanOrEqual(new Date()) },
+      where: {
+        ...ACTIVE_CASE_WHERE,
+        statutory_deadline: MoreThanOrEqual(new Date()),
+      },
       relations: { property: true, client: true },
       order: { statutory_deadline: 'ASC' },
       take: DEADLINE_RISK_LIMIT,
@@ -56,7 +74,9 @@ export class DashboardRepository {
     return cases.map((dc) => ({
       id: dc.id,
       case_reference: dc.case_reference,
-      statutory_deadline: dc.statutory_deadline ? new Date(dc.statutory_deadline).toISOString() : null,
+      statutory_deadline: dc.statutory_deadline
+        ? new Date(dc.statutory_deadline).toISOString()
+        : null,
       property_address: dc.property.address,
       client_name: dc.client.name,
     }));
