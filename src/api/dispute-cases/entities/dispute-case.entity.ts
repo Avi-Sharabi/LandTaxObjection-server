@@ -78,6 +78,7 @@ export class DisputeCase {
   @Column({ type: 'text', nullable: false, unique: true })
   case_reference: string;
 
+  @Index('idx_dispute_cases_client')
   @Column({ type: 'uuid', nullable: false, name: 'client_id' })
   client_id: string;
 
