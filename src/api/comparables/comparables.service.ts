@@ -13,10 +13,7 @@ import { CreateComparableDto } from './dto/create-comparable.dto';
 import { ComparableResponseDto } from './dto/comparable-response.dto';
 import { GenerateComparableSalesDto } from './dto/generate-comparable-sales.dto';
 import { FutureSaleDateException } from './exceptions/future-sale-date.exception';
-import {
-  InsufficientComparablesException,
-  MINIMUM_COMPARABLES,
-} from './exceptions/insufficient-comparables.exception';
+import { MINIMUM_COMPARABLES } from './entities/comparable-sale.entity';
 import { DisputeCaseNotFoundException } from './exceptions/dispute-case-not-found.exception';
 import { LlmTruncationException } from './exceptions/llm-truncation.exception';
 import { LlmToolUseException } from './exceptions/llm-tool-use.exception';
@@ -37,7 +34,6 @@ import {
   isVacantLandRow,
 } from './candidate-stratification.util';
 import { stripTrailingPostcode } from '../../common/utils/address-parser.util';
-
 
 // Raised from 20 — a flat cap combined with each tier's own `ORDER BY contract_date DESC
 // LIMIT N` meant the candidate pool was always "the N most recent same-suburb sales", never a
@@ -158,8 +154,8 @@ const RANKED_LAST_RESORT_SIZE_DEVIATION_CAP = 3;
 
 // Four-band time treatment replacing the old single 12-month cliff. Thresholds are months
 // between contract_date and the subject's valuation date.
-const TIME_BAND_FRESH_MAX_MONTHS = 6;     // 0-6mo: use as-is, no adjustment
-const TIME_BAND_RECENT_MAX_MONTHS = 12;   // 6-12mo: minor adjustment
+const TIME_BAND_FRESH_MAX_MONTHS = 6; // 0-6mo: use as-is, no adjustment
+const TIME_BAND_RECENT_MAX_MONTHS = 12; // 6-12mo: minor adjustment
 const TIME_BAND_ADJUSTED_MAX_MONTHS = 18; // 12-18mo: full adjustment ("adjustment required")
 // >18mo: 'last_resort' — same continued per-month rate as the 12-18mo band; the only thing that
 // changes for this band is the SELECTION preference below, not the math.
@@ -169,8 +165,9 @@ const TIME_BAND_MINOR_ADJUSTMENT_FRACTION = 0.4; // dampens the 6-12mo band's ad
 // Selection-preference order (freshest first) — see selectByTimeBandPreference. Mirrors the
 // existing geographic round-widening principle ("only widen if still short") but applied WITHIN
 // a single round's auto-include step, working with the bands computed above.
-const TIME_BAND_PRIORITY_ORDER: Array<'fresh' | 'recent' | 'adjusted' | 'last_resort'> =
-  ['fresh', 'recent', 'adjusted', 'last_resort'];
+const TIME_BAND_PRIORITY_ORDER: Array<
+  'fresh' | 'recent' | 'adjusted' | 'last_resort'
+> = ['fresh', 'recent', 'adjusted', 'last_resort'];
 
 type SizeTier = 'preferred' | 'widened' | 'extrapolated';
 
@@ -182,9 +179,16 @@ type SizeTier = 'preferred' | 'widened' | 'extrapolated';
 // strict ±30% band. 'last_resort' never pairs with 'widened' here: a stale-AND-oversized
 // comparable isn't better evidence just because it exists — compounding a size extrapolation with
 // a date extrapolation is exactly what this ladder is designed to avoid.
-const SELECTION_RUNGS: Array<{ timeBand: typeof TIME_BAND_PRIORITY_ORDER[number]; sizeTier: SizeTier }> = [
-  ...TIME_BAND_PRIORITY_ORDER.filter((b) => b !== 'last_resort').map((timeBand) => ({ timeBand, sizeTier: 'preferred' as const })),
-  ...TIME_BAND_PRIORITY_ORDER.filter((b) => b !== 'last_resort').map((timeBand) => ({ timeBand, sizeTier: 'widened' as const })),
+const SELECTION_RUNGS: Array<{
+  timeBand: (typeof TIME_BAND_PRIORITY_ORDER)[number];
+  sizeTier: SizeTier;
+}> = [
+  ...TIME_BAND_PRIORITY_ORDER.filter((b) => b !== 'last_resort').map(
+    (timeBand) => ({ timeBand, sizeTier: 'preferred' as const }),
+  ),
+  ...TIME_BAND_PRIORITY_ORDER.filter((b) => b !== 'last_resort').map(
+    (timeBand) => ({ timeBand, sizeTier: 'widened' as const }),
+  ),
   { timeBand: 'last_resort' as const, sizeTier: 'preferred' as const },
   // 'extrapolated' — ranked-last-resort candidates outside even the widened ±50% band (see
   // selectRankedLastResortCandidates) — sits dead last across every time band, including
@@ -192,15 +196,21 @@ const SELECTION_RUNGS: Array<{ timeBand: typeof TIME_BAND_PRIORITY_ORDER[number]
   // "stale" with "extrapolated" here is acceptable: this rung only ever gets consulted once every
   // rung above has already failed to fill the case to MINIMUM_COMPARABLES, so there is no better
   // evidence being displaced by including it.
-  ...TIME_BAND_PRIORITY_ORDER.map((timeBand) => ({ timeBand, sizeTier: 'extrapolated' as const })),
+  ...TIME_BAND_PRIORITY_ORDER.map((timeBand) => ({
+    timeBand,
+    sizeTier: 'extrapolated' as const,
+  })),
 ];
 
 // 'insufficient': below MINIMUM_COMPARABLES regardless of quality — a hard-floor breach, distinct
 // from mediocre-but-sufficient evidence. 'strong': at/above TARGET_COMPARABLES AND idealRatio
 // clears IDEAL_EVIDENCE_RATIO_THRESHOLD. 'adequate': everything else (count met but weak quality,
 // or between the minimum and target counts).
-type EvidenceConfidence = { tier: 'strong' | 'adequate' | 'insufficient'; idealRatio: number; count: number };
-
+type EvidenceConfidence = {
+  tier: 'strong' | 'adequate' | 'insufficient';
+  idealRatio: number;
+  count: number;
+};
 
 @Injectable()
 export class ComparablesService implements OnModuleInit {
@@ -220,35 +230,54 @@ export class ComparablesService implements OnModuleInit {
     private readonly skillRegistry: SkillRegistryService,
     private readonly anthropic: AnthropicService,
     private readonly geocoding: GeocodingService,
-  ) { }
+  ) {}
 
   private logEvent(context: string, data: Record<string, unknown>): void {
-    this.logger.log(JSON.stringify({ context, ...data, ts: new Date().toISOString() }));
+    this.logger.log(
+      JSON.stringify({ context, ...data, ts: new Date().toISOString() }),
+    );
   }
 
   async onModuleInit(): Promise<void> {
-    this.skillContent = this.skillRegistry.getSkillContent('nsw-land-tax-comparables');
+    this.skillContent = this.skillRegistry.getSkillContent(
+      'nsw-land-tax-comparables',
+    );
 
-    const schemaRows: { column_name: string; data_type: string; is_nullable: string }[] =
-      await this.dataSource.query(
-        `SELECT column_name, data_type, is_nullable
+    const schemaRows: {
+      column_name: string;
+      data_type: string;
+      is_nullable: string;
+    }[] = await this.dataSource.query(
+      `SELECT column_name, data_type, is_nullable
          FROM information_schema.columns
          WHERE table_schema = 'public' AND table_name = 'property_sales_raw'
          ORDER BY ordinal_position`,
-      );
+    );
     this.schemaBlock = schemaRows
-      .map((r) => `  ${r.column_name} (${r.data_type}${r.is_nullable === 'YES' ? ', nullable' : ''})`)
+      .map(
+        (r) =>
+          `  ${r.column_name} (${r.data_type}${r.is_nullable === 'YES' ? ', nullable' : ''})`,
+      )
       .join('\n');
-    this.logger.log(`[INIT] Skill loaded (${this.skillContent.length} chars), schema loaded (${schemaRows.length} columns)`);
+    this.logger.log(
+      `[INIT] Skill loaded (${this.skillContent.length} chars), schema loaded (${schemaRows.length} columns)`,
+    );
 
     try {
       const centroids = await this.centroidsRepository.find();
       for (const c of centroids) {
-        this.centroidCache.set(c.locality, { lat: Number(c.lat), lng: Number(c.lng) });
+        this.centroidCache.set(c.locality, {
+          lat: Number(c.lat),
+          lng: Number(c.lng),
+        });
       }
-      this.logger.log(`[INIT] Loaded ${centroids.length} NSW locality centroids`);
+      this.logger.log(
+        `[INIT] Loaded ${centroids.length} NSW locality centroids`,
+      );
     } catch (err) {
-      this.logger.warn(`[INIT] Failed to load locality centroids: ${(err as Error).message}`);
+      this.logger.warn(
+        `[INIT] Failed to load locality centroids: ${(err as Error).message}`,
+      );
     }
   }
 
@@ -272,11 +301,28 @@ export class ComparablesService implements OnModuleInit {
       const coords = await this.geocoding.geocode(`${key}, NSW, Australia`);
       this.centroidCache.set(key, coords);
       this.centroidsRepository
-        .upsert({ locality: key, lat: coords.lat, lng: coords.lng, source: 'arcgis', geocoded_at: new Date() }, ['locality'])
-        .catch((err) => this.logger.warn(`[GENERATE] Failed to persist centroid for "${key}": ${(err as Error).message}`));
+        .upsert(
+          {
+            locality: key,
+            lat: coords.lat,
+            lng: coords.lng,
+            source: 'arcgis',
+            geocoded_at: new Date(),
+          },
+          ['locality'],
+        )
+        .catch((err) =>
+          this.logger.warn(
+            `[GENERATE] Failed to persist centroid for "${key}": ${(err as Error).message}`,
+          ),
+        );
       return coords;
     } catch (err) {
-      this.logEvent('GENERATE.centroid_unresolved', { correlationId, locality: key, error: (err as Error).message });
+      this.logEvent('GENERATE.centroid_unresolved', {
+        correlationId,
+        locality: key,
+        error: (err as Error).message,
+      });
       return null;
     }
   }
@@ -309,11 +355,19 @@ export class ComparablesService implements OnModuleInit {
     let dropped = 0;
     for (const candidate of candidates) {
       const key = String(candidate.dealing_number ?? candidate.id);
-      if (seenDealingNumbers.has(key)) { dropped++; continue; }
+      if (seenDealingNumbers.has(key)) {
+        dropped++;
+        continue;
+      }
       seenDealingNumbers.add(key);
       kept.push(candidate);
     }
-    this.logEvent('GENERATE.dealing_number_dedup', { correlationId, input: candidates.length, kept: kept.length, dropped });
+    this.logEvent('GENERATE.dealing_number_dedup', {
+      correlationId,
+      input: candidates.length,
+      kept: kept.length,
+      dropped,
+    });
     return kept;
   }
 
@@ -329,7 +383,9 @@ export class ComparablesService implements OnModuleInit {
     correlationId?: string,
   ): Promise<Record<string, unknown>[]> {
     if (!subjectCentroid) {
-      this.logger.warn('[GENERATE] Subject centroid could not be resolved — skipping distance gate for this round');
+      this.logger.warn(
+        '[GENERATE] Subject centroid could not be resolved — skipping distance gate for this round',
+      );
       return candidates;
     }
 
@@ -337,12 +393,20 @@ export class ComparablesService implements OnModuleInit {
     let droppedTooFar = 0;
     let droppedUnresolved = 0;
     for (const candidate of candidates) {
-      const centroid = await this.resolveCentroid(candidate.property_locality as string, correlationId);
+      const centroid = await this.resolveCentroid(
+        candidate.property_locality as string,
+        correlationId,
+      );
       if (!centroid) {
         droppedUnresolved++;
         continue;
       }
-      const distanceKm = haversineDistanceKm(subjectCentroid.lat, subjectCentroid.lng, centroid.lat, centroid.lng);
+      const distanceKm = haversineDistanceKm(
+        subjectCentroid.lat,
+        subjectCentroid.lng,
+        centroid.lat,
+        centroid.lng,
+      );
       if (distanceKm > maxKm) {
         droppedTooFar++;
         continue;
@@ -378,15 +442,26 @@ export class ComparablesService implements OnModuleInit {
     const kept: Record<string, unknown>[] = [];
     let dropped = 0;
     for (const candidate of candidates) {
-      const contractDate = candidate.contract_date ? new Date(candidate.contract_date as string) : null;
-      if (contractDate && !isNaN(contractDate.getTime()) && contractDate > valuationDate) {
+      const contractDate = candidate.contract_date
+        ? new Date(candidate.contract_date as string)
+        : null;
+      if (
+        contractDate &&
+        !isNaN(contractDate.getTime()) &&
+        contractDate > valuationDate
+      ) {
         dropped++;
         continue;
       }
       kept.push(candidate);
     }
 
-    this.logEvent('GENERATE.future_date_filter', { correlationId, input: candidates.length, kept: kept.length, dropped });
+    this.logEvent('GENERATE.future_date_filter', {
+      correlationId,
+      input: candidates.length,
+      kept: kept.length,
+      dropped,
+    });
     return kept;
   }
 
@@ -408,14 +483,22 @@ export class ComparablesService implements OnModuleInit {
     const kept: Record<string, unknown>[] = [];
     let dropped = 0;
     for (const candidate of candidates) {
-      if (!candidate.zoning || zoningFamily(candidate.zoning as string) !== subjectFamily) {
+      if (
+        !candidate.zoning ||
+        zoningFamily(candidate.zoning as string) !== subjectFamily
+      ) {
         dropped++;
         continue;
       }
       kept.push(candidate);
     }
 
-    this.logEvent('GENERATE.zoning_class_filter', { correlationId, input: candidates.length, kept: kept.length, dropped });
+    this.logEvent('GENERATE.zoning_class_filter', {
+      correlationId,
+      input: candidates.length,
+      kept: kept.length,
+      dropped,
+    });
     return kept;
   }
 
@@ -435,7 +518,9 @@ export class ComparablesService implements OnModuleInit {
     const kept: Record<string, unknown>[] = [];
     let dropped = 0;
     for (const candidate of candidates) {
-      const candidateZoning = String(candidate.zoning ?? '').trim().toUpperCase();
+      const candidateZoning = String(candidate.zoning ?? '')
+        .trim()
+        .toUpperCase();
       // A missing/blank zoning is NOT the same as an exact match — we can't verify compatibility
       // at all without knowing the zoning, which is a stronger reason to exclude than "compatible
       // but needs a written justification." Previously `candidateZoning === ''` made
@@ -446,7 +531,10 @@ export class ComparablesService implements OnModuleInit {
         continue;
       }
       const isCompatibleTier = candidateZoning !== subjectZoning;
-      const justification = typeof candidate.zoning_justification === 'string' ? candidate.zoning_justification.trim() : '';
+      const justification =
+        typeof candidate.zoning_justification === 'string'
+          ? candidate.zoning_justification.trim()
+          : '';
       if (isCompatibleTier && !justification) {
         dropped++;
         continue;
@@ -454,7 +542,12 @@ export class ComparablesService implements OnModuleInit {
       kept.push(candidate);
     }
 
-    this.logEvent('GENERATE.zoning_justification_filter', { correlationId, input: candidates.length, kept: kept.length, dropped });
+    this.logEvent('GENERATE.zoning_justification_filter', {
+      correlationId,
+      input: candidates.length,
+      kept: kept.length,
+      dropped,
+    });
     return kept;
   }
 
@@ -476,7 +569,8 @@ export class ComparablesService implements OnModuleInit {
     let dropped = 0;
     for (const candidate of candidates) {
       const interestPercent = candidate.interest_of_sale_percent;
-      const parsedInterest = interestPercent != null ? Number(interestPercent) : null;
+      const parsedInterest =
+        interestPercent != null ? Number(interestPercent) : null;
       // A malformed (non-numeric, e.g. a corrupt import value) or negative value is not a
       // documented "whole interest" case — only null/0 are. Previously `Number(x) > 0` was false
       // for both NaN and negative values, so they fell through as if confirmed whole-interest;
@@ -484,8 +578,11 @@ export class ComparablesService implements OnModuleInit {
       // genuine partial-interest sale (matches dedupeByDealingNumber's own, stricter treatment of
       // the same malformed value in candidate-stratification.util.ts, which the two used to
       // disagree on).
-      const isUnverifiable = parsedInterest != null && (!Number.isFinite(parsedInterest) || parsedInterest < 0);
-      const isPartialInterest = isUnverifiable || (parsedInterest != null && parsedInterest > 0);
+      const isUnverifiable =
+        parsedInterest != null &&
+        (!Number.isFinite(parsedInterest) || parsedInterest < 0);
+      const isPartialInterest =
+        isUnverifiable || (parsedInterest != null && parsedInterest > 0);
       if (isPartialInterest) {
         dropped++;
         continue;
@@ -493,7 +590,12 @@ export class ComparablesService implements OnModuleInit {
       kept.push(candidate);
     }
 
-    this.logEvent('GENERATE.partial_interest_filter', { correlationId, input: candidates.length, kept: kept.length, dropped });
+    this.logEvent('GENERATE.partial_interest_filter', {
+      correlationId,
+      input: candidates.length,
+      kept: kept.length,
+      dropped,
+    });
     return kept;
   }
 
@@ -524,8 +626,10 @@ export class ComparablesService implements OnModuleInit {
       }
       if (candidate.area_type === 'H') area = Math.round(area * 10000);
 
-      const lowerBound = subject.landAreaSqm * (1 - SIZE_BAND_TOLERANCE_FRACTION);
-      const upperBound = subject.landAreaSqm * (1 + SIZE_BAND_TOLERANCE_FRACTION);
+      const lowerBound =
+        subject.landAreaSqm * (1 - SIZE_BAND_TOLERANCE_FRACTION);
+      const upperBound =
+        subject.landAreaSqm * (1 + SIZE_BAND_TOLERANCE_FRACTION);
       if (area < lowerBound || area > upperBound) {
         dropped++;
         continue;
@@ -534,7 +638,10 @@ export class ComparablesService implements OnModuleInit {
     }
 
     this.logEvent('GENERATE.size_band_filter', {
-      correlationId, input: candidates.length, kept: kept.length, dropped,
+      correlationId,
+      input: candidates.length,
+      kept: kept.length,
+      dropped,
       toleranceFraction: SIZE_BAND_TOLERANCE_FRACTION,
     });
     return kept;
@@ -559,7 +666,8 @@ export class ComparablesService implements OnModuleInit {
     if (candidate.area_type === 'H') area = Math.round(area * 10000);
 
     const within = (fraction: number) =>
-      area! >= subject.landAreaSqm! * (1 - fraction) && area! <= subject.landAreaSqm! * (1 + fraction);
+      area >= subject.landAreaSqm! * (1 - fraction) &&
+      area <= subject.landAreaSqm! * (1 + fraction);
 
     if (within(SIZE_BAND_TOLERANCE_FRACTION)) return 'preferred';
     if (within(SIZE_BAND_WIDENED_TOLERANCE_FRACTION)) return 'widened';
@@ -588,7 +696,8 @@ export class ComparablesService implements OnModuleInit {
     target: number,
     correlationId?: string,
   ): Record<string, unknown>[] {
-    const rungKey = (timeBand: string, sizeTier: string) => `${timeBand}:${sizeTier}`;
+    const rungKey = (timeBand: string, sizeTier: string) =>
+      `${timeBand}:${sizeTier}`;
     const byRung = new Map<string, Record<string, unknown>[]>();
     for (const c of candidates) {
       const timeBand = String(c.time_band ?? 'last_resort');
@@ -602,7 +711,8 @@ export class ComparablesService implements OnModuleInit {
     let runningTotal = currentTotal;
     for (const rung of SELECTION_RUNGS) {
       if (runningTotal >= target) break;
-      const rungCandidates = byRung.get(rungKey(rung.timeBand, rung.sizeTier)) ?? [];
+      const rungCandidates =
+        byRung.get(rungKey(rung.timeBand, rung.sizeTier)) ?? [];
       included.push(...rungCandidates);
       runningTotal += rungCandidates.length;
     }
@@ -614,7 +724,10 @@ export class ComparablesService implements OnModuleInit {
       currentTotal,
       target,
       rungCounts: Object.fromEntries(
-        SELECTION_RUNGS.map((r) => [rungKey(r.timeBand, r.sizeTier), (byRung.get(rungKey(r.timeBand, r.sizeTier)) ?? []).length]),
+        SELECTION_RUNGS.map((r) => [
+          rungKey(r.timeBand, r.sizeTier),
+          (byRung.get(rungKey(r.timeBand, r.sizeTier)) ?? []).length,
+        ]),
       ),
     });
 
@@ -642,17 +755,28 @@ export class ComparablesService implements OnModuleInit {
       // excluded here, unlike 'widened' (see IDEAL_EVIDENCE_RATIO_THRESHOLD's doc comment on why
       // size_tier is otherwise ignored) — this tier exists specifically to never be mistaken for
       // strong evidence, regardless of how MINIMUM_COMPARABLES/TARGET_COMPARABLES are tuned later.
-      return (timeBand === 'fresh' || timeBand === 'recent')
-        && zoningConfidence !== 'different_class_last_resort'
-        && c.size_tier !== 'extrapolated';
+      return (
+        (timeBand === 'fresh' || timeBand === 'recent') &&
+        zoningConfidence !== 'different_class_last_resort' &&
+        c.size_tier !== 'extrapolated'
+      );
     }).length;
     const idealRatio = count > 0 ? idealCount / count : 0;
     const tier: EvidenceConfidence['tier'] =
-      count < minimum ? 'insufficient'
-      : (count >= target && idealRatio >= IDEAL_EVIDENCE_RATIO_THRESHOLD) ? 'strong'
-      : 'adequate';
+      count < minimum
+        ? 'insufficient'
+        : count >= target && idealRatio >= IDEAL_EVIDENCE_RATIO_THRESHOLD
+          ? 'strong'
+          : 'adequate';
 
-    this.logEvent('GENERATE.evidence_confidence', { correlationId, tier, idealRatio, count, target, minimum });
+    this.logEvent('GENERATE.evidence_confidence', {
+      correlationId,
+      tier,
+      idealRatio,
+      count,
+      target,
+      minimum,
+    });
     return { tier, idealRatio, count };
   }
 
@@ -663,8 +787,18 @@ export class ComparablesService implements OnModuleInit {
     accumulatedPool: Record<string, unknown>[],
     correlationId: string | undefined,
   ): { selected: Record<string, unknown>[]; confidence: EvidenceConfidence } {
-    const selected = this.selectByTimeBandPreference(accumulatedPool, 0, TARGET_COMPARABLES, correlationId);
-    const confidence = this.computeEvidenceConfidence(selected, TARGET_COMPARABLES, MINIMUM_COMPARABLES, correlationId);
+    const selected = this.selectByTimeBandPreference(
+      accumulatedPool,
+      0,
+      TARGET_COMPARABLES,
+      correlationId,
+    );
+    const confidence = this.computeEvidenceConfidence(
+      selected,
+      TARGET_COMPARABLES,
+      MINIMUM_COMPARABLES,
+      correlationId,
+    );
     return { selected, confidence };
   }
 
@@ -697,32 +831,59 @@ export class ComparablesService implements OnModuleInit {
     if (vgRate === null || subject.zoning === 'unknown') return [];
     const subjectZoning = subject.zoning.trim().toUpperCase();
 
-    const dateFiltered = this.filterFutureDatedCandidates(pool, subject, correlationId);
-    const wholeInterestOnly = this.filterPartialInterestSales(dateFiltered, correlationId);
+    const dateFiltered = this.filterFutureDatedCandidates(
+      pool,
+      subject,
+      correlationId,
+    );
+    const wholeInterestOnly = this.filterPartialInterestSales(
+      dateFiltered,
+      correlationId,
+    );
 
     let sizeExcludedCount = 0;
     const sizeClassified: Record<string, unknown>[] = [];
     for (const c of wholeInterestOnly) {
       const size_tier = this.classifySizeTier(c, subject);
-      if (size_tier === 'excluded') { sizeExcludedCount++; continue; }
+      if (size_tier === 'excluded') {
+        sizeExcludedCount++;
+        continue;
+      }
       sizeClassified.push({ ...c, size_tier });
     }
 
     const exactZoningMatches = sizeClassified.filter(
-      (c) => String(c.zoning ?? '').trim().toUpperCase() === subjectZoning,
+      (c) =>
+        String(c.zoning ?? '')
+          .trim()
+          .toUpperCase() === subjectZoning,
     );
 
     const autoIncluded = exactZoningMatches
-      .map((c): Record<string, unknown> => ({ ...c, ...this.computeAdjustedFields(c, subject, null) }))
-      .filter((item) => item.adjusted_rate_per_sqm !== null && Number(item.adjusted_rate_per_sqm) <= vgRate)
-      .filter((item) => !(item.size_tier === 'widened' && item.time_band === 'last_resort'));
+      .map(
+        (c): Record<string, unknown> => ({
+          ...c,
+          ...this.computeAdjustedFields(c, subject, null),
+        }),
+      )
+      .filter(
+        (item) =>
+          item.adjusted_rate_per_sqm !== null &&
+          Number(item.adjusted_rate_per_sqm) <= vgRate,
+      )
+      .filter(
+        (item) =>
+          !(item.size_tier === 'widened' && item.time_band === 'last_resort'),
+      );
 
     this.logEvent('GENERATE.auto_included', {
       correlationId,
       poolSize: pool.length,
       exactZoningMatchCount: exactZoningMatches.length,
       autoIncludedCount: autoIncluded.length,
-      widenedTierIncludedCount: autoIncluded.filter((c) => c.size_tier === 'widened').length,
+      widenedTierIncludedCount: autoIncluded.filter(
+        (c) => c.size_tier === 'widened',
+      ).length,
       sizeExcludedCount,
     });
 
@@ -766,43 +927,79 @@ export class ComparablesService implements OnModuleInit {
     });
 
     const unresolved = deduped.filter((c) => !resolvedIds.has(String(c.id)));
-    const dateFiltered = this.filterFutureDatedCandidates(unresolved, subject, correlationId);
-    const wholeInterestOnly = this.filterPartialInterestSales(dateFiltered, correlationId);
+    const dateFiltered = this.filterFutureDatedCandidates(
+      unresolved,
+      subject,
+      correlationId,
+    );
+    const wholeInterestOnly = this.filterPartialInterestSales(
+      dateFiltered,
+      correlationId,
+    );
 
-    const subjectZoning = subject.zoning !== 'unknown' ? subject.zoning.trim().toUpperCase() : null;
+    const subjectZoning =
+      subject.zoning !== 'unknown' ? subject.zoning.trim().toUpperCase() : null;
 
     const scored = wholeInterestOnly
       .map((candidate) => {
         // rankedLastResort=true — adds the unconditional disclosure bullet in computeAdjustedFields'
         // explanation instead of relying on an LLM-authored zoning_justification (there is none here).
-        const adjusted = this.computeAdjustedFields(candidate, subject, null, true);
-        if (adjusted.adjusted_rate_per_sqm === null || Number(adjusted.adjusted_rate_per_sqm) > vgRate) return null;
+        const adjusted = this.computeAdjustedFields(
+          candidate,
+          subject,
+          null,
+          true,
+        );
+        if (
+          adjusted.adjusted_rate_per_sqm === null ||
+          Number(adjusted.adjusted_rate_per_sqm) > vgRate
+        )
+          return null;
 
         let area = candidate.area != null ? Number(candidate.area) : null;
         if (area == null) return null;
         if (candidate.area_type === 'H') area = Math.round(area * 10000);
         // Raw (uncapped) deviation is kept alongside for logging — GENERATE.ranked_last_resort
         // should show the real percentage even when the scoring term below clamps it.
-        const sizeDeviation = subject.landAreaSqm ? Math.abs(area - subject.landAreaSqm) / subject.landAreaSqm : 0;
-        const sizeDeviationScored = Math.min(RANKED_LAST_RESORT_SIZE_DEVIATION_CAP, sizeDeviation);
+        const sizeDeviation = subject.landAreaSqm
+          ? Math.abs(area - subject.landAreaSqm) / subject.landAreaSqm
+          : 0;
+        const sizeDeviationScored = Math.min(
+          RANKED_LAST_RESORT_SIZE_DEVIATION_CAP,
+          sizeDeviation,
+        );
 
         // Missing candidate zoning is always the conservative worst case (mirrors
         // computeAdjustedFields' zoning_confidence precedent below) — checked before the
         // subject-unknown case so the two functions never disagree on the same candidate.
-        const candidateZoning = String(candidate.zoning ?? '').trim().toUpperCase();
-        const zoningPenalty = !candidateZoning ? 1
-          : !subjectZoning ? 0
-          : candidateZoning === subjectZoning ? 0
-          : zoningFamily(candidateZoning) === zoningFamily(subjectZoning) ? 0.4
-          : 1;
+        const candidateZoning = String(candidate.zoning ?? '')
+          .trim()
+          .toUpperCase();
+        const zoningPenalty = !candidateZoning
+          ? 1
+          : !subjectZoning
+            ? 0
+            : candidateZoning === subjectZoning
+              ? 0
+              : zoningFamily(candidateZoning) === zoningFamily(subjectZoning)
+                ? 0.4
+                : 1;
 
-        const distanceKm = typeof candidate._distanceKm === 'number' ? candidate._distanceKm : null;
-        const distancePenalty = distanceKm != null ? Math.min(1, distanceKm / ROUND3_MAX_KM) : 1;
+        const distanceKm =
+          typeof candidate._distanceKm === 'number'
+            ? candidate._distanceKm
+            : null;
+        const distancePenalty =
+          distanceKm != null ? Math.min(1, distanceKm / ROUND3_MAX_KM) : 1;
 
-        const timePenalty = adjusted.time_band === 'fresh' ? 0
-          : adjusted.time_band === 'recent' ? 0.33
-          : adjusted.time_band === 'adjusted' ? 0.66
-          : 1;
+        const timePenalty =
+          adjusted.time_band === 'fresh'
+            ? 0
+            : adjusted.time_band === 'recent'
+              ? 0.33
+              : adjusted.time_band === 'adjusted'
+                ? 0.66
+                : 1;
 
         const score =
           RANKED_LAST_RESORT_SIZE_WEIGHT * sizeDeviationScored +
@@ -810,10 +1007,23 @@ export class ComparablesService implements OnModuleInit {
           RANKED_LAST_RESORT_DISTANCE_WEIGHT * distancePenalty +
           RANKED_LAST_RESORT_TIME_WEIGHT * timePenalty;
 
-        const withFields: Record<string, unknown> = { ...candidate, ...adjusted, size_tier: 'extrapolated' as const };
+        const withFields: Record<string, unknown> = {
+          ...candidate,
+          ...adjusted,
+          size_tier: 'extrapolated' as const,
+        };
         return { candidate: withFields, score, sizeDeviation, zoningPenalty };
       })
-      .filter((r): r is { candidate: Record<string, unknown>; score: number; sizeDeviation: number; zoningPenalty: number } => r !== null)
+      .filter(
+        (
+          r,
+        ): r is {
+          candidate: Record<string, unknown>;
+          score: number;
+          sizeDeviation: number;
+          zoningPenalty: number;
+        } => r !== null,
+      )
       .sort((a, b) => a.score - b.score);
 
     const selected = scored.slice(0, needed);
@@ -853,7 +1063,9 @@ export class ComparablesService implements OnModuleInit {
       district_code: dto.district_code ?? null,
       property_id: dto.property_id ?? null,
       sale_counter: dto.sale_counter ?? null,
-      download_datetime: dto.download_datetime ? new Date(dto.download_datetime) : null,
+      download_datetime: dto.download_datetime
+        ? new Date(dto.download_datetime)
+        : null,
       property_name: dto.property_name ?? null,
       property_unit_number: dto.property_unit_number ?? null,
       property_house_number: dto.property_house_number ?? null,
@@ -862,7 +1074,9 @@ export class ComparablesService implements OnModuleInit {
       property_post_code: dto.property_post_code ?? null,
       area: dto.area ?? null,
       contract_date: dto.contract_date ? new Date(dto.contract_date) : null,
-      settlement_date: dto.settlement_date ? new Date(dto.settlement_date) : null,
+      settlement_date: dto.settlement_date
+        ? new Date(dto.settlement_date)
+        : null,
       purchase_price: dto.purchase_price ?? null,
       zoning: dto.zoning ?? null,
       nature_of_property: dto.nature_of_property ?? null,
@@ -882,7 +1096,9 @@ export class ComparablesService implements OnModuleInit {
     return plainToInstance(ComparableResponseDto, saved);
   }
 
-  async findByApplicationId(disputeCaseId: string): Promise<ComparableResponseDto[]> {
+  async findByApplicationId(
+    disputeCaseId: string,
+  ): Promise<ComparableResponseDto[]> {
     await this.assertDisputeCaseExists(disputeCaseId);
 
     const comparables = await this.comparablesRepository.find({
@@ -892,26 +1108,19 @@ export class ComparablesService implements OnModuleInit {
     return plainToInstance(ComparableResponseDto, comparables);
   }
 
-  async findRawByDisputeCaseId(disputeCaseId: string): Promise<ComparableSale[]> {
+  async findRawByDisputeCaseId(
+    disputeCaseId: string,
+  ): Promise<ComparableSale[]> {
     return this.comparablesRepository.find({
       where: { dispute_case_id: disputeCaseId },
     });
   }
 
-  /**
-   * Gate check — throws InsufficientComparablesException if the dispute case
-   * has fewer than MINIMUM_COMPARABLES comparables.
-   * Call this before advancing a dispute case to the APPRAISAL status.
-   */
-  async assertMinimumComparables(disputeCaseId: string): Promise<void> {
-    const count = await this.comparablesRepository.count({
-      where: { dispute_case_id: disputeCaseId },
-    });
-
-    if (count < MINIMUM_COMPARABLES) {
-      throw new InsufficientComparablesException(count);
-    }
-  }
+  // assertMinimumComparables lived here to gate the retired advance-to-appraisal endpoint. The
+  // floor is now enforced as a PREDICATE inside DisputeStatusTransitionService.markAnalysed —
+  // which must never throw, because it runs inside a BullMQ job whose retry would duplicate
+  // comparables — and reported to the user as an INSUFFICIENT_COMPARABLES blocker on
+  // GET /dispute-cases/:id/transitions. A throwing gate has no caller left.
 
   async generateComparableSales(
     dto: GenerateComparableSalesDto,
@@ -920,22 +1129,30 @@ export class ComparablesService implements OnModuleInit {
   ): Promise<ComparableResponseDto[]> {
     const start = Date.now();
 
-    this.logEvent('GENERATE.start', { correlationId, disputeCaseId: dto.dispute_case_id });
+    this.logEvent('GENERATE.start', {
+      correlationId,
+      disputeCaseId: dto.dispute_case_id,
+    });
 
     const disputeCase = await this.disputeCasesRepository.findOne({
       where: { id: dto.dispute_case_id },
       relations: ['property', 'valuation_notice'],
     });
-    if (!disputeCase) throw new DisputeCaseNotFoundException(dto.dispute_case_id);
+    if (!disputeCase)
+      throw new DisputeCaseNotFoundException(dto.dispute_case_id);
 
     const subject = this.resolveSubjectContext(dto, disputeCase);
     this.logEvent('GENERATE.subject', { correlationId, subject });
 
-    const subjectCentroid = await this.resolveSubjectCentroid(subject, correlationId);
+    const subjectCentroid = await this.resolveSubjectCentroid(
+      subject,
+      correlationId,
+    );
 
-    const vgRate = subject.landAreaSqm && subject.landAreaSqm > 0
-      ? Math.round(subject.vgValueCurrent / subject.landAreaSqm)
-      : null;
+    const vgRate =
+      subject.landAreaSqm && subject.landAreaSqm > 0
+        ? Math.round(subject.vgValueCurrent / subject.landAreaSqm)
+        : null;
 
     // Union of every candidate id fetched by ANY round's SQL prefetch so far — fed to each
     // subsequent broadening round's excludeIds so it never re-fetches a row already considered.
@@ -963,62 +1180,155 @@ export class ComparablesService implements OnModuleInit {
     const allConsideredPool: Record<string, unknown>[] = [];
     let roundsRun = 0;
     let selected: Record<string, unknown>[] = [];
-    let confidence: EvidenceConfidence = { tier: 'insufficient', idealRatio: 0, count: 0 };
+    let confidence: EvidenceConfidence = {
+      tier: 'insufficient',
+      idealRatio: 0,
+      count: 0,
+    };
 
     // Round 1: suburb-scoped candidates, gated to genuinely nearby sales by real distance —
     // the SQL tiers (suburb/postcode/postcode-prefix) are a performance pre-filter only.
-    const round1Pool = await this.prefetchCandidateSales(subject, correlationId);
+    const round1Pool = await this.prefetchCandidateSales(
+      subject,
+      correlationId,
+    );
     for (const c of round1Pool) seenPoolIds.add(c.id);
-    const round1Deduped = this.excludeSeenDealingNumbers(round1Pool, seenDealingNumbers, correlationId);
-    const round1Geo = await this.filterByDistance(round1Deduped, subjectCentroid, ROUND1_MAX_KM, correlationId);
+    const round1Deduped = this.excludeSeenDealingNumbers(
+      round1Pool,
+      seenDealingNumbers,
+      correlationId,
+    );
+    const round1Geo = await this.filterByDistance(
+      round1Deduped,
+      subjectCentroid,
+      ROUND1_MAX_KM,
+      correlationId,
+    );
     allConsideredPool.push(...round1Geo);
     roundsRun++;
-    accumulatedPool.push(...(await this.gatherRoundCandidates(
-      round1Geo, subject, vgRate, ROUND1_MAX_KM, subjectCentroid, resolvedIds, correlationId, roundsRun,
-    )));
-    ({ selected, confidence } = this.previewSelection(accumulatedPool, correlationId));
+    accumulatedPool.push(
+      ...(await this.gatherRoundCandidates(
+        round1Geo,
+        subject,
+        vgRate,
+        ROUND1_MAX_KM,
+        subjectCentroid,
+        resolvedIds,
+        correlationId,
+        roundsRun,
+      )),
+    );
+    ({ selected, confidence } = this.previewSelection(
+      accumulatedPool,
+      correlationId,
+    ));
 
     // Round 2: broaden to postcode-prefix zone if confidence hasn't reached 'strong' yet — this
     // subsumes the old pure count-based check, since 'strong' already requires count >= target,
     // so a case that hit the target with weak (e.g. all last_resort) evidence keeps widening
     // instead of stopping early. Still gated by distance (a wider radius), since the broadened
     // SQL query drops the suburb constraint entirely.
-    if (vgRate !== null && roundsRun < MAX_ROUNDS && confidence.tier !== 'strong') {
+    if (
+      vgRate !== null &&
+      roundsRun < MAX_ROUNDS &&
+      confidence.tier !== 'strong'
+    ) {
       this.logEvent('GENERATE.broadening_search', {
-        correlationId, round: 2, ...confidence, target: TARGET_COMPARABLES,
+        correlationId,
+        round: 2,
+        ...confidence,
+        target: TARGET_COMPARABLES,
       });
-      const round2Pool = await this.prefetchBroadCandidateSales(subject, seenPoolIds, correlationId);
+      const round2Pool = await this.prefetchBroadCandidateSales(
+        subject,
+        seenPoolIds,
+        correlationId,
+      );
       for (const c of round2Pool) seenPoolIds.add(c.id);
-      const round2Deduped = this.excludeSeenDealingNumbers(round2Pool, seenDealingNumbers, correlationId);
-      const round2Geo = await this.filterByDistance(round2Deduped, subjectCentroid, ROUND2_MAX_KM, correlationId);
+      const round2Deduped = this.excludeSeenDealingNumbers(
+        round2Pool,
+        seenDealingNumbers,
+        correlationId,
+      );
+      const round2Geo = await this.filterByDistance(
+        round2Deduped,
+        subjectCentroid,
+        ROUND2_MAX_KM,
+        correlationId,
+      );
       allConsideredPool.push(...round2Geo);
       roundsRun++;
       if (round2Geo.length > 0) {
-        accumulatedPool.push(...(await this.gatherRoundCandidates(
-          round2Geo, subject, vgRate, ROUND2_MAX_KM, subjectCentroid, resolvedIds, correlationId, roundsRun,
-        )));
+        accumulatedPool.push(
+          ...(await this.gatherRoundCandidates(
+            round2Geo,
+            subject,
+            vgRate,
+            ROUND2_MAX_KM,
+            subjectCentroid,
+            resolvedIds,
+            correlationId,
+            roundsRun,
+          )),
+        );
       }
-      ({ selected, confidence } = this.previewSelection(accumulatedPool, correlationId));
+      ({ selected, confidence } = this.previewSelection(
+        accumulatedPool,
+        correlationId,
+      ));
     }
 
     // Round 3: last-resort widening — wider distance AND a longer lookback window. Only fires
     // if confidence still hasn't reached 'strong' and the round cap hasn't been reached.
-    if (vgRate !== null && roundsRun < MAX_ROUNDS && confidence.tier !== 'strong') {
+    if (
+      vgRate !== null &&
+      roundsRun < MAX_ROUNDS &&
+      confidence.tier !== 'strong'
+    ) {
       this.logEvent('GENERATE.broadening_search', {
-        correlationId, round: 3, ...confidence, target: TARGET_COMPARABLES,
+        correlationId,
+        round: 3,
+        ...confidence,
+        target: TARGET_COMPARABLES,
       });
-      const round3Pool = await this.prefetchBroadCandidateSales(subject, seenPoolIds, correlationId, ROUND3_LOOKBACK_YEARS);
+      const round3Pool = await this.prefetchBroadCandidateSales(
+        subject,
+        seenPoolIds,
+        correlationId,
+        ROUND3_LOOKBACK_YEARS,
+      );
       for (const c of round3Pool) seenPoolIds.add(c.id);
-      const round3Deduped = this.excludeSeenDealingNumbers(round3Pool, seenDealingNumbers, correlationId);
-      const round3Geo = await this.filterByDistance(round3Deduped, subjectCentroid, ROUND3_MAX_KM, correlationId);
+      const round3Deduped = this.excludeSeenDealingNumbers(
+        round3Pool,
+        seenDealingNumbers,
+        correlationId,
+      );
+      const round3Geo = await this.filterByDistance(
+        round3Deduped,
+        subjectCentroid,
+        ROUND3_MAX_KM,
+        correlationId,
+      );
       allConsideredPool.push(...round3Geo);
       roundsRun++;
       if (round3Geo.length > 0) {
-        accumulatedPool.push(...(await this.gatherRoundCandidates(
-          round3Geo, subject, vgRate, ROUND3_MAX_KM, subjectCentroid, resolvedIds, correlationId, roundsRun,
-        )));
+        accumulatedPool.push(
+          ...(await this.gatherRoundCandidates(
+            round3Geo,
+            subject,
+            vgRate,
+            ROUND3_MAX_KM,
+            subjectCentroid,
+            resolvedIds,
+            correlationId,
+            roundsRun,
+          )),
+        );
       }
-      ({ selected, confidence } = this.previewSelection(accumulatedPool, correlationId));
+      ({ selected, confidence } = this.previewSelection(
+        accumulatedPool,
+        correlationId,
+      ));
     }
 
     // Zoning last-resort — the only avenue left once every normal (same-zoning-family) widening
@@ -1028,18 +1338,48 @@ export class ComparablesService implements OnModuleInit {
     // considered — but only with an LLM-authored justification and a server-computed
     // zoning_confidence disclosure (see computeAdjustedFields), never auto-included.
     if (vgRate !== null && confidence.count < MINIMUM_COMPARABLES) {
-      this.logEvent('GENERATE.zoning_last_resort', { correlationId, ...confidence, minimum: MINIMUM_COMPARABLES });
-      const lastResortPool = await this.prefetchZoningLastResortCandidates(subject, seenPoolIds, correlationId);
+      this.logEvent('GENERATE.zoning_last_resort', {
+        correlationId,
+        ...confidence,
+        minimum: MINIMUM_COMPARABLES,
+      });
+      const lastResortPool = await this.prefetchZoningLastResortCandidates(
+        subject,
+        seenPoolIds,
+        correlationId,
+      );
       for (const c of lastResortPool) seenPoolIds.add(c.id);
-      const lastResortDeduped = this.excludeSeenDealingNumbers(lastResortPool, seenDealingNumbers, correlationId);
-      const lastResortGeo = await this.filterByDistance(lastResortDeduped, subjectCentroid, ROUND3_MAX_KM, correlationId);
+      const lastResortDeduped = this.excludeSeenDealingNumbers(
+        lastResortPool,
+        seenDealingNumbers,
+        correlationId,
+      );
+      const lastResortGeo = await this.filterByDistance(
+        lastResortDeduped,
+        subjectCentroid,
+        ROUND3_MAX_KM,
+        correlationId,
+      );
       allConsideredPool.push(...lastResortGeo);
       if (lastResortGeo.length > 0) {
-        accumulatedPool.push(...(await this.gatherRoundCandidates(
-          lastResortGeo, subject, vgRate, ROUND3_MAX_KM, subjectCentroid, resolvedIds, correlationId, roundsRun + 1, true,
-        )));
+        accumulatedPool.push(
+          ...(await this.gatherRoundCandidates(
+            lastResortGeo,
+            subject,
+            vgRate,
+            ROUND3_MAX_KM,
+            subjectCentroid,
+            resolvedIds,
+            correlationId,
+            roundsRun + 1,
+            true,
+          )),
+        );
       }
-      ({ selected, confidence } = this.previewSelection(accumulatedPool, correlationId));
+      ({ selected, confidence } = this.previewSelection(
+        accumulatedPool,
+        correlationId,
+      ));
     }
 
     // Ranked last-resort — the final safety net once every hard-gated round above (including the
@@ -1054,12 +1394,25 @@ export class ComparablesService implements OnModuleInit {
     // the case with zero comparables even after considering 100+ candidates across every round.
     if (vgRate !== null && confidence.count < MINIMUM_COMPARABLES) {
       const needed = MINIMUM_COMPARABLES - confidence.count;
-      this.logEvent('GENERATE.ranked_last_resort_triggered', { correlationId, ...confidence, minimum: MINIMUM_COMPARABLES, needed });
+      this.logEvent('GENERATE.ranked_last_resort_triggered', {
+        correlationId,
+        ...confidence,
+        minimum: MINIMUM_COMPARABLES,
+        needed,
+      });
       const ranked = this.selectRankedLastResortCandidates(
-        allConsideredPool, subject, vgRate, needed, resolvedIds, correlationId,
+        allConsideredPool,
+        subject,
+        vgRate,
+        needed,
+        resolvedIds,
+        correlationId,
       );
       accumulatedPool.push(...ranked);
-      ({ selected, confidence } = this.previewSelection(accumulatedPool, correlationId));
+      ({ selected, confidence } = this.previewSelection(
+        accumulatedPool,
+        correlationId,
+      ));
     }
 
     // selectByTimeBandPreference never truncates mid-rung (every candidate in a rung already
@@ -1069,8 +1422,10 @@ export class ComparablesService implements OnModuleInit {
     // how many of the (already best-evidence-first-ordered) final picks get persisted.
     if (selected.length > MAX_PERSISTED_COMPARABLES) {
       this.logEvent('GENERATE.trimmed_to_max_persisted', {
-        correlationId, disputeCaseId: dto.dispute_case_id,
-        selectedCount: selected.length, cap: MAX_PERSISTED_COMPARABLES,
+        correlationId,
+        disputeCaseId: dto.dispute_case_id,
+        selectedCount: selected.length,
+        cap: MAX_PERSISTED_COMPARABLES,
       });
     }
     const allSupporting = selected.slice(0, MAX_PERSISTED_COMPARABLES);
@@ -1078,7 +1433,12 @@ export class ComparablesService implements OnModuleInit {
       // zoning_confidence is a distinct axis from the time/size rung grouping selectByTimeBandPreference
       // truncates by, so a single rung can be a non-homogeneous mix — recompute so every downstream
       // log/report reflects what's actually persisted, not the pre-slice set's confidence.
-      confidence = this.computeEvidenceConfidence(allSupporting, TARGET_COMPARABLES, MINIMUM_COMPARABLES, correlationId);
+      confidence = this.computeEvidenceConfidence(
+        allSupporting,
+        TARGET_COMPARABLES,
+        MINIMUM_COMPARABLES,
+        correlationId,
+      );
     }
 
     // Honest reporting — if we're still short of the hard floor after every round we're willing
@@ -1117,7 +1477,11 @@ export class ComparablesService implements OnModuleInit {
       correlationId,
       supportingCount: allSupporting.length,
     });
-    const saved = await this.persistComparables(allSupporting, dto.dispute_case_id, createdById);
+    const saved = await this.persistComparables(
+      allSupporting,
+      dto.dispute_case_id,
+      createdById,
+    );
     this.logEvent('GENERATE.complete', {
       correlationId,
       disputeCaseId: dto.dispute_case_id,
@@ -1135,13 +1499,25 @@ export class ComparablesService implements OnModuleInit {
     subjectCentroid: { lat: number; lng: number } | null,
     correlationId: string | undefined,
     zoningLastResort: boolean = false,
-  ): Promise<{ enriched: Record<string, unknown>[]; supporting: Record<string, unknown>[] }> {
+  ): Promise<{
+    enriched: Record<string, unknown>[];
+    supporting: Record<string, unknown>[];
+  }> {
     if (candidates.length === 0) return { enriched: [], supporting: [] };
 
-    const userPrompt = buildUserPrompt(subject, candidates, maxDistanceKm, zoningLastResort);
+    const userPrompt = buildUserPrompt(
+      subject,
+      candidates,
+      maxDistanceKm,
+      zoningLastResort,
+    );
     const systemPrompt = `${this.skillContent}\n\n## property_sales_raw schema (do NOT call list_tables or describe_table — query directly)\n\`\`\`\n${this.schemaBlock}\n\`\`\``;
 
-    this.logEvent('GENERATE.anthropic.start', { correlationId, systemPromptLength: systemPrompt.length, candidateCount: candidates.length });
+    this.logEvent('GENERATE.anthropic.start', {
+      correlationId,
+      systemPromptLength: systemPrompt.length,
+      candidateCount: candidates.length,
+    });
     const anthropicT = Date.now();
     let rawText: string;
     try {
@@ -1164,7 +1540,9 @@ export class ComparablesService implements OnModuleInit {
       });
 
       if (result.stopReason === 'max_tokens') {
-        this.logger.error('[GENERATE] Response was truncated at max_tokens — increase max_tokens or reduce result set');
+        this.logger.error(
+          '[GENERATE] Response was truncated at max_tokens — increase max_tokens or reduce result set',
+        );
         throw new LlmTruncationException();
       }
       if (result.stopReason === 'tool_use') {
@@ -1175,9 +1553,21 @@ export class ComparablesService implements OnModuleInit {
     } catch (err: unknown) {
       if (err instanceof APIError) {
         const status = err.status;
-        this.logEvent('GENERATE.anthropic_error', { correlationId, status, errorMessage: err.message });
-        if (status === 529 || status === 503) throw new LlmApiException('Anthropic API is temporarily overloaded. Please retry in a few seconds.', 503);
-        if (status === 401) throw new LlmApiException('Anthropic API key is invalid or expired.', 502);
+        this.logEvent('GENERATE.anthropic_error', {
+          correlationId,
+          status,
+          errorMessage: err.message,
+        });
+        if (status === 529 || status === 503)
+          throw new LlmApiException(
+            'Anthropic API is temporarily overloaded. Please retry in a few seconds.',
+            503,
+          );
+        if (status === 401)
+          throw new LlmApiException(
+            'Anthropic API key is invalid or expired.',
+            502,
+          );
       }
       throw err;
     }
@@ -1186,8 +1576,13 @@ export class ComparablesService implements OnModuleInit {
     try {
       parsed = this.anthropic.parseJsonArray<Record<string, unknown>>(rawText);
     } catch (parseErr) {
-      this.logger.error('[GENERATE] Could not parse JSON array from response', rawText.slice(0, 200));
-      throw new LlmParseException(parseErr instanceof Error ? parseErr.message : 'JSON parse failed');
+      this.logger.error(
+        '[GENERATE] Could not parse JSON array from response',
+        rawText.slice(0, 200),
+      );
+      throw new LlmParseException(
+        parseErr instanceof Error ? parseErr.message : 'JSON parse failed',
+      );
     }
 
     // Merge each LLM pick against its original SQL-fetched record BEFORE running any gate —
@@ -1195,8 +1590,10 @@ export class ComparablesService implements OnModuleInit {
     // filterPartialInterestSales, and already relied on by computeAdjustedFields) are
     // deliberately not part of the LLM's echoed output schema (see comparables.prompts.ts), so a
     // gate reading them off the raw `parsed` JSON would always see undefined.
-    const candidateMap = new Map(candidates.map(c => [String(c.id), c]));
-    const zoningJustificationById = new Map(parsed.map((item) => [String(item.id), item.zoning_justification]));
+    const candidateMap = new Map(candidates.map((c) => [String(c.id), c]));
+    const zoningJustificationById = new Map(
+      parsed.map((item) => [String(item.id), item.zoning_justification]),
+    );
 
     const localMatches = parsed
       .map((item) => candidateMap.get(String(item.id)))
@@ -1213,20 +1610,37 @@ export class ComparablesService implements OnModuleInit {
       .filter((id) => !candidateMap.has(id));
 
     let merged: Record<string, unknown>[] = localMatches.map((candidate) => ({
-      ...candidate, zoning_justification: zoningJustificationById.get(String(candidate.id)),
+      ...candidate,
+      zoning_justification: zoningJustificationById.get(String(candidate.id)),
     }));
 
     if (mcpSourcedIds.length > 0) {
-      const canonicalRows = await this.fetchCanonicalCandidatesByIds(mcpSourcedIds, correlationId);
+      const canonicalRows = await this.fetchCanonicalCandidatesByIds(
+        mcpSourcedIds,
+        correlationId,
+      );
       const canonicalIds = new Set(canonicalRows.map((r) => String(r.id)));
       const unresolvedIds = mcpSourcedIds.filter((id) => !canonicalIds.has(id));
       if (unresolvedIds.length > 0) {
-        this.logEvent('GENERATE.mcp_candidate_unresolved', { correlationId, unresolvedIds });
+        this.logEvent('GENERATE.mcp_candidate_unresolved', {
+          correlationId,
+          unresolvedIds,
+        });
       }
-      const mcpGeo = await this.filterByDistance(canonicalRows, subjectCentroid, maxDistanceKm, correlationId);
-      merged = merged.concat(mcpGeo.map((candidate) => ({
-        ...candidate, zoning_justification: zoningJustificationById.get(String(candidate.id)),
-      })));
+      const mcpGeo = await this.filterByDistance(
+        canonicalRows,
+        subjectCentroid,
+        maxDistanceKm,
+        correlationId,
+      );
+      merged = merged.concat(
+        mcpGeo.map((candidate) => ({
+          ...candidate,
+          zoning_justification: zoningJustificationById.get(
+            String(candidate.id),
+          ),
+        })),
+      );
     }
 
     merged = this.filterFutureDatedCandidates(merged, subject, correlationId);
@@ -1236,17 +1650,33 @@ export class ComparablesService implements OnModuleInit {
     // prefetchZoningLastResortCandidates) — every other round keeps it, and
     // filterMissingZoningJustification still requires a justification for any non-exact zoning
     // match regardless, so a different-class pick can't slip through undisclosed either way.
-    if (!zoningLastResort) merged = this.filterDifferentZoningClass(merged, subject, correlationId);
-    merged = this.filterMissingZoningJustification(merged, subject, correlationId);
+    if (!zoningLastResort)
+      merged = this.filterDifferentZoningClass(merged, subject, correlationId);
+    merged = this.filterMissingZoningJustification(
+      merged,
+      subject,
+      correlationId,
+    );
 
-    const enriched = merged.map(candidate => {
-      const zoningJustification = typeof candidate.zoning_justification === 'string' ? candidate.zoning_justification : null;
-      return { ...candidate, ...this.computeAdjustedFields(candidate, subject, zoningJustification) };
+    const enriched = merged.map((candidate) => {
+      const zoningJustification =
+        typeof candidate.zoning_justification === 'string'
+          ? candidate.zoning_justification
+          : null;
+      return {
+        ...candidate,
+        ...this.computeAdjustedFields(candidate, subject, zoningJustification),
+      };
     });
 
-    const supporting = vgRate !== null
-      ? enriched.filter(item => item.adjusted_rate_per_sqm !== null && Number(item.adjusted_rate_per_sqm) <= vgRate)
-      : enriched;
+    const supporting =
+      vgRate !== null
+        ? enriched.filter(
+            (item) =>
+              item.adjusted_rate_per_sqm !== null &&
+              Number(item.adjusted_rate_per_sqm) <= vgRate,
+          )
+        : enriched;
 
     return { enriched, supporting };
   }
@@ -1269,7 +1699,11 @@ export class ComparablesService implements OnModuleInit {
       `SELECT ${analysisColumns} FROM property_sales_raw WHERE id::text = ANY($1)`,
       [ids],
     );
-    this.logEvent('GENERATE.mcp_candidates_refetched', { correlationId, requested: ids.length, resolved: rows.length });
+    this.logEvent('GENERATE.mcp_candidates_refetched', {
+      correlationId,
+      requested: ids.length,
+      resolved: rows.length,
+    });
     return rows;
   }
 
@@ -1307,13 +1741,29 @@ export class ComparablesService implements OnModuleInit {
     roundNumber: number,
     zoningLastResort: boolean = false,
   ): Promise<Record<string, unknown>[]> {
-    const autoIncludableAllBands = this.identifyAutoIncludable(geoFilteredPool, subject, vgRate, correlationId)
-      .filter((c) => !resolvedIds.has(String(c.id)));
+    const autoIncludableAllBands = this.identifyAutoIncludable(
+      geoFilteredPool,
+      subject,
+      vgRate,
+      correlationId,
+    ).filter((c) => !resolvedIds.has(String(c.id)));
     for (const c of autoIncludableAllBands) resolvedIds.add(String(c.id));
 
-    const llmPool = geoFilteredPool.filter((c) => !resolvedIds.has(String(c.id)));
-    const round = await this.runComparableRound(llmPool, subject, vgRate, maxDistanceKm, subjectCentroid, correlationId, zoningLastResort);
-    const llmSupportingDeduped = round.supporting.filter((c) => !resolvedIds.has(String(c.id)));
+    const llmPool = geoFilteredPool.filter(
+      (c) => !resolvedIds.has(String(c.id)),
+    );
+    const round = await this.runComparableRound(
+      llmPool,
+      subject,
+      vgRate,
+      maxDistanceKm,
+      subjectCentroid,
+      correlationId,
+      zoningLastResort,
+    );
+    const llmSupportingDeduped = round.supporting.filter(
+      (c) => !resolvedIds.has(String(c.id)),
+    );
     for (const c of llmSupportingDeduped) resolvedIds.add(String(c.id));
 
     this.logEvent('GENERATE.round_gathered', {
@@ -1340,14 +1790,21 @@ export class ComparablesService implements OnModuleInit {
       const searchFrom = new Date(vd);
       searchFrom.setFullYear(searchFrom.getFullYear() - lookbackYears);
       const searchFromStr = isNaN(searchFrom.getTime())
-        ? new Date(Date.now() - lookbackYears * 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+        ? new Date(Date.now() - lookbackYears * 365 * 24 * 60 * 60 * 1000)
+            .toISOString()
+            .split('T')[0]
         : searchFrom.toISOString().split('T')[0];
       const searchToStr = isNaN(vd.getTime())
         ? new Date().toISOString().split('T')[0]
         : vd.toISOString().split('T')[0];
 
-      const zoningPrefix = subject.zoning !== 'unknown' ? subject.zoning.substring(0, 2).toUpperCase() + '%' : null;
-      const postcodePrefix = subject.postcode ? subject.postcode.substring(0, 3) + '%' : null;
+      const zoningPrefix =
+        subject.zoning !== 'unknown'
+          ? subject.zoning.substring(0, 2).toUpperCase() + '%'
+          : null;
+      const postcodePrefix = subject.postcode
+        ? subject.postcode.substring(0, 3) + '%'
+        : null;
       if (!postcodePrefix || !zoningPrefix) return [];
 
       const analysisColumns = `id, property_id, district_code, property_house_number, property_street_name,
@@ -1355,10 +1812,11 @@ export class ComparablesService implements OnModuleInit {
         primary_purpose, component_code, sale_code, interest_of_sale_percent,
         contract_date, purchase_price, dealing_number, owner_type`;
 
-      const excludeArr = [...excludeIds].map(Number).filter(n => !isNaN(n));
-      const rows: Record<string, unknown>[] = excludeArr.length > 0
-        ? await this.dataSource.query(
-          `WITH scoped AS (
+      const excludeArr = [...excludeIds].map(Number).filter((n) => !isNaN(n));
+      const rows: Record<string, unknown>[] =
+        excludeArr.length > 0
+          ? await this.dataSource.query(
+              `WITH scoped AS (
              SELECT ${analysisColumns},
                     CASE WHEN nature_of_property = 'V' OR UPPER(primary_purpose) LIKE '%VACANT%' THEN 0 ELSE 1 END AS vacant_priority,
                     NTILE($6) OVER (ORDER BY contract_date ASC, id ASC) AS time_bucket
@@ -1374,11 +1832,18 @@ export class ComparablesService implements OnModuleInit {
            SELECT ${analysisColumns}, time_bucket FROM ranked
            WHERE bucket_rank <= $7
            ORDER BY time_bucket ASC, bucket_rank ASC, id ASC`,
-          [postcodePrefix, zoningPrefix, searchFromStr, searchToStr, excludeArr,
-            TIME_STRATIFICATION_BUCKETS, BROAD_SQL_PER_BUCKET_CAP],
-        )
-        : await this.dataSource.query(
-          `WITH scoped AS (
+              [
+                postcodePrefix,
+                zoningPrefix,
+                searchFromStr,
+                searchToStr,
+                excludeArr,
+                TIME_STRATIFICATION_BUCKETS,
+                BROAD_SQL_PER_BUCKET_CAP,
+              ],
+            )
+          : await this.dataSource.query(
+              `WITH scoped AS (
              SELECT ${analysisColumns},
                     CASE WHEN nature_of_property = 'V' OR UPPER(primary_purpose) LIKE '%VACANT%' THEN 0 ELSE 1 END AS vacant_priority,
                     NTILE($5) OVER (ORDER BY contract_date ASC, id ASC) AS time_bucket
@@ -1393,18 +1858,36 @@ export class ComparablesService implements OnModuleInit {
            SELECT ${analysisColumns}, time_bucket FROM ranked
            WHERE bucket_rank <= $6
            ORDER BY time_bucket ASC, bucket_rank ASC, id ASC`,
-          [postcodePrefix, zoningPrefix, searchFromStr, searchToStr,
-            TIME_STRATIFICATION_BUCKETS, BROAD_SQL_PER_BUCKET_CAP],
-        );
+              [
+                postcodePrefix,
+                zoningPrefix,
+                searchFromStr,
+                searchToStr,
+                TIME_STRATIFICATION_BUCKETS,
+                BROAD_SQL_PER_BUCKET_CAP,
+              ],
+            );
 
       const deduped = dedupeByDealingNumber(rows);
       const candidates = stripInternalFields(
-        selectTimeDiverseSubsetWithVacantFloor(deduped, MAX_CANDIDATE_SALES, BROAD_VACANT_FLOOR),
+        selectTimeDiverseSubsetWithVacantFloor(
+          deduped,
+          MAX_CANDIDATE_SALES,
+          BROAD_VACANT_FLOOR,
+        ),
       );
-      this.logEvent('GENERATE.prefetch_broad', { correlationId, count: candidates.length, lookbackYears, durationMs: Date.now() - preT });
+      this.logEvent('GENERATE.prefetch_broad', {
+        correlationId,
+        count: candidates.length,
+        lookbackYears,
+        durationMs: Date.now() - preT,
+      });
       return candidates;
     } catch (err) {
-      this.logger.warn('[GENERATE] Broad pre-fetch failed', (err as Error).message);
+      this.logger.warn(
+        '[GENERATE] Broad pre-fetch failed',
+        (err as Error).message,
+      );
       return [];
     }
   }
@@ -1429,13 +1912,19 @@ export class ComparablesService implements OnModuleInit {
       const searchFrom = new Date(vd);
       searchFrom.setFullYear(searchFrom.getFullYear() - ROUND3_LOOKBACK_YEARS);
       const searchFromStr = isNaN(searchFrom.getTime())
-        ? new Date(Date.now() - ROUND3_LOOKBACK_YEARS * 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+        ? new Date(
+            Date.now() - ROUND3_LOOKBACK_YEARS * 365 * 24 * 60 * 60 * 1000,
+          )
+            .toISOString()
+            .split('T')[0]
         : searchFrom.toISOString().split('T')[0];
       const searchToStr = isNaN(vd.getTime())
         ? new Date().toISOString().split('T')[0]
         : vd.toISOString().split('T')[0];
 
-      const postcodePrefix = subject.postcode ? subject.postcode.substring(0, 3) + '%' : null;
+      const postcodePrefix = subject.postcode
+        ? subject.postcode.substring(0, 3) + '%'
+        : null;
       if (!postcodePrefix) return [];
 
       const analysisColumns = `id, property_id, district_code, property_house_number, property_street_name,
@@ -1443,10 +1932,11 @@ export class ComparablesService implements OnModuleInit {
         primary_purpose, component_code, sale_code, interest_of_sale_percent,
         contract_date, purchase_price, dealing_number, owner_type`;
 
-      const excludeArr = [...excludeIds].map(Number).filter(n => !isNaN(n));
-      const rows: Record<string, unknown>[] = excludeArr.length > 0
-        ? await this.dataSource.query(
-          `WITH scoped AS (
+      const excludeArr = [...excludeIds].map(Number).filter((n) => !isNaN(n));
+      const rows: Record<string, unknown>[] =
+        excludeArr.length > 0
+          ? await this.dataSource.query(
+              `WITH scoped AS (
              SELECT ${analysisColumns},
                     CASE WHEN nature_of_property = 'V' OR UPPER(primary_purpose) LIKE '%VACANT%' THEN 0 ELSE 1 END AS vacant_priority,
                     NTILE($5) OVER (ORDER BY contract_date ASC, id ASC) AS time_bucket
@@ -1462,10 +1952,17 @@ export class ComparablesService implements OnModuleInit {
            SELECT ${analysisColumns}, time_bucket FROM ranked
            WHERE bucket_rank <= $6
            ORDER BY time_bucket ASC, bucket_rank ASC, id ASC`,
-          [postcodePrefix, searchFromStr, searchToStr, excludeArr, TIME_STRATIFICATION_BUCKETS, BROAD_SQL_PER_BUCKET_CAP],
-        )
-        : await this.dataSource.query(
-          `WITH scoped AS (
+              [
+                postcodePrefix,
+                searchFromStr,
+                searchToStr,
+                excludeArr,
+                TIME_STRATIFICATION_BUCKETS,
+                BROAD_SQL_PER_BUCKET_CAP,
+              ],
+            )
+          : await this.dataSource.query(
+              `WITH scoped AS (
              SELECT ${analysisColumns},
                     CASE WHEN nature_of_property = 'V' OR UPPER(primary_purpose) LIKE '%VACANT%' THEN 0 ELSE 1 END AS vacant_priority,
                     NTILE($4) OVER (ORDER BY contract_date ASC, id ASC) AS time_bucket
@@ -1480,17 +1977,34 @@ export class ComparablesService implements OnModuleInit {
            SELECT ${analysisColumns}, time_bucket FROM ranked
            WHERE bucket_rank <= $5
            ORDER BY time_bucket ASC, bucket_rank ASC, id ASC`,
-          [postcodePrefix, searchFromStr, searchToStr, TIME_STRATIFICATION_BUCKETS, BROAD_SQL_PER_BUCKET_CAP],
-        );
+              [
+                postcodePrefix,
+                searchFromStr,
+                searchToStr,
+                TIME_STRATIFICATION_BUCKETS,
+                BROAD_SQL_PER_BUCKET_CAP,
+              ],
+            );
 
       const deduped = dedupeByDealingNumber(rows);
       const candidates = stripInternalFields(
-        selectTimeDiverseSubsetWithVacantFloor(deduped, MAX_CANDIDATE_SALES, BROAD_VACANT_FLOOR),
+        selectTimeDiverseSubsetWithVacantFloor(
+          deduped,
+          MAX_CANDIDATE_SALES,
+          BROAD_VACANT_FLOOR,
+        ),
       );
-      this.logEvent('GENERATE.prefetch_zoning_last_resort', { correlationId, count: candidates.length, durationMs: Date.now() - preT });
+      this.logEvent('GENERATE.prefetch_zoning_last_resort', {
+        correlationId,
+        count: candidates.length,
+        durationMs: Date.now() - preT,
+      });
       return candidates;
     } catch (err) {
-      this.logger.warn('[GENERATE] Zoning-last-resort pre-fetch failed', (err as Error).message);
+      this.logger.warn(
+        '[GENERATE] Zoning-last-resort pre-fetch failed',
+        (err as Error).message,
+      );
       return [];
     }
   }
@@ -1500,8 +2014,11 @@ export class ComparablesService implements OnModuleInit {
     disputeCase: DisputeCase,
   ): SubjectContext {
     const vn = disputeCase.valuation_notice;
-    const valuationDate = dto.valuation_date
-      ?? (vn?.valuation_date ? new Date(vn.valuation_date).toISOString().split('T')[0] : null);
+    const valuationDate =
+      dto.valuation_date ??
+      (vn?.valuation_date
+        ? new Date(vn.valuation_date).toISOString().split('T')[0]
+        : null);
     if (!valuationDate) throw new MissingValuationDateException(disputeCase.id);
 
     // Persisted, previously-resolved property data outranks per-request fields — a caller
@@ -1510,26 +2027,32 @@ export class ComparablesService implements OnModuleInit {
     // below for the no-source-at-all case). Mirrors the same priority used for site area in
     // ValuationReportService.buildUserMessage.
     const landAreaSqm =
-      (Number(disputeCase.property?.land_area_eplanning_sqm) || null)
-      ?? (Number(disputeCase.property?.land_area_sqm) || null)
-      ?? dto.land_area_sqm
-      ?? (Number(vn?.land_area_vg_sqm) || null)
-      ?? dto.land_area_eplanning_sqm
-      ?? null;
+      (Number(disputeCase.property?.land_area_eplanning_sqm) || null) ??
+      (Number(disputeCase.property?.land_area_sqm) || null) ??
+      dto.land_area_sqm ??
+      (Number(vn?.land_area_vg_sqm) || null) ??
+      dto.land_area_eplanning_sqm ??
+      null;
     if (landAreaSqm == null) throw new MissingLandAreaException(disputeCase.id);
 
     return {
       pid: dto.pid ?? disputeCase.property?.pid ?? 'unknown',
-      suburb: stripTrailingPostcode((dto.suburb || disputeCase.property?.suburb || '').trim()).toUpperCase(),
+      suburb: stripTrailingPostcode(
+        (dto.suburb || disputeCase.property?.suburb || '').trim(),
+      ).toUpperCase(),
       postcode: dto.postcode || disputeCase.property?.postcode || null,
       landAreaSqm,
       zoning: dto.zoning ?? disputeCase.property?.zoning ?? 'unknown',
       lotDp: dto.lot_dp ?? disputeCase.property?.lot_dp ?? null,
       dimensions: dto.dimensions ?? disputeCase.property?.dimensions ?? null,
-      heightLimitM: dto.height_limit_m ?? disputeCase.property?.height_limit_m ?? null,
-      vgValueCurrent: dto.vg_land_value_current ?? (Number(vn?.assessed_land_value) || 0),
-      vgValuePrior: dto.vg_land_value_prior ?? (Number(vn?.prior_land_value) || 0),
-      landAreaVgSqm: dto.land_area_vg_sqm ?? (Number(vn?.land_area_vg_sqm) || null),
+      heightLimitM:
+        dto.height_limit_m ?? disputeCase.property?.height_limit_m ?? null,
+      vgValueCurrent:
+        dto.vg_land_value_current ?? (Number(vn?.assessed_land_value) || 0),
+      vgValuePrior:
+        dto.vg_land_value_prior ?? (Number(vn?.prior_land_value) || 0),
+      landAreaVgSqm:
+        dto.land_area_vg_sqm ?? (Number(vn?.land_area_vg_sqm) || null),
       valuationDate,
       lat: dto.lat ?? null,
       lng: dto.lng ?? null,
@@ -1546,7 +2069,9 @@ export class ComparablesService implements OnModuleInit {
       const searchFrom = new Date(vd);
       searchFrom.setFullYear(searchFrom.getFullYear() - 5);
       const searchFromStr = isNaN(searchFrom.getTime())
-        ? new Date(Date.now() - 5 * 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
+        ? new Date(Date.now() - 5 * 365 * 24 * 60 * 60 * 1000)
+            .toISOString()
+            .split('T')[0]
         : searchFrom.toISOString().split('T')[0];
       // Sales dated after the valuation date can't be reliably adjusted back to the base
       // date, so they're excluded from the candidate pool entirely rather than left to the
@@ -1555,12 +2080,20 @@ export class ComparablesService implements OnModuleInit {
         ? new Date().toISOString().split('T')[0]
         : vd.toISOString().split('T')[0];
 
-      const zoningPrefix = subject.zoning !== 'unknown' ? subject.zoning.substring(0, 2).toUpperCase() + '%' : null;
+      const zoningPrefix =
+        subject.zoning !== 'unknown'
+          ? subject.zoning.substring(0, 2).toUpperCase() + '%'
+          : null;
       // Different zoning class (a different family, e.g. Residential vs Rural) is hard-excluded
       // per the comparable-selection screening guide — "a different-use sale is not comparable
       // at all". Same-family subtypes (e.g. R2 vs R3) remain eligible as "compatible zoning".
-      const subjectFamily = subject.zoning !== 'unknown' ? zoningFamily(subject.zoning).replace(/[^A-Z]/g, '') : null;
-      const zoningFamilyPattern = subjectFamily ? `^${subjectFamily}[0-9]*$` : null;
+      const subjectFamily =
+        subject.zoning !== 'unknown'
+          ? zoningFamily(subject.zoning).replace(/[^A-Z]/g, '')
+          : null;
+      const zoningFamilyPattern = subjectFamily
+        ? `^${subjectFamily}[0-9]*$`
+        : null;
 
       // Select only the columns needed for analysis — avoids sending metadata columns
       // (source_file, imported_at, download_datetime, sale_counter, etc.) to the LLM.
@@ -1569,7 +2102,9 @@ export class ComparablesService implements OnModuleInit {
         primary_purpose, component_code, sale_code, interest_of_sale_percent,
         contract_date, purchase_price, dealing_number, owner_type`;
 
-      const postcodePrefix = subject.postcode ? subject.postcode.substring(0, 3) + '%' : null;
+      const postcodePrefix = subject.postcode
+        ? subject.postcode.substring(0, 3) + '%'
+        : null;
 
       // Each tier is quintile-stratified by contract_date (NTILE over the already-filtered
       // rows) rather than a plain `ORDER BY contract_date DESC LIMIT N` — a flat recency
@@ -1585,7 +2120,7 @@ export class ComparablesService implements OnModuleInit {
         // least as strict as family-level.
         subject.suburb
           ? this.dataSource.query(
-            `WITH scoped AS (
+              `WITH scoped AS (
                SELECT ${analysisColumns},
                       CASE WHEN UPPER(zoning) LIKE $5 THEN 0 ELSE 1 END AS exact_zoning_priority,
                       CASE WHEN nature_of_property = 'V' OR UPPER(primary_purpose) LIKE '%VACANT%' THEN 0 ELSE 1 END AS vacant_priority,
@@ -1604,14 +2139,21 @@ export class ComparablesService implements OnModuleInit {
              SELECT ${analysisColumns}, time_bucket FROM ranked
              WHERE bucket_rank <= $7
              ORDER BY time_bucket ASC, bucket_rank ASC, id ASC`,
-            [subject.suburb, searchFromStr, searchToStr, zoningFamilyPattern, zoningPrefix ?? '%',
-              TIME_STRATIFICATION_BUCKETS, TIER1_SQL_PER_BUCKET_CAP],
-          )
+              [
+                subject.suburb,
+                searchFromStr,
+                searchToStr,
+                zoningFamilyPattern,
+                zoningPrefix ?? '%',
+                TIME_STRATIFICATION_BUCKETS,
+                TIER1_SQL_PER_BUCKET_CAP,
+              ],
+            )
           : Promise.resolve([]),
         // Tier 2: Same postcode (covers adjoining suburbs in the same locality), same zoning
         subject.postcode && zoningPrefix
           ? this.dataSource.query(
-            `WITH scoped AS (
+              `WITH scoped AS (
                SELECT ${analysisColumns},
                       CASE WHEN nature_of_property = 'V' OR UPPER(primary_purpose) LIKE '%VACANT%' THEN 0 ELSE 1 END AS vacant_priority,
                       NTILE($5) OVER (ORDER BY contract_date ASC, id ASC) AS time_bucket
@@ -1626,14 +2168,20 @@ export class ComparablesService implements OnModuleInit {
              SELECT ${analysisColumns}, time_bucket FROM ranked
              WHERE bucket_rank <= $6
              ORDER BY time_bucket ASC, bucket_rank ASC, id ASC`,
-            [subject.postcode, zoningPrefix, searchFromStr, searchToStr,
-              TIME_STRATIFICATION_BUCKETS, TIER2_SQL_PER_BUCKET_CAP],
-          )
+              [
+                subject.postcode,
+                zoningPrefix,
+                searchFromStr,
+                searchToStr,
+                TIME_STRATIFICATION_BUCKETS,
+                TIER2_SQL_PER_BUCKET_CAP,
+              ],
+            )
           : Promise.resolve([]),
         // Tier 3: Broader postcode corridor (same first 3 digits), same zoning
         postcodePrefix && zoningPrefix
           ? this.dataSource.query(
-            `WITH scoped AS (
+              `WITH scoped AS (
                SELECT ${analysisColumns},
                       CASE WHEN nature_of_property = 'V' OR UPPER(primary_purpose) LIKE '%VACANT%' THEN 0 ELSE 1 END AS vacant_priority,
                       NTILE($5) OVER (ORDER BY contract_date ASC, id ASC) AS time_bucket
@@ -1648,13 +2196,23 @@ export class ComparablesService implements OnModuleInit {
              SELECT ${analysisColumns}, time_bucket FROM ranked
              WHERE bucket_rank <= $6
              ORDER BY time_bucket ASC, bucket_rank ASC, id ASC`,
-            [postcodePrefix, zoningPrefix, searchFromStr, searchToStr,
-              TIME_STRATIFICATION_BUCKETS, TIER3_SQL_PER_BUCKET_CAP],
-          )
+              [
+                postcodePrefix,
+                zoningPrefix,
+                searchFromStr,
+                searchToStr,
+                TIME_STRATIFICATION_BUCKETS,
+                TIER3_SQL_PER_BUCKET_CAP,
+              ],
+            )
           : Promise.resolve([]),
       ]);
 
-      const merged = mergeById({ tier: 1, rows: tier1 }, { tier: 2, rows: tier2 }, { tier: 3, rows: tier3 });
+      const merged = mergeById(
+        { tier: 1, rows: tier1 },
+        { tier: 2, rows: tier2 },
+        { tier: 3, rows: tier3 },
+      );
       const deduped = dedupeByDealingNumber(merged);
 
       const tier1Rows = deduped.filter((r) => r._tier === 1);
@@ -1664,15 +2222,20 @@ export class ComparablesService implements OnModuleInit {
       // Reserved-floor apportionment — Tier 1 keeps priority (same suburb is the strongest
       // evidence) but Tier 2/3 can never be crowded to zero; unused budget waterfalls to the
       // next-priority tier. See assembleTieredCandidates doc comment.
-      const candidates = assembleTieredCandidates(tier1Rows, tier2Rows, tier3Rows, {
-        total: MAX_CANDIDATE_SALES,
-        tier1Target: TIER1_TARGET,
-        tier2Floor: TIER2_FLOOR,
-        tier3Floor: TIER3_FLOOR,
-        tier1VacantFloor: TIER1_VACANT_FLOOR,
-        tier2VacantFloor: TIER2_VACANT_FLOOR,
-        tier3VacantFloor: TIER3_VACANT_FLOOR,
-      });
+      const candidates = assembleTieredCandidates(
+        tier1Rows,
+        tier2Rows,
+        tier3Rows,
+        {
+          total: MAX_CANDIDATE_SALES,
+          tier1Target: TIER1_TARGET,
+          tier2Floor: TIER2_FLOOR,
+          tier3Floor: TIER3_FLOOR,
+          tier1VacantFloor: TIER1_VACANT_FLOOR,
+          tier2VacantFloor: TIER2_VACANT_FLOOR,
+          tier3VacantFloor: TIER3_VACANT_FLOOR,
+        },
+      );
 
       this.logEvent('GENERATE.prefetch', {
         correlationId,
@@ -1684,7 +2247,10 @@ export class ComparablesService implements OnModuleInit {
       });
       return candidates;
     } catch (err) {
-      this.logger.warn('[GENERATE] Pre-fetch failed — Claude will query via MCP', (err as Error).message);
+      this.logger.warn(
+        '[GENERATE] Pre-fetch failed — Claude will query via MCP',
+        (err as Error).message,
+      );
       return [];
     }
   }
@@ -1708,7 +2274,10 @@ export class ComparablesService implements OnModuleInit {
     // selectRankedLastResortCandidates) — null for every other candidate.
     warning: string | null;
   } {
-    const purchasePrice = candidate.purchase_price != null ? Number(candidate.purchase_price) : null;
+    const purchasePrice =
+      candidate.purchase_price != null
+        ? Number(candidate.purchase_price)
+        : null;
     let area = candidate.area != null ? Number(candidate.area) : null;
     // A missing/unparseable contract_date means we have no idea how old this sale is — that's
     // excluded here alongside the other required fields, not defaulted to the best-case (freshest,
@@ -1716,9 +2285,26 @@ export class ComparablesService implements OnModuleInit {
     // to 0/1/'fresh' and only recomputed inside an `if (contractDate...)` block below, so a null
     // date silently kept those best-case defaults instead of excluding the candidate — verified
     // live (a sale with contract_date: null was persisted and rendered as "fresh, nil adjustment").
-    const contractDate = candidate.contract_date ? new Date(candidate.contract_date as string) : null;
-    if (!purchasePrice || !area || !subject.landAreaSqm || !contractDate || isNaN(contractDate.getTime())) {
-      return { adjusted_rate_per_sqm: null, adjusted_land_value: null, suggested_land_value: null, explanation: null, improvement_confidence: null, time_band: null, zoning_confidence: null, warning: null };
+    const contractDate = candidate.contract_date
+      ? new Date(candidate.contract_date as string)
+      : null;
+    if (
+      !purchasePrice ||
+      !area ||
+      !subject.landAreaSqm ||
+      !contractDate ||
+      isNaN(contractDate.getTime())
+    ) {
+      return {
+        adjusted_rate_per_sqm: null,
+        adjusted_land_value: null,
+        suggested_land_value: null,
+        explanation: null,
+        improvement_confidence: null,
+        time_band: null,
+        zoning_confidence: null,
+        warning: null,
+      };
     }
 
     // property_sales_raw.area_type is an authoritative 'H'/'M' flag on the source record —
@@ -1732,7 +2318,8 @@ export class ComparablesService implements OnModuleInit {
     // candidate-stratification.util.ts); the blank-primary_purpose fallback below is a distinct,
     // deliberate rule specific to the improvement-deduction decision — "we have no evidence of a
     // structure" — so it stays additive rather than folded into the shared predicate.
-    const isVacant = isVacantLandRow(candidate) ||
+    const isVacant =
+      isVacantLandRow(candidate) ||
       !candidate.primary_purpose ||
       String(candidate.primary_purpose).trim() === '';
 
@@ -1747,7 +2334,9 @@ export class ComparablesService implements OnModuleInit {
     // Structured confidence signal — 'exact' needs no improvement estimate at all; 'estimated'
     // relies on the flat 50% deduction above (no GFA/building data exists in property_sales_raw
     // to do better).
-    const improvement_confidence: 'exact' | 'estimated' = isVacant ? 'exact' : 'estimated';
+    const improvement_confidence: 'exact' | 'estimated' = isVacant
+      ? 'exact'
+      : 'estimated';
 
     // area/subject.landAreaSqm (not the inverse) — economies of scale mean larger lots trade at a
     // lower $/m², so a comparable larger than the subject has its rate scaled UP to be comparable,
@@ -1758,15 +2347,20 @@ export class ComparablesService implements OnModuleInit {
 
     // contractDate is already guaranteed non-null/valid by the early-exclusion guard above.
     const valuationDate = new Date(subject.valuationDate);
-    const monthsDiff = (valuationDate.getFullYear() - contractDate.getFullYear()) * 12
-      + (valuationDate.getMonth() - contractDate.getMonth());
+    const monthsDiff =
+      (valuationDate.getFullYear() - contractDate.getFullYear()) * 12 +
+      (valuationDate.getMonth() - contractDate.getMonth());
     let timeFactor = 1;
     let time_band: 'fresh' | 'recent' | 'adjusted' | 'last_resort';
     if (monthsDiff <= TIME_BAND_FRESH_MAX_MONTHS) {
       time_band = 'fresh'; // use as-is — timeFactor stays 1
     } else if (monthsDiff <= TIME_BAND_RECENT_MAX_MONTHS) {
       time_band = 'recent';
-      timeFactor = 1 + monthsDiff * TIME_ADJUSTMENT_RATE_PER_MONTH * TIME_BAND_MINOR_ADJUSTMENT_FRACTION;
+      timeFactor =
+        1 +
+        monthsDiff *
+          TIME_ADJUSTMENT_RATE_PER_MONTH *
+          TIME_BAND_MINOR_ADJUSTMENT_FRACTION;
     } else if (monthsDiff <= TIME_BAND_ADJUSTED_MAX_MONTHS) {
       time_band = 'adjusted';
       timeFactor = 1 + monthsDiff * TIME_ADJUSTMENT_RATE_PER_MONTH;
@@ -1786,9 +2380,23 @@ export class ComparablesService implements OnModuleInit {
     // unit) that slipped past the area_type conversion above. Reject rather than let it silently
     // pass as "supporting" — protects both the auto-include path (no LLM/human in the loop) and
     // the LLM-selection path equally, since both funnel through this same function.
-    if (adjusted_rate_per_sqm < vgRate * 0.01 || adjusted_rate_per_sqm > vgRate * 100) {
-      this.logger.warn(`[GENERATE] Rejecting implausible adjusted rate $${adjusted_rate_per_sqm}/m² vs VG rate $${vgRate}/m² for candidate ${candidate.id} — likely a data-quality issue, not genuine evidence`);
-      return { adjusted_rate_per_sqm: null, adjusted_land_value: null, suggested_land_value: null, explanation: null, improvement_confidence: null, time_band: null, zoning_confidence: null, warning: null };
+    if (
+      adjusted_rate_per_sqm < vgRate * 0.01 ||
+      adjusted_rate_per_sqm > vgRate * 100
+    ) {
+      this.logger.warn(
+        `[GENERATE] Rejecting implausible adjusted rate $${adjusted_rate_per_sqm}/m² vs VG rate $${vgRate}/m² for candidate ${candidate.id} — likely a data-quality issue, not genuine evidence`,
+      );
+      return {
+        adjusted_rate_per_sqm: null,
+        adjusted_land_value: null,
+        suggested_land_value: null,
+        explanation: null,
+        improvement_confidence: null,
+        time_band: null,
+        zoning_confidence: null,
+        warning: null,
+      };
     }
 
     // Server-computed disclosure signal — never trusted from the LLM. 'same_family' covers both
@@ -1805,7 +2413,8 @@ export class ComparablesService implements OnModuleInit {
     const zoning_confidence: 'same_family' | 'different_class_last_resort' =
       !candidateZoningStr
         ? 'different_class_last_resort'
-        : subject.zoning === 'unknown' || zoningFamily(candidateZoningStr) === zoningFamily(subject.zoning)
+        : subject.zoning === 'unknown' ||
+            zoningFamily(candidateZoningStr) === zoningFamily(subject.zoning)
           ? 'same_family'
           : 'different_class_last_resort';
 
@@ -1815,46 +2424,70 @@ export class ComparablesService implements OnModuleInit {
     // normal tolerances. Claiming "outside tolerance" for a candidate that's genuinely within it
     // would overstate how weak the evidence is.
     const areaRatio = area / subject.landAreaSqm;
-    const withinNormalTolerance = zoning_confidence === 'same_family'
-      && areaRatio >= (1 - SIZE_BAND_TOLERANCE_FRACTION) && areaRatio <= (1 + SIZE_BAND_TOLERANCE_FRACTION);
+    const withinNormalTolerance =
+      zoning_confidence === 'same_family' &&
+      areaRatio >= 1 - SIZE_BAND_TOLERANCE_FRACTION &&
+      areaRatio <= 1 + SIZE_BAND_TOLERANCE_FRACTION;
 
     // Structured caution for the frontend — see the `warning` field's doc comment above. Kept out
     // of `explanation`'s prose entirely so a UI can render it as its own badge/alert rather than
     // needing to parse it out of a paragraph.
     const warning = rankedLastResort
-      ? (withinNormalTolerance
+      ? withinNormalTolerance
         ? `Selected via ranked last-resort fallback — this comparable is within the report's standard size and zoning tolerances but wasn't picked up by automatic inclusion (which requires an exact zoning match) or the LLM selection step; included deterministically to help reach the minimum evidence requirement. A quick manual check is still recommended.`
-        : `Ranked last-resort match — no comparable sale was found within this report's standard size/zoning tolerances even after full geographic and time-period widening. This is the closest available match by combined size, zoning, distance and recency proximity, included so the objection isn't left without evidence. Manual valuer review is strongly recommended before relying on this comparable.`)
+        : `Ranked last-resort match — no comparable sale was found within this report's standard size/zoning tolerances even after full geographic and time-period widening. This is the closest available match by combined size, zoning, distance and recency proximity, included so the objection isn't left without evidence. Manual valuer review is strongly recommended before relying on this comparable.`
       : null;
 
     const supportsObjection = adjusted_rate_per_sqm <= vgRate;
 
     // NSW VG definition: comparable's own adjusted land value = land component × time factor only.
     // No size adjustment — this is what the objector enters for each comparable in the NSW portal.
-    const suggested_land_value = Math.round((purchasePrice - improvementDeduction) * timeFactor);
+    const suggested_land_value = Math.round(
+      (purchasePrice - improvementDeduction) * timeFactor,
+    );
 
-    const address = [candidate.property_house_number, candidate.property_street_name, candidate.property_locality].filter(Boolean).join(' ');
-    const saleDateStr = contractDate && !isNaN(contractDate.getTime())
-      ? contractDate.toLocaleDateString('en-AU', { day: '2-digit', month: 'short', year: 'numeric' })
-      : 'Unknown date';
+    const address = [
+      candidate.property_house_number,
+      candidate.property_street_name,
+      candidate.property_locality,
+    ]
+      .filter(Boolean)
+      .join(' ');
+    const saleDateStr =
+      contractDate && !isNaN(contractDate.getTime())
+        ? contractDate.toLocaleDateString('en-AU', {
+            day: '2-digit',
+            month: 'short',
+            year: 'numeric',
+          })
+        : 'Unknown date';
 
-    const sameSuburb = subject.suburb &&
-      String(candidate.property_locality ?? '').trim().toUpperCase() === subject.suburb.toUpperCase();
-    const distanceKm = typeof candidate._distanceKm === 'number' ? candidate._distanceKm : null;
+    const sameSuburb =
+      subject.suburb &&
+      String(candidate.property_locality ?? '')
+        .trim()
+        .toUpperCase() === subject.suburb.toUpperCase();
+    const distanceKm =
+      typeof candidate._distanceKm === 'number' ? candidate._distanceKm : null;
     const proximityLabel = sameSuburb
       ? 'Same suburb'
       : distanceKm != null
         ? `Nearby suburb (${distanceKm.toFixed(1)}km away)`
         : 'Nearby suburb';
-    const areaRatioPct = Math.round(Math.abs(area - subject.landAreaSqm) / subject.landAreaSqm * 100);
+    const areaRatioPct = Math.round(
+      (Math.abs(area - subject.landAreaSqm) / subject.landAreaSqm) * 100,
+    );
     const similarityLine = [
       proximityLabel,
       `same ${candidate.zoning} zoning`,
       `${areaRatioPct}% ${area > subject.landAreaSqm ? 'larger' : 'smaller'} (${area.toLocaleString()}m² vs ${subject.landAreaSqm.toLocaleString()}m² subject)`,
     ].join(' · ');
 
-    const isCompatibleZoning = subject.zoning !== 'unknown' &&
-      String(candidate.zoning ?? '').trim().toUpperCase() !== subject.zoning.trim().toUpperCase();
+    const isCompatibleZoning =
+      subject.zoning !== 'unknown' &&
+      String(candidate.zoning ?? '')
+        .trim()
+        .toUpperCase() !== subject.zoning.trim().toUpperCase();
 
     const conclusionLine = supportsObjection
       ? `The adjusted rate of $${adjusted_rate_per_sqm.toLocaleString()}/m² is below the VG's assessed rate of $${vgRate.toLocaleString()}/m², supporting a lower land value for your property.`
@@ -1864,7 +2497,9 @@ export class ComparablesService implements OnModuleInit {
       `${address} | ${candidate.zoning} | ${isVacant ? 'Vacant Land' : `Improved - ${candidate.primary_purpose}`}`,
       similarityLine,
       `• Sale: ${saleDateStr} — $${purchasePrice.toLocaleString()} (${area}m²)`,
-      isCompatibleZoning && zoningJustification ? `• Zoning justification: ${zoningJustification}` : null,
+      isCompatibleZoning && zoningJustification
+        ? `• Zoning justification: ${zoningJustification}`
+        : null,
       zoning_confidence === 'different_class_last_resort'
         ? `• Zoning confidence: DIFFERENT ZONING CLASS — included only as a last resort because insufficient same-family zoning evidence exists elsewhere; treat this comparable with reduced weight.`
         : null,
@@ -1874,20 +2509,36 @@ export class ComparablesService implements OnModuleInit {
         ? `• Size tolerance: outside the standard ±${SIZE_BAND_TOLERANCE_FRACTION * 100}% band but within the widened ±${SIZE_BAND_WIDENED_TOLERANCE_FRACTION * 100}% tolerance — included because comparable date-proximity was prioritised over strict size matching.`
         : null,
       `• Time adjustment: ${monthsDiff} months (${time_band} band) — ${
-        time_band === 'fresh' ? 'nil (within 6-month window, used as-is)'
-        : time_band === 'recent' ? `minor +${((timeFactor - 1) * 100).toFixed(1)}% (6-12 month band)`
-        : time_band === 'adjusted' ? `+${((timeFactor - 1) * 100).toFixed(1)}% (12-18 month band, adjustment required)`
-        : `+${((timeFactor - 1) * 100).toFixed(1)}% (beyond 18 months — last-resort evidence)`
+        time_band === 'fresh'
+          ? 'nil (within 6-month window, used as-is)'
+          : time_band === 'recent'
+            ? `minor +${((timeFactor - 1) * 100).toFixed(1)}% (6-12 month band)`
+            : time_band === 'adjusted'
+              ? `+${((timeFactor - 1) * 100).toFixed(1)}% (12-18 month band, adjustment required)`
+              : `+${((timeFactor - 1) * 100).toFixed(1)}% (beyond 18 months — last-resort evidence)`
       } → $${adjusted_rate_per_sqm.toLocaleString()}/m²`,
       `• Adjusted rate: $${adjusted_rate_per_sqm.toLocaleString()}/m² vs VG rate $${vgRate.toLocaleString()}/m² → ${supportsObjection ? 'Supports objection ✓' : 'Does NOT support objection ✗'}`,
       `• Comparable adj. land value: $${adjusted_land_value.toLocaleString()}`,
       `• Implied subject land value: $${(adjusted_rate_per_sqm * subject.landAreaSqm).toLocaleString()} (at $${adjusted_rate_per_sqm.toLocaleString()}/m² × ${subject.landAreaSqm.toLocaleString()}m²)`,
       `• VG assessed value: $${subject.vgValueCurrent.toLocaleString()} — potential reduction of $${(subject.vgValueCurrent - adjusted_rate_per_sqm * subject.landAreaSqm).toLocaleString()}`,
-      !isVacant ? `• Caveats: Improvement deduction estimated at 50% of purchase price ($${improvementDeduction.toLocaleString()}) — GFA unavailable` : null,
+      !isVacant
+        ? `• Caveats: Improvement deduction estimated at 50% of purchase price ($${improvementDeduction.toLocaleString()}) — GFA unavailable`
+        : null,
       conclusionLine,
-    ].filter(Boolean).join('\n');
+    ]
+      .filter(Boolean)
+      .join('\n');
 
-    return { adjusted_rate_per_sqm, adjusted_land_value, suggested_land_value, explanation, improvement_confidence, time_band, zoning_confidence, warning };
+    return {
+      adjusted_rate_per_sqm,
+      adjusted_land_value,
+      suggested_land_value,
+      explanation,
+      improvement_confidence,
+      time_band,
+      zoning_confidence,
+      warning,
+    };
   }
 
   private async persistComparables(
@@ -1901,38 +2552,65 @@ export class ComparablesService implements OnModuleInit {
         created_by_id: createdById,
         sale_id: item.id != null ? String(item.id) : null,
         source_file: (item.source_file as string) ?? null,
-        imported_at: item.imported_at ? new Date(item.imported_at as string) : null,
+        imported_at: item.imported_at
+          ? new Date(item.imported_at as string)
+          : null,
         district_code: (item.district_code as string) ?? null,
         property_id: (item.property_id as string) ?? null,
-        sale_counter: item.sale_counter != null ? Number(item.sale_counter) : null,
-        download_datetime: item.download_datetime ? new Date(item.download_datetime as string) : null,
+        sale_counter:
+          item.sale_counter != null ? Number(item.sale_counter) : null,
+        download_datetime: item.download_datetime
+          ? new Date(item.download_datetime as string)
+          : null,
         property_name: (item.property_name as string) ?? null,
         property_unit_number: (item.property_unit_number as string) ?? null,
         property_house_number: (item.property_house_number as string) ?? null,
         property_street_name: (item.property_street_name as string) ?? null,
         property_locality: (item.property_locality as string) ?? null,
         property_post_code: (item.property_post_code as string) ?? null,
-        area: item.area != null
-          ? (item.area_type === 'H' ? Math.round(Number(item.area) * 10000) : Number(item.area))
+        area:
+          item.area != null
+            ? item.area_type === 'H'
+              ? Math.round(Number(item.area) * 10000)
+              : Number(item.area)
+            : null,
+        contract_date: item.contract_date
+          ? new Date(item.contract_date as string)
           : null,
-        contract_date: item.contract_date ? new Date(item.contract_date as string) : null,
-        settlement_date: item.settlement_date ? new Date(item.settlement_date as string) : null,
-        purchase_price: item.purchase_price != null ? Number(item.purchase_price) : null,
+        settlement_date: item.settlement_date
+          ? new Date(item.settlement_date as string)
+          : null,
+        purchase_price:
+          item.purchase_price != null ? Number(item.purchase_price) : null,
         zoning: (item.zoning as string) ?? null,
         nature_of_property: (item.nature_of_property as string) ?? null,
         primary_purpose: (item.primary_purpose as string) ?? null,
         strata_lot_number: (item.strata_lot_number as string) ?? null,
         component_code: (item.component_code as string) ?? null,
         sale_code: (item.sale_code as string) ?? null,
-        interest_of_sale_percent: item.interest_of_sale_percent != null ? Number(item.interest_of_sale_percent) : null,
+        interest_of_sale_percent:
+          item.interest_of_sale_percent != null
+            ? Number(item.interest_of_sale_percent)
+            : null,
         dealing_number: (item.dealing_number as string) ?? null,
         owner_type: (item.owner_type as string) ?? null,
-        adjusted_rate_per_sqm: item.adjusted_rate_per_sqm != null ? Number(item.adjusted_rate_per_sqm) : null,
-        adjusted_land_value: item.adjusted_land_value != null ? Number(item.adjusted_land_value) : null,
-        suggested_land_value: item.suggested_land_value != null ? Number(item.suggested_land_value) : null,
+        adjusted_rate_per_sqm:
+          item.adjusted_rate_per_sqm != null
+            ? Number(item.adjusted_rate_per_sqm)
+            : null,
+        adjusted_land_value:
+          item.adjusted_land_value != null
+            ? Number(item.adjusted_land_value)
+            : null,
+        suggested_land_value:
+          item.suggested_land_value != null
+            ? Number(item.suggested_land_value)
+            : null,
         explanation: (item.explanation as string) ?? null,
-        improvement_confidence: (item.improvement_confidence as 'exact' | 'estimated') ?? null,
-        size_tier: (item.size_tier as 'preferred' | 'widened' | 'extrapolated') ?? null,
+        improvement_confidence:
+          (item.improvement_confidence as 'exact' | 'estimated') ?? null,
+        size_tier:
+          (item.size_tier as 'preferred' | 'widened' | 'extrapolated') ?? null,
         warning: (item.warning as string) ?? null,
       }),
     );
@@ -1942,7 +2620,9 @@ export class ComparablesService implements OnModuleInit {
   }
 
   private async assertDisputeCaseExists(disputeCaseId: string): Promise<void> {
-    const exists = await this.disputeCasesRepository.existsBy({ id: disputeCaseId });
+    const exists = await this.disputeCasesRepository.existsBy({
+      id: disputeCaseId,
+    });
     if (!exists) {
       throw new DisputeCaseNotFoundException(disputeCaseId);
     }

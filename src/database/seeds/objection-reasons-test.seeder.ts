@@ -22,22 +22,26 @@ import { Client, ClientStatus } from 'src/api/clients/entities/client.entity';
 const ACCOUNTANT_EMAIL = 'april.clemente@ymlgroup.com.au';
 
 const IDS = {
-  client:           'c0a80101-0099-4000-a000-000000000001',
-  property:         'c0a80101-0099-4000-a000-000000000002',
-  assessmentDoc:    'c0a80101-0099-4000-a000-000000000003',
-  valuationNotice:  'c0a80101-0099-4000-a000-000000000004',
-  disputeCase:      'c0a80101-0099-4000-a000-000000000005',
+  client: 'c0a80101-0099-4000-a000-000000000001',
+  property: 'c0a80101-0099-4000-a000-000000000002',
+  assessmentDoc: 'c0a80101-0099-4000-a000-000000000003',
+  valuationNotice: 'c0a80101-0099-4000-a000-000000000004',
+  disputeCase: 'c0a80101-0099-4000-a000-000000000005',
 };
 
 const logger = new Logger('ObjectionReasonsTestSeeder');
 
-export async function seedObjectionReasonsTest(dataSource: DataSource): Promise<void> {
+export async function seedObjectionReasonsTest(
+  dataSource: DataSource,
+): Promise<void> {
   const userRepo = dataSource.getRepository(User);
   const clientRepo = dataSource.getRepository(Client);
 
   const accountant = await userRepo.findOneBy({ email: ACCOUNTANT_EMAIL });
   if (!accountant) {
-    throw new Error(`[ObjectionReasonsTestSeeder] "${ACCOUNTANT_EMAIL}" not found — run seedUsers() first.`);
+    throw new Error(
+      `[ObjectionReasonsTestSeeder] "${ACCOUNTANT_EMAIL}" not found — run seedUsers() first.`,
+    );
   }
 
   logger.log('\n── Objection reasons test case ─────────────────────────');
@@ -55,7 +59,10 @@ export async function seedObjectionReasonsTest(dataSource: DataSource): Promise<
     );
   }
 
-  const [existingProp] = await dataSource.query(`SELECT id FROM properties WHERE id = $1`, [IDS.property]);
+  const [existingProp] = await dataSource.query(
+    `SELECT id FROM properties WHERE id = $1`,
+    [IDS.property],
+  );
   if (!existingProp) {
     await dataSource.query(
       `INSERT INTO properties
@@ -63,27 +70,42 @@ export async function seedObjectionReasonsTest(dataSource: DataSource): Promise<
           ownership_pct, land_area_sqm, zoning, lot_dp)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
       [
-        IDS.property, IDS.client,
-        '1020 MELIA CT CASTLE HILL', 'Castle Hill', 'NSW', '2154', '3701422',
-        100.00, 66167, 'C4 Environmental Living', 'Lot 1 DP 576773',
+        IDS.property,
+        IDS.client,
+        '1020 MELIA CT CASTLE HILL',
+        'Castle Hill',
+        'NSW',
+        '2154',
+        '3701422',
+        100.0,
+        66167,
+        'C4 Environmental Living',
+        'Lot 1 DP 576773',
       ],
     );
   }
 
-  const [existingDoc] = await dataSource.query(`SELECT id FROM assessment_documents WHERE id = $1`, [IDS.assessmentDoc]);
+  const [existingDoc] = await dataSource.query(
+    `SELECT id FROM assessment_documents WHERE id = $1`,
+    [IDS.assessmentDoc],
+  );
   if (!existingDoc) {
     await dataSource.query(
       `INSERT INTO assessment_documents (id, client_id, file_path, document_name)
        VALUES ($1,$2,$3,$4)`,
       [
-        IDS.assessmentDoc, IDS.client,
+        IDS.assessmentDoc,
+        IDS.client,
         `dispute-cases/${IDS.assessmentDoc}/land-tax-notice.pdf`,
         'Land Tax Assessment Notice 2025',
       ],
     );
   }
 
-  const [existingNotice] = await dataSource.query(`SELECT id FROM valuation_notices WHERE id = $1`, [IDS.valuationNotice]);
+  const [existingNotice] = await dataSource.query(
+    `SELECT id FROM valuation_notices WHERE id = $1`,
+    [IDS.valuationNotice],
+  );
   if (!existingNotice) {
     await dataSource.query(
       `INSERT INTO valuation_notices
@@ -92,14 +114,25 @@ export async function seedObjectionReasonsTest(dataSource: DataSource): Promise<
           is_exempt, notice_reference, decision_outcome)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
       [
-        IDS.valuationNotice, IDS.property, IDS.assessmentDoc, accountant.id,
-        '2025-07-01', 3800000, 3200000, 66167,
-        false, 'INTAKE-2025-3701422', 'OBJECTION',
+        IDS.valuationNotice,
+        IDS.property,
+        IDS.assessmentDoc,
+        accountant.id,
+        '2025-07-01',
+        3800000,
+        3200000,
+        66167,
+        false,
+        'INTAKE-2025-3701422',
+        'OBJECTION',
       ],
     );
   }
 
-  const [existingCase] = await dataSource.query(`SELECT id FROM dispute_cases WHERE id = $1`, [IDS.disputeCase]);
+  const [existingCase] = await dataSource.query(
+    `SELECT id FROM dispute_cases WHERE id = $1`,
+    [IDS.disputeCase],
+  );
   if (!existingCase) {
     await dataSource.query(
       `INSERT INTO dispute_cases
@@ -108,9 +141,17 @@ export async function seedObjectionReasonsTest(dataSource: DataSource): Promise<
           statutory_deadline, no_legal_ground_flagged, original_assessed_value)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
       [
-        IDS.disputeCase, 'LTD-2026-OBJ-001', IDS.client, IDS.property,
-        IDS.valuationNotice, accountant.id, 'NSW', 'appraisal',
-        '2025-09-30', false, 3800000,
+        IDS.disputeCase,
+        'LTD-2026-OBJ-001',
+        IDS.client,
+        IDS.property,
+        IDS.valuationNotice,
+        accountant.id,
+        'NSW',
+        'reports_uploaded',
+        '2025-09-30',
+        false,
+        3800000,
       ],
     );
   }

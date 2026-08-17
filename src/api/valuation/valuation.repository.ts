@@ -24,8 +24,4 @@ export class ValuationRepository {
   findDisputeCaseById(id: string): Promise<DisputeCase | null> {
     return this.disputeRepo.findOne({ where: { id } });
   }
-
-  saveDisputeCase(disputeCase: DisputeCase): Promise<DisputeCase> {
-    return this.disputeRepo.save(disputeCase);
-  }
 }

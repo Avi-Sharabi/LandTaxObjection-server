@@ -37,9 +37,11 @@ below — never infer them from a tick, a confidence score, or the mere existenc
   `data_schema.md` — never write `"Not obtained"` or similar free text there.)
 - **Never use "Lodged" or "Submitted"** (in `cover_facts`, `exec_summary`, `legal_grounds`, or
   anywhere else) to describe objection grounds, evidence, or the objection itself as an act that
-  has already happened, UNLESS the `Case status` given in the context is `submitted_to_vg` or a
-  later status. Before that, describe grounds as "Proposed", "Selected for objection", or "Grounds
-  identified" — never "has been lodged"/"has been submitted". This does NOT restrict the ordinary
+  has already happened, UNLESS the `Lodgement state:` line given in the context says
+  `LODGED WITH REVENUE NSW`. That line is the single authority — it is computed by the server from
+  the lodgement record, so do not infer lodgement from the case status name, from ticked grounds,
+  or from selected evidence. If it says `NOT YET LODGED`, describe grounds as "Proposed",
+  "Selected for objection", or "Grounds identified" — never "has been lodged"/"has been submitted". This does NOT restrict the ordinary
   argumentative phrase "We submit that…" (meaning "we contend/assert that…", the advocacy voice
   used throughout Sections 6 and 9) — that usage has nothing to do with filing status. The rule is
   specifically about describing the objection/grounds themselves as already filed with Revenue

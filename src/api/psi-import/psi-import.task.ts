@@ -47,9 +47,11 @@ export class PsiImportTask implements OnModuleInit {
       // tick while the previous one is still going, rather than leaning on the Redis lock to
       // reject an overlap that should never have been attempted.
       waitForCompletion: true,
-      onTick: () => {
-        void this.runWeeklyImport();
-      },
+      // Returned, not voided. `waitForCompletion` only awaits when the callback returns a
+      // thenable (cron/dist/job.js `fireOnTick`); a voided call hands back undefined, so the
+      // in-progress flag would flip true and false within the same tick and the guard above
+      // would do nothing. `runWeeklyImport` handles its own errors, so this cannot reject.
+      onTick: () => this.runWeeklyImport(),
     });
 
     this.schedulerRegistry.addCronJob(PSI_IMPORT_CRON_NAME, job);
@@ -111,7 +113,9 @@ export class PsiImportTask implements OnModuleInit {
     }
 
     try {
-      await this.importService.runImport();
+      // Same id as the lock, so a "another instance holds the import lock" warning and the run
+      // that was holding it can be matched up in the logs.
+      await this.importService.runImport(runId);
     } catch (err) {
       // An unhandled rejection inside a cron tick takes the process down, so this is the backstop.
       this.logger.error(

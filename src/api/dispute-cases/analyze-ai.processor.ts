@@ -20,6 +20,7 @@ import {
 import { ValuationCtxCacheService } from './valuation-ctx-cache.service';
 import { DisputeAiSnapshot } from './entities/dispute-ai-snapshot.entity';
 import { DisputeCasesService } from './dispute-cases.service';
+import { DisputeStatusTransitionService } from './dispute-status-transition.service';
 import { parseNswAddressComponents } from 'src/common/utils/address-parser.util';
 
 export const ANALYZE_AI_QUEUE = 'analyze-ai';
@@ -47,6 +48,7 @@ export class AnalyzeAiProcessor extends WorkerHost {
     private readonly valuationReportService: ValuationReportService,
     private readonly ctxCacheService: ValuationCtxCacheService,
     private readonly disputeCasesService: DisputeCasesService,
+    private readonly statusTransitionService: DisputeStatusTransitionService,
     @InjectRepository(DisputeAiSnapshot)
     private readonly snapshotRepo: Repository<DisputeAiSnapshot>,
   ) {
@@ -102,7 +104,10 @@ export class AnalyzeAiProcessor extends WorkerHost {
         // Persist the Land Value Search document's fields so the report generator has them —
         // this is now the sole source of subject land size (see property-context.service.ts).
         if (ctx.landValueSearch) {
-          await this.aiPropertySearchService.persistLandValueSearchDetails(disputeCaseId, ctx.landValueSearch);
+          await this.aiPropertySearchService.persistLandValueSearchDetails(
+            disputeCaseId,
+            ctx.landValueSearch,
+          );
         }
       }
 
@@ -333,6 +338,24 @@ export class AnalyzeAiProcessor extends WorkerHost {
           );
         }
       }
+
+      // The case reaches "Analysed" when this job completes. Placed here rather than beside
+      // markValuated above because that call sits inside the non-fatal valuation-report try/catch
+      // AND inside the else of the snapshot skip — so hanging the status off it would leave a
+      // ground-analysis run, or any run whose PDF generation failed, reporting completed with no
+      // status. markAnalysed is a guarded UPDATE: it never throws on a business-rule mismatch,
+      // because failing here would retry this 20-minute pipeline and duplicate comparables and
+      // objection reasons.
+      // .catch, not try/catch-free: markAnalysed never throws on a business-rule mismatch, but a
+      // transient DB error on the UPDATE itself would still surface here, inside the outer try
+      // whose catch rethrows — failing the job and triggering the very retry described above.
+      await this.statusTransitionService
+        .markAnalysed(disputeCaseId, `analyze-ai:${job.id}`)
+        .catch((err: unknown) =>
+          this.logger.error(
+            `[ANALYZE_AI] markAnalysed failed for case ${disputeCaseId}: ${String(err)}`,
+          ),
+        );
 
       this.logger.log(
         JSON.stringify({

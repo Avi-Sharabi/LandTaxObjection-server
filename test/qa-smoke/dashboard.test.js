@@ -138,7 +138,7 @@ describe('TC-DASH: Dashboard — E2E', () => {
       console.info('[TC-DASH-003] Cases page total label:', countLabel, '→ total:', totalCases);
 
       // "Active Cases" on the dashboard counts only active-status cases, while the Cases page
-      // total includes all statuses (draft, overdue, closed, etc.) and is subject to its own
+      // total includes all statuses (created, overdue, case closed, etc.) and is subject to its own
       // filters. These two numbers need not have a ≤ relationship — we log the comparison
       // rather than hard-assert, since the intent of TC-DASH-003 is that the values are
       // consistent with real data, not that one is necessarily larger.

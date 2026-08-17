@@ -2,8 +2,15 @@ import { Logger } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { Client, ClientStatus } from 'src/api/clients/entities/client.entity';
 import { Property } from 'src/api/properties/entities/property.entity';
-import { ValuationNotice } from 'src/api/valuation-notices/entities/valuation-notice.entity';
-import { DisputeCase, DisputeStatus, Jurisdiction } from 'src/api/dispute-cases/entities/dispute-case.entity';
+import {
+  DecisionOutcome,
+  ValuationNotice,
+} from 'src/api/valuation-notices/entities/valuation-notice.entity';
+import {
+  DisputeCase,
+  DisputeStatus,
+  Jurisdiction,
+} from 'src/api/dispute-cases/entities/dispute-case.entity';
 import {
   PackageDocument,
   PackageDocumentCategory,
@@ -17,133 +24,297 @@ const logger = new Logger('ObjectionPackageSeeder');
 const CASES = [
   {
     ids: {
-      client:          'a1000000-0000-0000-0000-000000000001',
-      property:        'a2000000-0000-0000-0000-000000000001',
+      client: 'a1000000-0000-0000-0000-000000000001',
+      property: 'a2000000-0000-0000-0000-000000000001',
       valuationNotice: 'a3000000-0000-0000-0000-000000000001',
-      disputeCase:     'a4000000-0000-0000-0000-000000000001',
+      disputeCase: 'a4000000-0000-0000-0000-000000000001',
     },
-    client:   { name: 'James Harrington',    email: 'arvin.bermudez@ymlgroup.com.au' },
-    property: { address: '42 Mock Street',   suburb: 'Sydney',       state: Jurisdiction.NSW,  postcode: '2000' },
-    notice:   { valuation_date: '2024-07-01', assessed_land_value: 1_200_000, appraised_value: 950_000,   valuation_delta: -250_000 },
-    case:     { case_reference: 'SEED-OBJ-001', status: DisputeStatus.OBJECTION_PACKAGE_PREPARED, statutory_deadline: '2025-12-31', jurisdiction: Jurisdiction.NSW },
+    client: {
+      name: 'James Harrington',
+      email: 'arvin.bermudez@ymlgroup.com.au',
+    },
+    property: {
+      address: '42 Mock Street',
+      suburb: 'Sydney',
+      state: Jurisdiction.NSW,
+      postcode: '2000',
+    },
+    notice: {
+      valuation_date: '2024-07-01',
+      assessed_land_value: 1_200_000,
+      appraised_value: 950_000,
+      valuation_delta: -250_000,
+    },
+    case: {
+      case_reference: 'SEED-OBJ-001',
+      status: DisputeStatus.ANALYSED,
+      statutory_deadline: '2025-12-31',
+      jurisdiction: Jurisdiction.NSW,
+    },
   },
   {
     ids: {
-      client:          'a1000000-0000-0000-0000-000000000002',
-      property:        'a2000000-0000-0000-0000-000000000002',
+      client: 'a1000000-0000-0000-0000-000000000002',
+      property: 'a2000000-0000-0000-0000-000000000002',
       valuationNotice: 'a3000000-0000-0000-0000-000000000002',
-      disputeCase:     'a4000000-0000-0000-0000-000000000002',
+      disputeCase: 'a4000000-0000-0000-0000-000000000002',
     },
-    client:   { name: 'Sarah Chen',          email: 'pol.imbing@ymlgroup.com.au' },
-    property: { address: '17 Harbour View',  suburb: 'Pyrmont',      state: Jurisdiction.NSW,  postcode: '2009' },
-    notice:   { valuation_date: '2024-07-01', assessed_land_value: 2_800_000, appraised_value: 2_100_000, valuation_delta: -700_000 },
-    case:     { case_reference: 'SEED-OBJ-002', status: DisputeStatus.OBJECTION_PACKAGE_PREPARED, statutory_deadline: '2025-11-30', jurisdiction: Jurisdiction.NSW },
+    client: { name: 'Sarah Chen', email: 'pol.imbing@ymlgroup.com.au' },
+    property: {
+      address: '17 Harbour View',
+      suburb: 'Pyrmont',
+      state: Jurisdiction.NSW,
+      postcode: '2009',
+    },
+    notice: {
+      valuation_date: '2024-07-01',
+      assessed_land_value: 2_800_000,
+      appraised_value: 2_100_000,
+      valuation_delta: -700_000,
+    },
+    case: {
+      case_reference: 'SEED-OBJ-002',
+      status: DisputeStatus.ANALYSED,
+      statutory_deadline: '2025-11-30',
+      jurisdiction: Jurisdiction.NSW,
+    },
   },
   {
     ids: {
-      client:          'a1000000-0000-0000-0000-000000000003',
-      property:        'a2000000-0000-0000-0000-000000000003',
+      client: 'a1000000-0000-0000-0000-000000000003',
+      property: 'a2000000-0000-0000-0000-000000000003',
       valuationNotice: 'a3000000-0000-0000-0000-000000000003',
-      disputeCase:     'a4000000-0000-0000-0000-000000000003',
+      disputeCase: 'a4000000-0000-0000-0000-000000000003',
     },
-    client:   { name: 'Michael Okafor',      email: 'pol.imbing@ymlgroup.com.au' },
-    property: { address: '5 Collins Street', suburb: 'Melbourne',    state: Jurisdiction.VIC,  postcode: '3000' },
-    notice:   { valuation_date: '2024-07-01', assessed_land_value: 3_500_000, appraised_value: 2_800_000, valuation_delta: -700_000 },
-    case:     { case_reference: 'SEED-OBJ-003', status: DisputeStatus.OBJECTION_PACKAGE_PREPARED, statutory_deadline: '2025-10-15', jurisdiction: Jurisdiction.VIC },
+    client: { name: 'Michael Okafor', email: 'pol.imbing@ymlgroup.com.au' },
+    property: {
+      address: '5 Collins Street',
+      suburb: 'Melbourne',
+      state: Jurisdiction.VIC,
+      postcode: '3000',
+    },
+    notice: {
+      valuation_date: '2024-07-01',
+      assessed_land_value: 3_500_000,
+      appraised_value: 2_800_000,
+      valuation_delta: -700_000,
+    },
+    case: {
+      case_reference: 'SEED-OBJ-003',
+      status: DisputeStatus.ANALYSED,
+      statutory_deadline: '2025-10-15',
+      jurisdiction: Jurisdiction.VIC,
+    },
   },
   {
     ids: {
-      client:          'a1000000-0000-0000-0000-000000000004',
-      property:        'a2000000-0000-0000-0000-000000000004',
+      client: 'a1000000-0000-0000-0000-000000000004',
+      property: 'a2000000-0000-0000-0000-000000000004',
       valuationNotice: 'a3000000-0000-0000-0000-000000000004',
-      disputeCase:     'a4000000-0000-0000-0000-000000000004',
+      disputeCase: 'a4000000-0000-0000-0000-000000000004',
     },
-    client:   { name: 'Emily Nguyen',        email: 'pol.imbing@ymlgroup.com.au' },
-    property: { address: '88 Queen Street',  suburb: 'Brisbane',     state: Jurisdiction.QLD,  postcode: '4000' },
-    notice:   { valuation_date: '2024-07-01', assessed_land_value: 1_800_000, appraised_value: 1_400_000, valuation_delta: -400_000 },
-    case:     { case_reference: 'SEED-OBJ-004', status: DisputeStatus.OBJECTION_PACKAGE_PREPARED, statutory_deadline: '2025-09-30', jurisdiction: Jurisdiction.QLD },
+    client: { name: 'Emily Nguyen', email: 'pol.imbing@ymlgroup.com.au' },
+    property: {
+      address: '88 Queen Street',
+      suburb: 'Brisbane',
+      state: Jurisdiction.QLD,
+      postcode: '4000',
+    },
+    notice: {
+      valuation_date: '2024-07-01',
+      assessed_land_value: 1_800_000,
+      appraised_value: 1_400_000,
+      valuation_delta: -400_000,
+    },
+    case: {
+      case_reference: 'SEED-OBJ-004',
+      status: DisputeStatus.ANALYSED,
+      statutory_deadline: '2025-09-30',
+      jurisdiction: Jurisdiction.QLD,
+    },
   },
   {
     ids: {
-      client:          'a1000000-0000-0000-0000-000000000005',
-      property:        'a2000000-0000-0000-0000-000000000005',
+      client: 'a1000000-0000-0000-0000-000000000005',
+      property: 'a2000000-0000-0000-0000-000000000005',
       valuationNotice: 'a3000000-0000-0000-0000-000000000005',
-      disputeCase:     'a4000000-0000-0000-0000-000000000005',
+      disputeCase: 'a4000000-0000-0000-0000-000000000005',
     },
-    client:   { name: 'Robert Whitfield',    email: 'april.clemente@ymlgroup.com.au' },
-    property: { address: '300 St Georges Tce', suburb: 'Perth',      state: Jurisdiction.WA,   postcode: '6000' },
-    notice:   { valuation_date: '2024-07-01', assessed_land_value: 4_200_000, appraised_value: 3_500_000, valuation_delta: -700_000 },
-    case:     { case_reference: 'SEED-OBJ-005', status: DisputeStatus.OBJECTION_PACKAGE_PREPARED, statutory_deadline: '2025-08-31', jurisdiction: Jurisdiction.WA },
+    client: {
+      name: 'Robert Whitfield',
+      email: 'april.clemente@ymlgroup.com.au',
+    },
+    property: {
+      address: '300 St Georges Tce',
+      suburb: 'Perth',
+      state: Jurisdiction.WA,
+      postcode: '6000',
+    },
+    notice: {
+      valuation_date: '2024-07-01',
+      assessed_land_value: 4_200_000,
+      appraised_value: 3_500_000,
+      valuation_delta: -700_000,
+    },
+    case: {
+      case_reference: 'SEED-OBJ-005',
+      status: DisputeStatus.ANALYSED,
+      statutory_deadline: '2025-08-31',
+      jurisdiction: Jurisdiction.WA,
+    },
   },
   {
     ids: {
-      client:          'a1000000-0000-0000-0000-000000000006',
-      property:        'a2000000-0000-0000-0000-000000000006',
+      client: 'a1000000-0000-0000-0000-000000000006',
+      property: 'a2000000-0000-0000-0000-000000000006',
       valuationNotice: 'a3000000-0000-0000-0000-000000000006',
-      disputeCase:     'a4000000-0000-0000-0000-000000000006',
+      disputeCase: 'a4000000-0000-0000-0000-000000000006',
     },
-    client:   { name: 'Priya Sharma',        email: 'april.clemente@ymlgroup.com.au' },
-    property: { address: '23 Crown Street',  suburb: 'Surry Hills',  state: Jurisdiction.NSW,  postcode: '2010' },
-    notice:   { valuation_date: '2024-07-01', assessed_land_value: 980_000,  appraised_value: 750_000,   valuation_delta: -230_000 },
-    case:     { case_reference: 'SEED-OBJ-006', status: DisputeStatus.OBJECTION_PACKAGE_PREPARED, statutory_deadline: '2025-12-15', jurisdiction: Jurisdiction.NSW },
+    client: { name: 'Priya Sharma', email: 'april.clemente@ymlgroup.com.au' },
+    property: {
+      address: '23 Crown Street',
+      suburb: 'Surry Hills',
+      state: Jurisdiction.NSW,
+      postcode: '2010',
+    },
+    notice: {
+      valuation_date: '2024-07-01',
+      assessed_land_value: 980_000,
+      appraised_value: 750_000,
+      valuation_delta: -230_000,
+    },
+    case: {
+      case_reference: 'SEED-OBJ-006',
+      status: DisputeStatus.ANALYSED,
+      statutory_deadline: '2025-12-15',
+      jurisdiction: Jurisdiction.NSW,
+    },
   },
   {
     ids: {
-      client:          'a1000000-0000-0000-0000-000000000007',
-      property:        'a2000000-0000-0000-0000-000000000007',
+      client: 'a1000000-0000-0000-0000-000000000007',
+      property: 'a2000000-0000-0000-0000-000000000007',
       valuationNotice: 'a3000000-0000-0000-0000-000000000007',
-      disputeCase:     'a4000000-0000-0000-0000-000000000007',
+      disputeCase: 'a4000000-0000-0000-0000-000000000007',
     },
-    client:   { name: 'Thomas Vu',           email: 'pol.imbing@ymlgroup.com.au' },
-    property: { address: '10 Spring Street', suburb: 'Melbourne',    state: Jurisdiction.VIC,  postcode: '3000' },
-    notice:   { valuation_date: '2024-07-01', assessed_land_value: 6_000_000, appraised_value: 4_800_000, valuation_delta: -1_200_000 },
-    case:     { case_reference: 'SEED-OBJ-007', status: DisputeStatus.OBJECTION_PACKAGE_PREPARED, statutory_deadline: '2025-11-01', jurisdiction: Jurisdiction.VIC },
+    client: { name: 'Thomas Vu', email: 'pol.imbing@ymlgroup.com.au' },
+    property: {
+      address: '10 Spring Street',
+      suburb: 'Melbourne',
+      state: Jurisdiction.VIC,
+      postcode: '3000',
+    },
+    notice: {
+      valuation_date: '2024-07-01',
+      assessed_land_value: 6_000_000,
+      appraised_value: 4_800_000,
+      valuation_delta: -1_200_000,
+    },
+    case: {
+      case_reference: 'SEED-OBJ-007',
+      status: DisputeStatus.ANALYSED,
+      statutory_deadline: '2025-11-01',
+      jurisdiction: Jurisdiction.VIC,
+    },
   },
   {
     ids: {
-      client:          'a1000000-0000-0000-0000-000000000008',
-      property:        'a2000000-0000-0000-0000-000000000008',
+      client: 'a1000000-0000-0000-0000-000000000008',
+      property: 'a2000000-0000-0000-0000-000000000008',
       valuationNotice: 'a3000000-0000-0000-0000-000000000008',
-      disputeCase:     'a4000000-0000-0000-0000-000000000008',
+      disputeCase: 'a4000000-0000-0000-0000-000000000008',
     },
-    client:   { name: 'Linda Kowalski',      email: 'april.clemente@ymlgroup.com.au' },
-    property: { address: '9 Eagle Street',   suburb: 'Brisbane City', state: Jurisdiction.QLD, postcode: '4000' },
-    notice:   { valuation_date: '2024-07-01', assessed_land_value: 2_200_000, appraised_value: 1_750_000, valuation_delta: -450_000 },
-    case:     { case_reference: 'SEED-OBJ-008', status: DisputeStatus.OBJECTION_PACKAGE_PREPARED, statutory_deadline: '2025-10-31', jurisdiction: Jurisdiction.QLD },
+    client: { name: 'Linda Kowalski', email: 'april.clemente@ymlgroup.com.au' },
+    property: {
+      address: '9 Eagle Street',
+      suburb: 'Brisbane City',
+      state: Jurisdiction.QLD,
+      postcode: '4000',
+    },
+    notice: {
+      valuation_date: '2024-07-01',
+      assessed_land_value: 2_200_000,
+      appraised_value: 1_750_000,
+      valuation_delta: -450_000,
+    },
+    case: {
+      case_reference: 'SEED-OBJ-008',
+      status: DisputeStatus.ANALYSED,
+      statutory_deadline: '2025-10-31',
+      jurisdiction: Jurisdiction.QLD,
+    },
   },
   {
     ids: {
-      client:          'a1000000-0000-0000-0000-000000000009',
-      property:        'a2000000-0000-0000-0000-000000000009',
+      client: 'a1000000-0000-0000-0000-000000000009',
+      property: 'a2000000-0000-0000-0000-000000000009',
       valuationNotice: 'a3000000-0000-0000-0000-000000000009',
-      disputeCase:     'a4000000-0000-0000-0000-000000000009',
+      disputeCase: 'a4000000-0000-0000-0000-000000000009',
     },
-    client:   { name: 'David Papadopoulos',  email: 'april.clemente@ymlgroup.com.au' },
-    property: { address: '55 Hay Street',    suburb: 'Subiaco',      state: Jurisdiction.WA,   postcode: '6008' },
-    notice:   { valuation_date: '2024-07-01', assessed_land_value: 1_600_000, appraised_value: 1_250_000, valuation_delta: -350_000 },
-    case:     { case_reference: 'SEED-OBJ-009', status: DisputeStatus.OBJECTION_PACKAGE_PREPARED, statutory_deadline: '2025-09-15', jurisdiction: Jurisdiction.WA },
+    client: {
+      name: 'David Papadopoulos',
+      email: 'april.clemente@ymlgroup.com.au',
+    },
+    property: {
+      address: '55 Hay Street',
+      suburb: 'Subiaco',
+      state: Jurisdiction.WA,
+      postcode: '6008',
+    },
+    notice: {
+      valuation_date: '2024-07-01',
+      assessed_land_value: 1_600_000,
+      appraised_value: 1_250_000,
+      valuation_delta: -350_000,
+    },
+    case: {
+      case_reference: 'SEED-OBJ-009',
+      status: DisputeStatus.ANALYSED,
+      statutory_deadline: '2025-09-15',
+      jurisdiction: Jurisdiction.WA,
+    },
   },
   {
     ids: {
-      client:          'a1000000-0000-0000-0000-000000000010',
-      property:        'a2000000-0000-0000-0000-000000000010',
+      client: 'a1000000-0000-0000-0000-000000000010',
+      property: 'a2000000-0000-0000-0000-000000000010',
       valuationNotice: 'a3000000-0000-0000-0000-000000000010',
-      disputeCase:     'a4000000-0000-0000-0000-000000000010',
+      disputeCase: 'a4000000-0000-0000-0000-000000000010',
     },
-    client:   { name: 'Angela Tremblay',     email: 'april.clemente@ymlgroup.com.au' },
-    property: { address: '1 Martin Place',   suburb: 'Sydney',       state: Jurisdiction.NSW,  postcode: '2000' },
-    notice:   { valuation_date: '2024-07-01', assessed_land_value: 8_500_000, appraised_value: 7_000_000, valuation_delta: -1_500_000 },
-    case:     { case_reference: 'SEED-OBJ-010', status: DisputeStatus.OBJECTION_PACKAGE_PREPARED, statutory_deadline: '2026-01-31', jurisdiction: Jurisdiction.NSW },
+    client: {
+      name: 'Angela Tremblay',
+      email: 'april.clemente@ymlgroup.com.au',
+    },
+    property: {
+      address: '1 Martin Place',
+      suburb: 'Sydney',
+      state: Jurisdiction.NSW,
+      postcode: '2000',
+    },
+    notice: {
+      valuation_date: '2024-07-01',
+      assessed_land_value: 8_500_000,
+      appraised_value: 7_000_000,
+      valuation_delta: -1_500_000,
+    },
+    case: {
+      case_reference: 'SEED-OBJ-010',
+      status: DisputeStatus.ANALYSED,
+      statutory_deadline: '2026-01-31',
+      jurisdiction: Jurisdiction.NSW,
+    },
   },
 ];
 
 // ─── Seeder ───────────────────────────────────────────────────────────────────
 
-export async function seedObjectionPackage(dataSource: DataSource): Promise<void> {
-  const clientRepo         = dataSource.getRepository(Client);
-  const propertyRepo       = dataSource.getRepository(Property);
+export async function seedObjectionPackage(
+  dataSource: DataSource,
+): Promise<void> {
+  const clientRepo = dataSource.getRepository(Client);
+  const propertyRepo = dataSource.getRepository(Property);
   const valuationNoticeRepo = dataSource.getRepository(ValuationNotice);
-  const disputeCaseRepo    = dataSource.getRepository(DisputeCase);
+  const disputeCaseRepo = dataSource.getRepository(DisputeCase);
   const packageDocumentRepo = dataSource.getRepository(PackageDocument);
 
   for (const seed of CASES) {
@@ -184,7 +355,9 @@ export async function seedObjectionPackage(dataSource: DataSource): Promise<void
     }
 
     // ── Valuation Notice ──────────────────────────────────────────────────────
-    let valuationNotice = await valuationNoticeRepo.findOneBy({ id: ids.valuationNotice });
+    let valuationNotice = await valuationNoticeRepo.findOneBy({
+      id: ids.valuationNotice,
+    });
     if (!valuationNotice) {
       valuationNotice = await valuationNoticeRepo.save(
         valuationNoticeRepo.create({
@@ -194,11 +367,17 @@ export async function seedObjectionPackage(dataSource: DataSource): Promise<void
           assessed_land_value: seed.notice.assessed_land_value,
           appraised_value: seed.notice.appraised_value,
           valuation_delta: seed.notice.valuation_delta,
+          // Required for the objection package to be reachable: with the objection and advisory
+          // statuses collapsed into ANALYSED, ObjectionPackageService reads decision_outcome to
+          // keep advisory cases out. These fixtures are all objection-branch cases.
+          decision_outcome: DecisionOutcome.OBJECTION,
         }),
       );
       logger.log(`Seeded valuation notice for ${seed.property.address}`);
     } else {
-      logger.log(`Skipped valuation notice (already exists) for ${seed.property.address}`);
+      logger.log(
+        `Skipped valuation notice (already exists) for ${seed.property.address}`,
+      );
     }
 
     // ── Dispute Case ──────────────────────────────────────────────────────────
@@ -219,17 +398,27 @@ export async function seedObjectionPackage(dataSource: DataSource): Promise<void
       logger.log(`Seeded dispute case: ${disputeCase.case_reference}`);
     } else {
       if (disputeCase.status !== seed.case.status) {
-        await disputeCaseRepo.update(disputeCase.id, { status: seed.case.status });
-        logger.log(`Updated dispute case status: ${seed.case.case_reference} → ${seed.case.status}`);
+        await disputeCaseRepo.update(disputeCase.id, {
+          status: seed.case.status,
+        });
+        logger.log(
+          `Updated dispute case status: ${seed.case.case_reference} → ${seed.case.status}`,
+        );
       } else {
-        logger.log(`Skipped dispute case (already exists): ${seed.case.case_reference}`);
+        logger.log(
+          `Skipped dispute case (already exists): ${seed.case.case_reference}`,
+        );
       }
     }
 
     // ── Package Documents ─────────────────────────────────────────────────────
-    const existing = await packageDocumentRepo.findBy({ dispute_case_id: ids.disputeCase });
+    const existing = await packageDocumentRepo.findBy({
+      dispute_case_id: ids.disputeCase,
+    });
     if (existing.length > 0) {
-      logger.log(`Skipped package documents for ${seed.case.case_reference} (${existing.length} already exist)`);
+      logger.log(
+        `Skipped package documents for ${seed.case.case_reference} (${existing.length} already exist)`,
+      );
       continue;
     }
 
@@ -279,8 +468,12 @@ export async function seedObjectionPackage(dataSource: DataSource): Promise<void
       await packageDocumentRepo.save(packageDocumentRepo.create(doc));
     }
 
-    logger.log(`Seeded ${documents.length} package documents for ${seed.case.case_reference}`);
+    logger.log(
+      `Seeded ${documents.length} package documents for ${seed.case.case_reference}`,
+    );
   }
 
-  logger.log('\n  → Test with: GET /v1/dispute-cases/{id}/objection-package/documents');
+  logger.log(
+    '\n  → Test with: GET /v1/dispute-cases/{id}/objection-package/documents',
+  );
 }
