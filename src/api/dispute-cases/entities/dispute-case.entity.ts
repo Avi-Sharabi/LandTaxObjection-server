@@ -1,4 +1,15 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, DeleteDateColumn, ManyToOne, OneToMany, JoinColumn, Index } from 'typeorm';
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  UpdateDateColumn,
+  DeleteDateColumn,
+  ManyToOne,
+  OneToMany,
+  JoinColumn,
+  Index,
+} from 'typeorm';
 import { Client } from '../../clients/entities/client.entity';
 import { Property } from '../../properties/entities/property.entity';
 import { ValuationNotice } from '../../valuation-notices/entities/valuation-notice.entity';
@@ -7,49 +18,25 @@ import { DisputeLegalGround } from '../../dispute-legal-grounds/entities/dispute
 import { ComparableSale } from '../../comparables/entities/comparable-sale.entity';
 import { DisputeConstraint } from '../../dispute-constraints/entities/dispute-constraint.entity';
 
+// Declared in lifecycle order — the PostgreSQL enum is created in this same order, so
+// enumsortorder matches the lifecycle. Labels, ordering metadata, the legal-transition graph
+// and every derived status set live in ../dispute-status.ts; that module imports this enum, so
+// nothing in this file may import from it (it would be a cycle).
+//
+// The lifecycle is CYCLIC: AI_FURTHER_SUBMISSION re-enters the VG loop at
+// VG_RESPONSE_RECEIVED. Never reason about "progress" with an index comparison — use the
+// set predicates and DISPUTE_STATUS_TRANSITIONS exported from ../dispute-status.ts.
 export enum DisputeStatus {
-  PENDING_TNC = 'pending_tnc',
-  DRAFT = 'draft',
-  GROUNDS_SELECTION = 'grounds_selection',
-  EVIDENCE_COMPILATION = 'evidence_compilation',
-  APPRAISAL = 'appraisal',
-  ADVISORY_LETTER_ISSUED = 'advisory_letter_issued',
-  OBJECTION_PACKAGE_PREPARED = 'objection_package_prepared',
-  AWAITING_CLIENT_APPROVAL = 'awaiting_client_approval',
-  CLIENT_APPROVED = 'client_approved',
-  SUBMITTED_TO_VG = 'submitted_to_vg',
+  CREATED = 'created',
+  TNC_AGREED = 'tnc_agreed',
+  REPORTS_UPLOADED = 'reports_uploaded',
+  ANALYSED = 'analysed',
+  OBJECTION_SUBMITTED = 'objection_submitted',
   VG_RESPONSE_RECEIVED = 'vg_response_received',
-  VG_APPROVED = 'vg_approved',
-  VG_DECLINED = 'vg_declined',
-  FOR_REVIEW = 'for_review',
-  OUTCOME_RECEIVED = 'outcome_received',
-  CLOSED = 'closed',
-  CLOSED_NO_OBJECTION = 'closed_no_objection',
+  AI_FURTHER_SUBMISSION = 'ai_further_submission',
+  VG_AGREED = 'vg_agreed',
+  CASE_CLOSED = 'case_closed',
 }
-
-// Canonical human phrasing per status, so any report/cover-fact/email surfacing case status
-// renders identically every time instead of being reworded ad hoc. Respects the controlled-
-// vocabulary rule that nothing is described as "lodged"/"submitted" before SUBMITTED_TO_VG
-// (see src/skills/valuation/section_guide.md).
-export const DISPUTE_STATUS_LABELS: Record<DisputeStatus, string> = {
-  [DisputeStatus.PENDING_TNC]: 'Pending — Terms & Conditions acceptance (case not yet started)',
-  [DisputeStatus.DRAFT]: 'Draft — case intake in progress',
-  [DisputeStatus.GROUNDS_SELECTION]: 'Grounds identified — not yet lodged',
-  [DisputeStatus.EVIDENCE_COMPILATION]: 'Evidence compilation in progress — not yet lodged',
-  [DisputeStatus.APPRAISAL]: 'Independent appraisal in progress — not yet lodged',
-  [DisputeStatus.ADVISORY_LETTER_ISSUED]: 'Advisory letter issued — not yet lodged',
-  [DisputeStatus.OBJECTION_PACKAGE_PREPARED]: 'Objection package prepared — awaiting approval to lodge',
-  [DisputeStatus.AWAITING_CLIENT_APPROVAL]: 'Awaiting client approval to lodge',
-  [DisputeStatus.CLIENT_APPROVED]: 'Client approved — ready to lodge',
-  [DisputeStatus.SUBMITTED_TO_VG]: 'Lodged with the Valuer General — awaiting response',
-  [DisputeStatus.VG_RESPONSE_RECEIVED]: 'VG response received',
-  [DisputeStatus.VG_APPROVED]: 'VG objection approved',
-  [DisputeStatus.VG_DECLINED]: 'VG objection declined',
-  [DisputeStatus.FOR_REVIEW]: 'Outcome under review',
-  [DisputeStatus.OUTCOME_RECEIVED]: 'Outcome received',
-  [DisputeStatus.CLOSED]: 'Case closed',
-  [DisputeStatus.CLOSED_NO_OBJECTION]: 'Case closed — no objection lodged',
-};
 
 export enum OutcomeResult {
   UPHELD = 'upheld',
@@ -68,7 +55,6 @@ export enum Jurisdiction {
   ACT = 'ACT',
   NT = 'NT',
 }
-
 
 @Entity('dispute_cases')
 export class DisputeCase {
@@ -97,7 +83,12 @@ export class DisputeCase {
   jurisdiction: Jurisdiction;
 
   @Index()
-  @Column({ type: 'enum', enum: DisputeStatus, nullable: false, default: DisputeStatus.DRAFT })
+  @Column({
+    type: 'enum',
+    enum: DisputeStatus,
+    nullable: false,
+    default: DisputeStatus.CREATED,
+  })
   status: DisputeStatus;
 
   @Column({ type: 'date', nullable: false })
@@ -108,24 +99,6 @@ export class DisputeCase {
 
   @Column({ type: 'boolean', nullable: false, default: false })
   deadline_lapsed_flagged: boolean;
-
-  @Column({ type: 'timestamptz', nullable: true })
-  client_approval_requested_at: Date | null;
-
-  @Column({ type: 'timestamptz', nullable: true })
-  client_approved_at: Date | null;
-
-  @Column({ type: 'uuid', nullable: true })
-  client_approval_token: string | null;
-
-  @Column({ type: 'timestamptz', nullable: true })
-  client_approval_token_expires_at: Date | null;
-
-  @Column({ type: 'timestamptz', nullable: true })
-  last_reminder_sent_at: Date | null;
-
-  @Column({ type: 'smallint', nullable: false, default: 0 })
-  reminder_count: number;
 
   @Column({ type: 'boolean', nullable: false, default: false })
   flag_heritage: boolean;
@@ -163,7 +136,13 @@ export class DisputeCase {
   @Column({ type: 'numeric', precision: 15, scale: 2, nullable: true })
   tax_saving_achieved: number | null;
 
-  @Column({ type: 'numeric', precision: 5, scale: 2, nullable: false, default: 20 })
+  @Column({
+    type: 'numeric',
+    precision: 5,
+    scale: 2,
+    nullable: false,
+    default: 20,
+  })
   yml_fee_share_pct: number;
 
   @Column({ type: 'numeric', precision: 15, scale: 2, nullable: true })
@@ -190,6 +169,14 @@ export class DisputeCase {
   @Column({ type: 'timestamptz', nullable: true })
   last_vg_follow_up_sent_at: Date | null;
 
+  // Most recent YML further submission. Kept separate from submitted_at so the original
+  // lodgement date (cited by the valuation report) survives every resubmission round.
+  @Column({ type: 'timestamptz', nullable: true })
+  resubmitted_at: Date | null;
+
+  @Column({ type: 'smallint', nullable: false, default: 0 })
+  resubmission_count: number;
+
   @Column({ type: 'timestamptz', nullable: true })
   closed_at: Date | null;
 
@@ -199,8 +186,10 @@ export class DisputeCase {
   @Column({ type: 'numeric', precision: 15, scale: 2, nullable: true })
   internal_assessed_value: number | null;
 
-  @Column({ type: 'text', nullable: true })
-  vg_response_notes: string | null;
+  // vg_response_notes was dropped by 1786000000000. What a VG response said now lives on the
+  // audit row that records it (audit_logs.notes), so a specific response's notes can be told
+  // apart — a single per-case blob could not, once a case started cycling between
+  // vg_response_received and ai_further_submission.
 
   @Column({ type: 'uuid', nullable: true })
   advisory_view_token: string | null;
@@ -221,15 +210,21 @@ export class DisputeCase {
   deleted_by: string | null;
 
   // Relations
-  @ManyToOne(() => Client, (client) => client.dispute_cases, { nullable: false })
+  @ManyToOne(() => Client, (client) => client.dispute_cases, {
+    nullable: false,
+  })
   @JoinColumn({ name: 'client_id' })
   client: Client;
 
-  @ManyToOne(() => Property, (property) => property.dispute_cases, { nullable: false })
+  @ManyToOne(() => Property, (property) => property.dispute_cases, {
+    nullable: false,
+  })
   @JoinColumn({ name: 'property_id' })
   property: Property;
 
-  @ManyToOne(() => ValuationNotice, (notice) => notice.dispute_cases, { nullable: false })
+  @ManyToOne(() => ValuationNotice, (notice) => notice.dispute_cases, {
+    nullable: false,
+  })
   @JoinColumn({ name: 'valuation_notice_id' })
   valuation_notice: ValuationNotice;
 

@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
-import { rm } from 'fs/promises';
+import { readdir, rm } from 'fs/promises';
 import { join } from 'path';
 import type { Browser, Page } from 'puppeteer';
 import { DataSource } from 'typeorm';
@@ -21,6 +21,7 @@ import {
 import {
   PsiParsedFile,
   PsiWeekCounts,
+  PsiWeekProgress,
   PsiWeekResult,
 } from './types/psi-sale-record.interface';
 import {
@@ -116,12 +117,20 @@ export class PsiImportService {
 
     for (const link of [...links].reverse()) {
       const weekStartedAt = Date.now();
+      // Declared per week, deliberately inside the loop: hoisted, it would report week 1's file
+      // count on week 2's failure.
+      const progress: PsiWeekProgress = {
+        datFileCount: 0,
+        malformedLines: 0,
+        skippedRecords: 0,
+        unmappedAreaType: 0,
+      };
       let result: PsiWeekResult;
 
       try {
         result = {
           link,
-          ...(await this.processWeek(page, link)),
+          ...(await this.processWeek(page, link, progress)),
           status: 'success',
           durationMs: Date.now() - weekStartedAt,
           error: null,
@@ -133,10 +142,12 @@ export class PsiImportService {
         );
         result = {
           link,
-          datFileCount: 0,
+          // How far the week actually got. `recordCount` and `suppressedRows` are genuinely zero —
+          // the transaction rolled back — but the parse counts happened and still explain the
+          // failure, so they are reported rather than flattened.
+          ...progress,
           recordCount: 0,
-          malformedLines: 0,
-          skippedRecords: 0,
+          suppressedRows: 0,
           status: 'failed',
           durationMs: Date.now() - weekStartedAt,
           error: message,
@@ -158,20 +169,52 @@ export class PsiImportService {
   }
 
   /**
-   * Clears `psi-downloads/` before a run starts.
+   * Empties `psi-downloads/` before a run starts — its *contents*, never the directory itself.
    *
    * Each week deletes its own directory in a `finally`, which covers every path the process
    * survives — but `main.ts` builds the app without `enableShutdownHooks()`, so the SIGTERM that
    * replaces the container on deploy never unwinds that frame, and SIGKILL/OOM never would. A
    * sweep on the way in covers all of them and needs no state.
+   *
+   * Removing the root itself needs write permission on its **parent**, and in the container that is
+   * `/app`, which is root-owned by design — the image creates and chowns only `/app/psi-downloads`.
+   * `rm(PSI_DOWNLOAD_ROOT)` therefore failed with EACCES on every QA run, and because the failure was
+   * caught and warned, the sweep silently collected nothing for as long as it existed. Do not
+   * "simplify" this back into a single `rm` of the root.
    */
   private async sweepDownloadRoot(): Promise<void> {
+    let entries: string[];
     try {
-      await rm(PSI_DOWNLOAD_ROOT, { recursive: true, force: true });
+      entries = await readdir(PSI_DOWNLOAD_ROOT);
     } catch (err) {
-      this.logger.warn(
-        `${PSI_LOG_TAG} Could not clear ${PSI_DOWNLOAD_ROOT} — ${err instanceof Error ? err.message : String(err)}`,
-      );
+      // ENOENT is the ordinary pre-first-download state — psi-download.service.ts creates the root
+      // via `mkdir(runDir, { recursive: true })`. `rm` with `force` was silent here; `readdir` is
+      // not, so without this guard every fresh environment warns on its first run.
+      if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+        this.logger.warn(
+          `${PSI_LOG_TAG} Could not read ${PSI_DOWNLOAD_ROOT} — ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
+      return;
+    }
+
+    if (entries.length === 0) return;
+
+    // Announced because a no-op sweep is otherwise indistinguishable from a clean start — which is
+    // exactly how the EACCES above went unnoticed.
+    this.logger.log(
+      `${PSI_LOG_TAG} Sweeping ${entries.length} leftover item(s) from ${PSI_DOWNLOAD_ROOT}`,
+    );
+
+    for (const entry of entries) {
+      await rm(join(PSI_DOWNLOAD_ROOT, entry), {
+        recursive: true,
+        force: true,
+      }).catch((err: unknown) => {
+        this.logger.warn(
+          `${PSI_LOG_TAG}   Could not delete ${entry} — ${err instanceof Error ? err.message : String(err)}`,
+        );
+      });
     }
   }
 
@@ -208,6 +251,7 @@ export class PsiImportService {
   private async processWeek(
     page: Page,
     link: PsiWeeklyLink,
+    progress: PsiWeekProgress,
   ): Promise<PsiWeekCounts> {
     const runDir = join(PSI_DOWNLOAD_ROOT, link.fileStem);
 
@@ -221,6 +265,10 @@ export class PsiImportService {
       const { datFiles, nestedArchiveCount } =
         await this.archive.extractWeeklyArchive(zipPath, runDir);
 
+      // Recorded the moment it is known, so a throw anywhere after this still reports it. A failure
+      // before this point legitimately leaves it at 0 — nothing was extracted.
+      progress.datFileCount = datFiles.length;
+
       this.logger.log(
         `${PSI_LOG_TAG}   extracted ${nestedArchiveCount} archive(s) → ${datFiles.length} .DAT file(s)`,
       );
@@ -229,21 +277,16 @@ export class PsiImportService {
         this.logger.warn(
           `${PSI_LOG_TAG}   No .DAT files found in ${link.label} — check the archive layout`,
         );
-        return {
-          datFileCount: 0,
-          recordCount: 0,
-          malformedLines: 0,
-          skippedRecords: 0,
-        };
+        return { ...progress, recordCount: 0, suppressedRows: 0 };
       }
 
       // One raw dump per week so the positional field layout stays verifiable against real data.
       await this.parser.logSampleLines(datFiles[0]);
 
-      return {
-        datFileCount: datFiles.length,
-        ...(await this.ingestWeek(link, datFiles)),
-      };
+      // Awaited before the spread, not inside it: `{ ...progress, ...(await …) }` would copy
+      // `progress` first and lose everything `ingestWeek` accumulates into it.
+      const counts = await this.ingestWeek(link, datFiles, progress);
+      return { ...progress, ...counts };
     } finally {
       // Swallowed so a cleanup failure cannot mask the real error; the start-of-run sweep
       // collects whatever is left behind.
@@ -277,13 +320,15 @@ export class PsiImportService {
   private async ingestWeek(
     link: PsiWeeklyLink,
     datFiles: string[],
-  ): Promise<Omit<PsiWeekCounts, 'datFileCount'>> {
+    progress: PsiWeekProgress,
+  ): Promise<Pick<PsiWeekCounts, 'recordCount' | 'suppressedRows'>> {
     // One stamp per week, so the rows that arrived together stay identifiable afterwards.
     const importedAt = new Date();
 
+    // Only the two counts a rollback invalidates are local. The parse counts accumulate into
+    // `progress`, so they survive a throw and can still be reported on the failure path.
     let recordCount = 0;
-    let malformedLines = 0;
-    let skippedRecords = 0;
+    let suppressedRows = 0;
     let latestStamp: number | null = null;
 
     await this.dataSource.transaction(async (manager) => {
@@ -304,30 +349,33 @@ export class PsiImportService {
           }
         }
 
-        await this.repository.insertSaleRecords(
+        const outcome = await this.repository.insertSaleRecords(
           salesRepo,
           parsed.records,
           importedAt,
         );
 
-        recordCount += parsed.records.length;
-        malformedLines += parsed.malformedLines;
-        skippedRecords += parsed.skippedRecords;
+        recordCount += outcome.inserted;
+        suppressedRows += outcome.suppressed;
+        progress.unmappedAreaType += outcome.unmappedAreaType;
+        progress.malformedLines += parsed.malformedLines;
+        progress.skippedRecords += parsed.skippedRecords;
       }
 
-      // Files but no records means the B layout moved and every line was rejected. Committing
-      // that would advance the reference date over a week that imported nothing, so fail instead.
+      // Nothing written at all means either the B layout moved and every line was rejected, or the
+      // whole week collided with rows already present. Committing that would advance the reference
+      // date over a week that stored nothing, so fail instead and leave it pending.
       if (recordCount === 0) {
         throw new PsiWeekUnusableException(
           link.label,
-          `${datFiles.length} .DAT file(s) yielded no sale records (${malformedLines} malformed, ${skippedRecords} non-B)`,
+          `${datFiles.length} .DAT file(s) stored no sale records (${progress.malformedLines} malformed, ${progress.skippedRecords} non-B, ${suppressedRows} rejected by uq_psr_dealing_number)`,
         );
       }
 
       this.assertWeekStamp(link, latestStamp);
     });
 
-    return { recordCount, malformedLines, skippedRecords };
+    return { recordCount, suppressedRows };
   }
 
   /**
@@ -400,6 +448,7 @@ export class PsiImportService {
     const failed = results.filter((week) => week.status === 'failed').length;
     const records = sum((week) => week.recordCount);
     const files = sum((week) => week.datFileCount);
+    const suppressed = sum((week) => week.suppressedRows);
     const durationMs = Date.now() - startedAt;
 
     this.logEvent('PSI.run.done', {
@@ -411,12 +460,16 @@ export class PsiImportService {
       recordCount: records,
       malformedLines: sum((week) => week.malformedLines),
       skippedRecords: sum((week) => week.skippedRecords),
+      suppressedRows: suppressed,
+      unmappedAreaType: sum((week) => week.unmappedAreaType),
       durationMs,
     });
 
-    // Kept alongside the JSON — this is the line a human tailing `docker logs` reads.
+    // Kept alongside the JSON — this is the line a human tailing `docker logs` reads. The
+    // suppressed count is surfaced here too because it is a permanent data loss, not a retryable
+    // one, and a steady figure is expected rather than alarming — see PsiImportRepository.
     this.logger.log(
-      `${PSI_LOG_TAG} Run complete — ${results.length} week(s)${failed > 0 ? `, ${failed} failed` : ''}, ${files} file(s), ${records.toLocaleString('en-AU')} record(s) in ${Math.round(durationMs / 1000)}s`,
+      `${PSI_LOG_TAG} Run complete — ${results.length} week(s)${failed > 0 ? `, ${failed} failed` : ''}, ${files} file(s), ${records.toLocaleString('en-AU')} record(s) stored${suppressed > 0 ? `, ${suppressed.toLocaleString('en-AU')} skipped on uq_psr_dealing_number` : ''} in ${Math.round(durationMs / 1000)}s`,
     );
   }
 
@@ -430,6 +483,8 @@ export class PsiImportService {
       recordCount: result.recordCount,
       malformedLines: result.malformedLines,
       skippedRecords: result.skippedRecords,
+      suppressedRows: result.suppressedRows,
+      unmappedAreaType: result.unmappedAreaType,
       durationMs: result.durationMs,
       error: result.error,
     });

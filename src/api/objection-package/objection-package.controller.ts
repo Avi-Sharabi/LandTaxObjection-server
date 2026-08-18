@@ -17,19 +17,27 @@ import { DocumentsResponseDto } from './dto/documents-response.dto';
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard, RolesGuard)
 @Roles(UserRole.INTERNAL_Assessor, UserRole.ACCOUNTANT)
-@Controller({ path: 'dispute-cases/:disputeCaseId/objection-package', version: '1' })
+@Controller({
+  path: 'dispute-cases/:disputeCaseId/objection-package',
+  version: '1',
+})
 export class ObjectionPackageController {
-  constructor(private readonly objectionPackageService: ObjectionPackageService) {}
+  constructor(
+    private readonly objectionPackageService: ObjectionPackageService,
+  ) {}
 
   @Get('documents')
   @ApiOperation({
-    summary: 'List objection package documents with pre-signed Azure Blob URLs (30 min)',
+    summary:
+      'List objection package documents with pre-signed Azure Blob URLs (30 min)',
   })
   @ApiParam({ name: 'disputeCaseId', description: 'Dispute case UUID' })
   @ApiResponse({ status: 200, type: DocumentsResponseDto })
   @ApiResponse({
     status: 403,
-    description: 'Case not yet at OBJECTION_PACKAGE_PREPARED status, or unauthorized role',
+    description:
+      'Case has not reached the ANALYSED stage of its lifecycle, its appraisal decision is not ' +
+      'OBJECTION, or the caller holds an unauthorised role',
   })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   @ApiResponse({ status: 404, description: 'Dispute case not found' })

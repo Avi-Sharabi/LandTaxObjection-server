@@ -1,5 +1,9 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { DisputeStatus, Jurisdiction, OutcomeResult } from '../entities/dispute-case.entity';
+import {
+  DisputeStatus,
+  Jurisdiction,
+  OutcomeResult,
+} from '../entities/dispute-case.entity';
 import { ValuationNoticeNestedDto } from './valuation-notice-nested.dto';
 
 export class DisputeCaseResponseDto {
@@ -91,22 +95,25 @@ export class DisputeCaseResponseDto {
   notes: string | null;
 
   @ApiPropertyOptional()
-  reminder_count: number | null;
-
-  @ApiPropertyOptional()
-  client_approval_requested_at: Date | null;
-
-  @ApiPropertyOptional()
-  client_approved_at: Date | null;
-
-  @ApiPropertyOptional()
-  last_reminder_sent_at: Date | null;
-
-  @ApiPropertyOptional()
   submitted_at: Date | null;
 
   @ApiPropertyOptional()
   lodgment_reference_number: string | null;
+
+  @ApiPropertyOptional({
+    description:
+      'When the most recent further submission was lodged. Null until the first one. The original ' +
+      'submitted_at is never overwritten.',
+  })
+  resubmitted_at: Date | null;
+
+  @ApiProperty({
+    example: 0,
+    description:
+      'Further submissions sent to the Valuer General. Capped at 3 — a client should read this ' +
+      'before offering the ai_further_submission action rather than discovering the cap as a 409.',
+  })
+  resubmission_count: number;
 
   @ApiPropertyOptional()
   closed_at: Date | null;

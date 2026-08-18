@@ -138,7 +138,11 @@ const CASES: CaseSeed[] = [
 
 const logger = new Logger('ComparablesTestSeeder');
 
-async function seedCase(dataSource: DataSource, c: CaseSeed, accountantId: string): Promise<void> {
+async function seedCase(
+  dataSource: DataSource,
+  c: CaseSeed,
+  accountantId: string,
+): Promise<void> {
   const clientRepo = dataSource.getRepository(Client);
 
   const existingClient = await clientRepo.findOneBy({ id: c.ids.client });
@@ -154,7 +158,10 @@ async function seedCase(dataSource: DataSource, c: CaseSeed, accountantId: strin
     );
   }
 
-  const [existingProp] = await dataSource.query(`SELECT id FROM properties WHERE id = $1`, [c.ids.property]);
+  const [existingProp] = await dataSource.query(
+    `SELECT id FROM properties WHERE id = $1`,
+    [c.ids.property],
+  );
   if (!existingProp) {
     await dataSource.query(
       `INSERT INTO properties
@@ -162,23 +169,45 @@ async function seedCase(dataSource: DataSource, c: CaseSeed, accountantId: strin
           ownership_pct, land_area_sqm, zoning,
           lot_dp, dimensions, height_limit_m)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)`,
-      [c.ids.property, c.ids.client, c.address, c.suburb, 'NSW',
-        c.postcode, c.pid, 100.00, c.landAreaSqm, c.zoning,
-        c.lotDp, c.dimensions, c.heightLimitM],
+      [
+        c.ids.property,
+        c.ids.client,
+        c.address,
+        c.suburb,
+        'NSW',
+        c.postcode,
+        c.pid,
+        100.0,
+        c.landAreaSqm,
+        c.zoning,
+        c.lotDp,
+        c.dimensions,
+        c.heightLimitM,
+      ],
     );
   }
 
-  const [existingDoc] = await dataSource.query(`SELECT id FROM assessment_documents WHERE id = $1`, [c.ids.assessmentDocument]);
+  const [existingDoc] = await dataSource.query(
+    `SELECT id FROM assessment_documents WHERE id = $1`,
+    [c.ids.assessmentDocument],
+  );
   if (!existingDoc) {
     await dataSource.query(
       `INSERT INTO assessment_documents (id, client_id, file_path, document_name)
        VALUES ($1,$2,$3,$4)`,
-      [c.ids.assessmentDocument, c.ids.client,
-        `dispute-cases/${c.ids.assessmentDocument}/valuation-notice.pdf`, 'Land Tax Assessment Notice'],
+      [
+        c.ids.assessmentDocument,
+        c.ids.client,
+        `dispute-cases/${c.ids.assessmentDocument}/valuation-notice.pdf`,
+        'Land Tax Assessment Notice',
+      ],
     );
   }
 
-  const [existingNotice] = await dataSource.query(`SELECT id FROM valuation_notices WHERE id = $1`, [c.ids.valuationNotice]);
+  const [existingNotice] = await dataSource.query(
+    `SELECT id FROM valuation_notices WHERE id = $1`,
+    [c.ids.valuationNotice],
+  );
   if (!existingNotice) {
     await dataSource.query(
       `INSERT INTO valuation_notices
@@ -186,13 +215,26 @@ async function seedCase(dataSource: DataSource, c: CaseSeed, accountantId: strin
           assessed_land_value, prior_land_value, land_area_vg_sqm,
           is_exempt, notice_reference, decision_outcome)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
-      [c.ids.valuationNotice, c.ids.property, c.ids.assessmentDocument, accountantId,
-        c.valuationDate, c.vgCurrent, c.vgPrior, c.landAreaVgSqm,
-        false, `INTAKE-2025-${c.pid}`, 'OBJECTION'],
+      [
+        c.ids.valuationNotice,
+        c.ids.property,
+        c.ids.assessmentDocument,
+        accountantId,
+        c.valuationDate,
+        c.vgCurrent,
+        c.vgPrior,
+        c.landAreaVgSqm,
+        false,
+        `INTAKE-2025-${c.pid}`,
+        'OBJECTION',
+      ],
     );
   }
 
-  const [existingCase] = await dataSource.query(`SELECT id FROM dispute_cases WHERE id = $1`, [c.ids.disputeCase]);
+  const [existingCase] = await dataSource.query(
+    `SELECT id FROM dispute_cases WHERE id = $1`,
+    [c.ids.disputeCase],
+  );
   if (!existingCase) {
     await dataSource.query(
       `INSERT INTO dispute_cases
@@ -200,21 +242,35 @@ async function seedCase(dataSource: DataSource, c: CaseSeed, accountantId: strin
           assigned_accountant_id, jurisdiction, status,
           statutory_deadline, no_legal_ground_flagged, original_assessed_value)
        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)`,
-      [c.ids.disputeCase, c.caseReference, c.ids.client, c.ids.property,
-        c.ids.valuationNotice, accountantId, 'NSW', 'appraisal',
-        '2025-09-30', false, c.vgCurrent],
+      [
+        c.ids.disputeCase,
+        c.caseReference,
+        c.ids.client,
+        c.ids.property,
+        c.ids.valuationNotice,
+        accountantId,
+        'NSW',
+        'reports_uploaded',
+        '2025-09-30',
+        false,
+        c.vgCurrent,
+      ],
     );
   }
 
   logger.log(`  ${c.caseReference}  ${c.ids.disputeCase}  (${c.clientName})`);
 }
 
-export async function seedComparablesTest(dataSource: DataSource): Promise<void> {
+export async function seedComparablesTest(
+  dataSource: DataSource,
+): Promise<void> {
   const userRepo = dataSource.getRepository(User);
 
   const accountant = await userRepo.findOneBy({ email: ACCOUNTANT_EMAIL });
   if (!accountant) {
-    throw new Error(`[ComparablesTestSeeder] "${ACCOUNTANT_EMAIL}" not found — run seedUsers() first.`);
+    throw new Error(
+      `[ComparablesTestSeeder] "${ACCOUNTANT_EMAIL}" not found — run seedUsers() first.`,
+    );
   }
 
   logger.log('\n── Comparables test cases ───────────────────────────────');

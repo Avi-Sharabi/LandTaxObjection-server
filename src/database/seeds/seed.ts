@@ -6,7 +6,6 @@ import { seedClients } from './client.seeder';
 import { seedObjectionPackage } from './objection-package.seeder';
 import { seedCaseClosedNoObjection } from './case-closed-no-objection.seeder';
 import { seedInternalAssessedValueTest } from './internal-assessed-value-test.seeder';
-import { seedNotifications } from './notification.seeder';
 import { seedVgMonitorTest } from './vg-monitor-test.seeder';
 import { seedVgFollowUpTest } from './vg-follow-up-test.seeder';
 import { seedSubmitToVG } from './submit-to-vg.seeder';
@@ -36,7 +35,6 @@ async function runSeeders(dataSource: DataSource): Promise<void> {
     await seedObjectionPackage(dataSource);
     await seedCaseClosedNoObjection(dataSource);
     await seedInternalAssessedValueTest(dataSource);
-    await seedNotifications(dataSource);
     await seedVgMonitorTest(dataSource);
     await seedSubmitToVG(dataSource);
     await seedCasesPagination(dataSource);
