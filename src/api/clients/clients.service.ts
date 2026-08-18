@@ -51,7 +51,7 @@ export class ClientsService {
 
   async findAll(): Promise<Client[]> {
     return this.clientsRepository.find({
-      relations: ['assigned_accountant', 'properties', 'dispute_cases'],
+      relations: ['assigned_accountant', 'dispute_cases'],
     });
   }
 
@@ -93,9 +93,9 @@ export class ClientsService {
   async findOne(id: string): Promise<Client> {
     const client = await this.clientsRepository.findOne({
       where: { id },
-      // 'properties' intentionally dropped: the Properties tab now fetches its
-      // own paginated data from GET /properties?clientId=... instead of riding
-      // in on this payload unbounded. See PropertiesController.findAll.
+      // 'properties' is intentionally omitted from client list/detail payloads:
+      // the Properties tab fetches its own paginated data from
+      // GET /properties?clientId=... instead. See PropertiesController.findAll.
       relations: ['assigned_accountant', 'dispute_cases'],
     });
 

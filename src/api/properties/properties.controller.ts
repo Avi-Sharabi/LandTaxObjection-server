@@ -22,7 +22,7 @@ export class PropertiesController {
   @Roles(UserRole.ACCOUNTANT)
   @Get()
   findAll(@Query() query: GetPropertiesQueryDto) {
-    return this.propertiesService.findAllPaginated(query);
+    return this.propertiesService.findPaginated(query);
   }
 
   @UseGuards(RolesGuard)

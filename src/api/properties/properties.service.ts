@@ -4,7 +4,10 @@ import { Repository } from 'typeorm';
 import { Property } from './entities/property.entity';
 import { UpdatePropertyDto } from './dto/update-property.dto';
 import { GetPropertiesQueryDto } from '../../common/dto/paginated-query.dto';
-import { PaginatedPropertiesResult, PropertyListItem } from './dto/property-list-item.dto';
+import {
+  PaginatedPropertiesResponseDto,
+  PropertyListItem,
+} from '../../common/dto/paginated-response.dto';
 
 // Hoisted to module scope so these are constructed once, not per row/request.
 const NUMBER = new Intl.NumberFormat('en-AU', {
@@ -37,16 +40,17 @@ export class PropertiesService {
     return this.propertiesRepository.save(property);
   }
 
-  async findAllPaginated(query: GetPropertiesQueryDto): Promise<PaginatedPropertiesResult> {
-    const { page = 1, limit = 10, clientId } = query;
+  async findPaginated(
+    query: GetPropertiesQueryDto,
+  ): Promise<PaginatedPropertiesResponseDto> {
+    const { page, limit, clientId } = query;
 
     const [rows, total] = await this.propertiesRepository.findAndCount({
       where: clientId ? { client_id: clientId } : {},
       relations: { dispute_cases: true },
-      // dispute_cases is a one-to-many relation — the default "join" strategy
-      // would LEFT JOIN it and apply skip/take to the multiplied row set,
-      // corrupting both `data` and `total` for any property with 2+ cases.
-      // "query" loads it via a separate follow-up query instead.
+      // Query loading keeps joinAttributes empty, allowing TypeORM's count to
+      // use COUNT(1) instead of COUNT(DISTINCT primary key), at the cost of
+      // follow-up relation queries.
       relationLoadStrategy: 'query',
       select: {
         id: true,
@@ -63,6 +67,8 @@ export class PropertiesService {
         ownership_pct: true,
         height_limit_m: true,
         created_at: true,
+        // The query relation loader groups selected cases by primary key;
+        // omitting id makes this relation resolve to an empty array.
         dispute_cases: { id: true, case_reference: true },
       },
       // id tiebreaker: created_at alone can tie when intake creates several
