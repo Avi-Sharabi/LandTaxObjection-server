@@ -4,7 +4,7 @@ import { DataSource, EntityManager } from 'typeorm';
 const logger = new Logger('PropertySalesRawSeeder');
 
 /**
- * Creates `property_sales_raw` on a local development database.
+ * Creates `property_sales_raw` on a local development database, matching QA and production.
  *
  * Unlike every other seeder here, this one creates a table rather than rows — because nothing else
  * in the repository does. `property_sales_raw` was loaded out of band in QA/prod, no migration
@@ -14,12 +14,9 @@ const logger = new Logger('PropertySalesRawSeeder');
  * `relation "property_sales_raw" does not exist`, before Puppeteer even launches.
  *
  * Deliberately NOT a migration. `migration:run` executes against prod and QA in the deploy
- * pipeline, and the columns below describe *the data*, not the live table: they come from
- * `SALE_RECORD_FIELDS`, which establishes column names and types but says nothing about the real
- * table's defaults, NOT NULL constraints, varchar lengths or indexes. A migration has to specify
- * every one of those, so it would promote a partial picture to canonical for a table this repo does
- * not own — and `down()` could only be `DROP TABLE` against production data. Scoped to local
- * development, anything wrong here costs a `docker compose down -v`.
+ * pipeline, and this table already exists there with 2.3M rows. A migration defining it could only
+ * ever be a no-op there, and its `down()` could only be `DROP TABLE` against production data.
+ * Scoped to local development, anything wrong here costs a `docker compose down -v`.
  */
 export async function seedPropertySalesRaw(
   dataSource: DataSource,
@@ -33,13 +30,16 @@ export async function seedPropertySalesRaw(
 
   const alreadyPresent = await tableExists(dataSource);
   if (alreadyPresent) {
+    // Note this cannot re-shape an existing table. Drop it first if the schema has moved.
     logger.log('Skipped (already exists): property_sales_raw');
     return;
   }
 
-  // Postgres DDL is transactional, so the table cannot end up created without its primary key.
+  // Postgres DDL is transactional, so the table cannot end up created without its constraints.
   await dataSource.transaction(async (manager: EntityManager) => {
-    await manager.query(CREATE_PROPERTY_SALES_RAW);
+    for (const statement of CREATE_STATEMENTS) {
+      await manager.query(statement);
+    }
   });
 
   logger.log('Created table: property_sales_raw (empty)');
@@ -56,50 +56,70 @@ async function tableExists(dataSource: DataSource): Promise<boolean> {
 }
 
 /**
- * Taken from `SALE_RECORD_FIELDS` in `psi-import/psi-dat-parser.service.ts` — the schema contract
- * for this table, and the only definition verified against both real .DAT files and live
- * `property_sales_raw` rows. `property-sales-raw.entity.ts` agrees field for field, but it is
- * second-hand: its own doc comment records that it was derived from `comparable-sale.entity.ts`.
+ * Mirrors `property-sales-raw.entity.ts`, which describes the live QA/production table.
  *
- * The parser accounts for 25 of the 27 columns — 24 from `SALE_RECORD_FIELDS`, plus `source_file`,
- * which `toSaleRecord` sets itself. The other two are not guesses either:
- *   `imported_at` — stamped by `PsiImportRepository.insertSaleRecords`, because the table is
- *                   externally managed and no column default can be assumed.
- *   `id`          — the database's, via a default the insert relies on and never supplies. That
- *                   makes `bigserial` structural here rather than a performance choice.
+ * That makes **two hand-maintained descriptions of a table neither of them owns**, and nothing
+ * checks that they agree with each other or with the real thing. Both are `synchronize: false`
+ * documentation, so a divergence produces no error — it just makes local quietly stop representing
+ * QA, which is the exact failure that let `uq_psr_dealing_number` reach QA unnoticed. Anyone
+ * changing one must change the other, and confirm against `\d property_sales_raw` on QA.
  *
- * No secondary indexes on purpose. This repo cannot see production's index set, and inventing some
- * here would make local queries faster than the environment they exist to represent — a worse trap
- * than a slow development query, since it silently invalidates any local timing observation.
+ * **`uq_psr_dealing_number` is included on purpose.** It is the reason the weekly import cannot
+ * store every row it parses — one land-title dealing covers several properties — and leaving it out
+ * locally is exactly the drift that let that failure reach QA unnoticed. Local must fail the same
+ * way QA does, or local proves nothing. `PsiImportRepository.insertSaleRecords` handles it with
+ * `ON CONFLICT DO NOTHING` and counts what it discards.
+ *
+ * Statements are executed one at a time rather than as a single blob so a failure names itself.
+ * Postgres has no `CREATE TYPE ... IF NOT EXISTS`, hence the `DO` block trapping `duplicate_object`
+ * — the type survives a `DROP TABLE`, so re-seeding after one would otherwise fail.
  */
-const CREATE_PROPERTY_SALES_RAW = `
-  CREATE TABLE IF NOT EXISTS property_sales_raw (
-    id                       bigserial PRIMARY KEY,
-    source_file              varchar,
-    imported_at              timestamptz,
-    district_code            varchar,
-    property_id              varchar,
-    sale_counter             integer,
-    download_datetime        timestamptz,
-    property_name            varchar,
-    property_unit_number     varchar,
-    property_house_number    varchar,
-    property_street_name     varchar,
-    property_locality        varchar,
-    property_post_code       varchar,
-    area                     numeric(15,4),
-    area_type                varchar,
-    contract_date            timestamptz,
-    settlement_date          timestamptz,
-    purchase_price           numeric(20,2),
-    zoning                   varchar,
-    nature_of_property       varchar,
-    primary_purpose          varchar,
-    strata_lot_number        varchar,
-    component_code           varchar,
-    sale_code                varchar,
-    interest_of_sale_percent numeric(10,4),
-    dealing_number           varchar,
-    owner_type               varchar
-  )
-`;
+const CREATE_STATEMENTS = [
+  `DO $$ BEGIN
+     CREATE TYPE area_type_enum AS ENUM ('M', 'H');
+   EXCEPTION WHEN duplicate_object THEN NULL;
+   END $$`,
+
+  `CREATE TABLE IF NOT EXISTS property_sales_raw (
+     id                       bigserial PRIMARY KEY,
+     source_file              varchar(255) NOT NULL,
+     imported_at              timestamptz  NOT NULL DEFAULT NOW(),
+     district_code            varchar(10),
+     property_id              varchar(50),
+     sale_counter             smallint,
+     download_datetime        timestamptz,
+     property_name            varchar(255),
+     property_unit_number     varchar(50),
+     property_house_number    varchar(50),
+     property_street_name     varchar(255),
+     property_locality        varchar(100),
+     property_post_code       char(4),
+     area                     numeric(15,4),
+     area_type                area_type_enum,
+     contract_date            date,
+     settlement_date          date,
+     purchase_price           numeric(15,2),
+     zoning                   varchar(20),
+     nature_of_property       varchar(50),
+     primary_purpose          varchar(50),
+     strata_lot_number        varchar(50),
+     component_code           varchar(20),
+     sale_code                varchar(20),
+     interest_of_sale_percent numeric(5,2),
+     dealing_number           varchar(50),
+     owner_type               varchar(50),
+     CONSTRAINT uq_psr_dealing_number UNIQUE (dealing_number)
+   )`,
+
+  // The nine indexes the entity declares. No index on download_datetime — faithful to QA, and a
+  // known gap: findLatestDownloadDatetime orders by that column on every import.
+  `CREATE INDEX IF NOT EXISTS idx_psr_locality_date  ON property_sales_raw (property_locality, contract_date)`,
+  `CREATE INDEX IF NOT EXISTS idx_psr_post_code      ON property_sales_raw (property_post_code)`,
+  `CREATE INDEX IF NOT EXISTS idx_psr_contract_date  ON property_sales_raw (contract_date)`,
+  `CREATE INDEX IF NOT EXISTS idx_psr_district_code  ON property_sales_raw (district_code)`,
+  `CREATE INDEX IF NOT EXISTS idx_psr_zoning         ON property_sales_raw (zoning)`,
+  `CREATE INDEX IF NOT EXISTS idx_psr_nature         ON property_sales_raw (nature_of_property)`,
+  `CREATE INDEX IF NOT EXISTS idx_psr_purchase_price ON property_sales_raw (purchase_price)`,
+  `CREATE INDEX IF NOT EXISTS idx_psr_source_file    ON property_sales_raw (source_file)`,
+  `CREATE INDEX IF NOT EXISTS idx_psr_imported_at    ON property_sales_raw (imported_at)`,
+];

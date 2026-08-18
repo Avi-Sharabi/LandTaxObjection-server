@@ -4,19 +4,41 @@ import { User, UserRole } from 'src/api/users/entities/user.entity';
 import { Client, ClientStatus } from 'src/api/clients/entities/client.entity';
 import { AssessmentDocument } from 'src/api/assessment-documents/entities/assessment-document.entity';
 import { Property } from 'src/api/properties/entities/property.entity';
-import { ValuationNotice, DecisionOutcome } from 'src/api/valuation-notices/entities/valuation-notice.entity';
+import {
+  ValuationNotice,
+  DecisionOutcome,
+} from 'src/api/valuation-notices/entities/valuation-notice.entity';
 import { OwnershipType } from 'src/common/enums/ownership-type.enum';
-import { DisputeCase, DisputeStatus, Jurisdiction } from 'src/api/dispute-cases/entities/dispute-case.entity';
-import { DisputeLegalGround, LegalGround } from 'src/api/dispute-legal-grounds/entities/dispute-legal-ground.entity';
-import { DisputeConstraint, ConstraintType } from 'src/api/dispute-constraints/entities/dispute-constraint.entity';
+import {
+  DisputeCase,
+  DisputeStatus,
+  Jurisdiction,
+} from 'src/api/dispute-cases/entities/dispute-case.entity';
+import {
+  DisputeLegalGround,
+  LegalGround,
+} from 'src/api/dispute-legal-grounds/entities/dispute-legal-ground.entity';
+import {
+  DisputeConstraint,
+  ConstraintType,
+} from 'src/api/dispute-constraints/entities/dispute-constraint.entity';
 import { ConstraintFile } from 'src/api/constraint-files/entities/constraint-file.entity';
-import { UploadStatus, UploadedByRole } from 'src/api/valuation-notices/entities/upload-status.enum';
+import {
+  UploadStatus,
+  UploadedByRole,
+} from 'src/api/valuation-notices/entities/upload-status.enum';
 import { ComparableSale } from 'src/api/comparables/entities/comparable-sale.entity';
 import { DisputeEvidenceIssue } from 'src/api/supporting-evidence/entities/dispute-evidence-issue.entity';
 import { DisputeObjectionReason } from 'src/api/dispute-cases/entities/dispute-objection-reason.entity';
-import { Notification, NotificationType } from 'src/api/notifications/entities/notification.entity';
+import {
+  Notification,
+  NotificationType,
+} from 'src/api/notifications/entities/notification.entity';
 import { AiUpdateLog } from 'src/api/ai-update-log/entities/ai-update-log.entity';
-import { AuditLog, AuditAction } from 'src/api/audit-log/entities/audit-log.entity';
+import {
+  AuditLog,
+  AuditAction,
+} from 'src/api/audit-log/entities/audit-log.entity';
 
 const logger = new Logger('UpdateDatabaseTestSeeder');
 
@@ -24,21 +46,21 @@ const logger = new Logger('UpdateDatabaseTestSeeder');
 // row by a stable, human-readable business field instead; these only exist so
 // this seeder can find-or-create the same rows on every re-run) ───────────────
 const IDS = {
-  user:                   'b1000000-0000-0000-0000-000000000001',
-  client:                 'b1000000-0000-0000-0000-000000000002',
-  assessmentDocument:     'b1000000-0000-0000-0000-000000000003',
-  property:               'b1000000-0000-0000-0000-000000000004',
-  valuationNotice:        'b1000000-0000-0000-0000-000000000005',
-  disputeCase:            'b1000000-0000-0000-0000-000000000006',
-  disputeLegalGround:     'b1000000-0000-0000-0000-000000000007',
-  disputeConstraint:      'b1000000-0000-0000-0000-000000000008',
-  constraintFile:         'b1000000-0000-0000-0000-000000000009',
-  comparableSale:         'b1000000-0000-0000-0000-00000000000a',
-  disputeEvidenceIssue:   'b1000000-0000-0000-0000-00000000000b',
+  user: 'b1000000-0000-0000-0000-000000000001',
+  client: 'b1000000-0000-0000-0000-000000000002',
+  assessmentDocument: 'b1000000-0000-0000-0000-000000000003',
+  property: 'b1000000-0000-0000-0000-000000000004',
+  valuationNotice: 'b1000000-0000-0000-0000-000000000005',
+  disputeCase: 'b1000000-0000-0000-0000-000000000006',
+  disputeLegalGround: 'b1000000-0000-0000-0000-000000000007',
+  disputeConstraint: 'b1000000-0000-0000-0000-000000000008',
+  constraintFile: 'b1000000-0000-0000-0000-000000000009',
+  comparableSale: 'b1000000-0000-0000-0000-00000000000a',
+  disputeEvidenceIssue: 'b1000000-0000-0000-0000-00000000000b',
   disputeObjectionReason: 'b1000000-0000-0000-0000-00000000000c',
-  notification:           'b1000000-0000-0000-0000-00000000000d',
-  aiUpdateLog:            'b1000000-0000-0000-0000-00000000000e',
-  auditLog:               'b1000000-0000-0000-0000-00000000000f',
+  notification: 'b1000000-0000-0000-0000-00000000000d',
+  aiUpdateLog: 'b1000000-0000-0000-0000-00000000000e',
+  auditLog: 'b1000000-0000-0000-0000-00000000000f',
 };
 
 // Fixed epoch-ms literal — not a real analyze-ai run, just a stable value the
@@ -49,16 +71,18 @@ const QA_FIXTURE_RUN_ID = 1_700_000_000_000;
 // ─── Stable, human-readable business fields the test suite references directly
 // (see tests/update-database.test.js for the exact chat instructions) ─────────
 export const QA_FIXTURE = {
-  userEmail:        'qa-updatedb-fixture@example.com',
-  clientName:       'QA UpdateDB Fixture Client',
-  propertyPid:      'QA-FIXTURE-0001',
-  noticeReference:  'QA-UPDATEDB-FIXTURE-NOTICE',
-  caseReference:    'QA-UPDATE-DB-FIXTURE',
+  userEmail: 'qa-updatedb-fixture@example.com',
+  clientName: 'QA UpdateDB Fixture Client',
+  propertyPid: 'QA-FIXTURE-0001',
+  noticeReference: 'QA-UPDATEDB-FIXTURE-NOTICE',
+  caseReference: 'QA-UPDATE-DB-FIXTURE',
   comparableSaleId: 'QA-FIXTURE-COMP-001',
   aiUpdateLogAction: 'QA-UPDATEDB-FIXTURE-SEED-MARKER',
 };
 
-export async function seedUpdateDatabaseTestFixture(dataSource: DataSource): Promise<void> {
+export async function seedUpdateDatabaseTestFixture(
+  dataSource: DataSource,
+): Promise<void> {
   const userRepo = dataSource.getRepository(User);
   const clientRepo = dataSource.getRepository(Client);
   const assessmentDocumentRepo = dataSource.getRepository(AssessmentDocument);
@@ -69,8 +93,11 @@ export async function seedUpdateDatabaseTestFixture(dataSource: DataSource): Pro
   const disputeConstraintRepo = dataSource.getRepository(DisputeConstraint);
   const constraintFileRepo = dataSource.getRepository(ConstraintFile);
   const comparableSaleRepo = dataSource.getRepository(ComparableSale);
-  const disputeEvidenceIssueRepo = dataSource.getRepository(DisputeEvidenceIssue);
-  const disputeObjectionReasonRepo = dataSource.getRepository(DisputeObjectionReason);
+  const disputeEvidenceIssueRepo =
+    dataSource.getRepository(DisputeEvidenceIssue);
+  const disputeObjectionReasonRepo = dataSource.getRepository(
+    DisputeObjectionReason,
+  );
   const notificationRepo = dataSource.getRepository(Notification);
   const aiUpdateLogRepo = dataSource.getRepository(AiUpdateLog);
   const auditLogRepo = dataSource.getRepository(AuditLog);
@@ -98,7 +125,10 @@ export async function seedUpdateDatabaseTestFixture(dataSource: DataSource): Pro
   }
 
   // ── Client ───────────────────────────────────────────────────────────────
-  let client = await clientRepo.findOne({ where: { id: IDS.client }, withDeleted: true });
+  let client = await clientRepo.findOne({
+    where: { id: IDS.client },
+    withDeleted: true,
+  });
   if (!client) {
     client = await clientRepo.save(
       clientRepo.create({
@@ -131,7 +161,9 @@ export async function seedUpdateDatabaseTestFixture(dataSource: DataSource): Pro
   // ── Assessment Document ──────────────────────────────────────────────────
   // Created before the valuation notice so its id is available for
   // valuation_notices.source_document_id.
-  let assessmentDocument = await assessmentDocumentRepo.findOneBy({ id: IDS.assessmentDocument });
+  let assessmentDocument = await assessmentDocumentRepo.findOneBy({
+    id: IDS.assessmentDocument,
+  });
   if (!assessmentDocument) {
     assessmentDocument = await assessmentDocumentRepo.save(
       assessmentDocumentRepo.create({
@@ -141,7 +173,9 @@ export async function seedUpdateDatabaseTestFixture(dataSource: DataSource): Pro
         file_path: null,
       }),
     );
-    logger.log('Seeded assessment document: QA UpdateDB Fixture Assessment Document');
+    logger.log(
+      'Seeded assessment document: QA UpdateDB Fixture Assessment Document',
+    );
   } else {
     logger.log('Skipped assessment document (already exists)');
   }
@@ -172,7 +206,9 @@ export async function seedUpdateDatabaseTestFixture(dataSource: DataSource): Pro
   }
 
   // ── Valuation Notice ─────────────────────────────────────────────────────
-  let valuationNotice = await valuationNoticeRepo.findOneBy({ id: IDS.valuationNotice });
+  let valuationNotice = await valuationNoticeRepo.findOneBy({
+    id: IDS.valuationNotice,
+  });
   if (!valuationNotice) {
     valuationNotice = await valuationNoticeRepo.save(
       valuationNoticeRepo.create({
@@ -192,11 +228,16 @@ export async function seedUpdateDatabaseTestFixture(dataSource: DataSource): Pro
     );
     logger.log(`Seeded valuation notice: ${QA_FIXTURE.noticeReference}`);
   } else {
-    logger.log(`Skipped valuation notice (already exists): ${QA_FIXTURE.noticeReference}`);
+    logger.log(
+      `Skipped valuation notice (already exists): ${QA_FIXTURE.noticeReference}`,
+    );
   }
 
   // ── Dispute Case ─────────────────────────────────────────────────────────
-  let disputeCase = await disputeCaseRepo.findOne({ where: { id: IDS.disputeCase }, withDeleted: true });
+  let disputeCase = await disputeCaseRepo.findOne({
+    where: { id: IDS.disputeCase },
+    withDeleted: true,
+  });
   if (!disputeCase) {
     disputeCase = await disputeCaseRepo.save(
       disputeCaseRepo.create({
@@ -207,14 +248,16 @@ export async function seedUpdateDatabaseTestFixture(dataSource: DataSource): Pro
         valuation_notice_id: valuationNotice.id,
         assigned_accountant_id: user.id,
         jurisdiction: Jurisdiction.NSW,
-        status: DisputeStatus.DRAFT,
+        status: DisputeStatus.CREATED,
         statutory_deadline: new Date('2026-12-31'),
         notes: null,
       }),
     );
     logger.log(`Seeded dispute case: ${QA_FIXTURE.caseReference}`);
   } else {
-    logger.log(`Skipped dispute case (already exists): ${QA_FIXTURE.caseReference}`);
+    logger.log(
+      `Skipped dispute case (already exists): ${QA_FIXTURE.caseReference}`,
+    );
   }
   // Self-heal: this row is permanent and reused across every test run (unlike
   // the disposable rows other seeders create) — force structural fields back
@@ -224,18 +267,27 @@ export async function seedUpdateDatabaseTestFixture(dataSource: DataSource): Pro
   // finally/afterAll.
   if (disputeCase.deleted_at) {
     await disputeCaseRepo.restore(IDS.disputeCase);
-    logger.log(`Restored soft-deleted dispute case: ${QA_FIXTURE.caseReference}`);
+    logger.log(
+      `Restored soft-deleted dispute case: ${QA_FIXTURE.caseReference}`,
+    );
   }
-  if (disputeCase.status !== DisputeStatus.DRAFT || disputeCase.assigned_accountant_id !== user.id) {
+  if (
+    disputeCase.status !== DisputeStatus.CREATED ||
+    disputeCase.assigned_accountant_id !== user.id
+  ) {
     await disputeCaseRepo.update(IDS.disputeCase, {
-      status: DisputeStatus.DRAFT,
+      status: DisputeStatus.CREATED,
       assigned_accountant_id: user.id,
     });
-    logger.log(`Healed drifted dispute case fields: ${QA_FIXTURE.caseReference}`);
+    logger.log(
+      `Healed drifted dispute case fields: ${QA_FIXTURE.caseReference}`,
+    );
   }
 
   // ── Dispute Legal Ground ─────────────────────────────────────────────────
-  let disputeLegalGround = await disputeLegalGroundRepo.findOneBy({ id: IDS.disputeLegalGround });
+  let disputeLegalGround = await disputeLegalGroundRepo.findOneBy({
+    id: IDS.disputeLegalGround,
+  });
   if (!disputeLegalGround) {
     disputeLegalGround = await disputeLegalGroundRepo.save(
       disputeLegalGroundRepo.create({
@@ -251,7 +303,9 @@ export async function seedUpdateDatabaseTestFixture(dataSource: DataSource): Pro
   }
 
   // ── Dispute Constraint ───────────────────────────────────────────────────
-  let disputeConstraint = await disputeConstraintRepo.findOneBy({ id: IDS.disputeConstraint });
+  let disputeConstraint = await disputeConstraintRepo.findOneBy({
+    id: IDS.disputeConstraint,
+  });
   if (!disputeConstraint) {
     disputeConstraint = await disputeConstraintRepo.save(
       disputeConstraintRepo.create({
@@ -267,7 +321,9 @@ export async function seedUpdateDatabaseTestFixture(dataSource: DataSource): Pro
   }
 
   // ── Constraint File ──────────────────────────────────────────────────────
-  let constraintFile = await constraintFileRepo.findOneBy({ id: IDS.constraintFile });
+  let constraintFile = await constraintFileRepo.findOneBy({
+    id: IDS.constraintFile,
+  });
   if (!constraintFile) {
     constraintFile = await constraintFileRepo.save(
       constraintFileRepo.create({
@@ -284,13 +340,17 @@ export async function seedUpdateDatabaseTestFixture(dataSource: DataSource): Pro
         confirmed_at: null,
       }),
     );
-    logger.log('Seeded constraint file: QA UpdateDB Fixture Heritage Listing Evidence.pdf');
+    logger.log(
+      'Seeded constraint file: QA UpdateDB Fixture Heritage Listing Evidence.pdf',
+    );
   } else {
     logger.log('Skipped constraint file (already exists)');
   }
 
   // ── Comparable Sale ──────────────────────────────────────────────────────
-  let comparableSale = await comparableSaleRepo.findOneBy({ id: IDS.comparableSale });
+  let comparableSale = await comparableSaleRepo.findOneBy({
+    id: IDS.comparableSale,
+  });
   if (!comparableSale) {
     comparableSale = await comparableSaleRepo.save(
       comparableSaleRepo.create({
@@ -303,11 +363,15 @@ export async function seedUpdateDatabaseTestFixture(dataSource: DataSource): Pro
     );
     logger.log(`Seeded comparable sale: ${QA_FIXTURE.comparableSaleId}`);
   } else {
-    logger.log(`Skipped comparable sale (already exists): ${QA_FIXTURE.comparableSaleId}`);
+    logger.log(
+      `Skipped comparable sale (already exists): ${QA_FIXTURE.comparableSaleId}`,
+    );
   }
 
   // ── Dispute Evidence Issue ───────────────────────────────────────────────
-  let disputeEvidenceIssue = await disputeEvidenceIssueRepo.findOneBy({ id: IDS.disputeEvidenceIssue });
+  let disputeEvidenceIssue = await disputeEvidenceIssueRepo.findOneBy({
+    id: IDS.disputeEvidenceIssue,
+  });
   if (!disputeEvidenceIssue) {
     disputeEvidenceIssue = await disputeEvidenceIssueRepo.save(
       disputeEvidenceIssueRepo.create({
@@ -328,7 +392,9 @@ export async function seedUpdateDatabaseTestFixture(dataSource: DataSource): Pro
   }
 
   // ── Dispute Objection Reason ─────────────────────────────────────────────
-  let disputeObjectionReason = await disputeObjectionReasonRepo.findOneBy({ id: IDS.disputeObjectionReason });
+  let disputeObjectionReason = await disputeObjectionReasonRepo.findOneBy({
+    id: IDS.disputeObjectionReason,
+  });
   if (!disputeObjectionReason) {
     disputeObjectionReason = await disputeObjectionReasonRepo.save(
       disputeObjectionReasonRepo.create({
@@ -344,7 +410,9 @@ export async function seedUpdateDatabaseTestFixture(dataSource: DataSource): Pro
         run_id: QA_FIXTURE_RUN_ID,
       }),
     );
-    logger.log('Seeded dispute objection reason: ground 1 — Incorrect Land Value');
+    logger.log(
+      'Seeded dispute objection reason: ground 1 — Incorrect Land Value',
+    );
   } else {
     logger.log('Skipped dispute objection reason (already exists)');
   }
@@ -356,8 +424,9 @@ export async function seedUpdateDatabaseTestFixture(dataSource: DataSource): Pro
       notificationRepo.create({
         id: IDS.notification,
         userId: user.id,
-        type: NotificationType.APPROVAL_REQUESTED,
-        message: 'QA UpdateDB fixture — seeded notification for Update-via-chat testing.',
+        type: NotificationType.VG_FOLLOW_UP_SENT,
+        message:
+          'QA UpdateDB fixture — seeded notification for Update-via-chat testing.',
         caseId: disputeCase.id,
         read: false,
         readAt: null,
@@ -404,5 +473,7 @@ export async function seedUpdateDatabaseTestFixture(dataSource: DataSource): Pro
     logger.log('Skipped audit_logs fixture row (already exists)');
   }
 
-  logger.log(`\n  → QA UpdateDB fixture chain ready. Anchor: dispute case '${QA_FIXTURE.caseReference}'.`);
+  logger.log(
+    `\n  → QA UpdateDB fixture chain ready. Anchor: dispute case '${QA_FIXTURE.caseReference}'.`,
+  );
 }

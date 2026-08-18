@@ -1,5 +1,8 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { AssessmentDocument } from '../entities/assessment-document.entity';
+import {
+  AssessmentDocument,
+  AssessmentDocumentType,
+} from '../entities/assessment-document.entity';
 
 export class AssessmentDocumentResponseDto {
   @ApiProperty()
@@ -16,6 +19,17 @@ export class AssessmentDocumentResponseDto {
 
   @ApiProperty()
   document_name: string;
+
+  @ApiProperty({
+    enum: AssessmentDocumentType,
+    nullable: true,
+    description:
+      'What kind of report this is. Null for documents uploaded before the type was introduced. ' +
+      'Load-bearing, not cosmetic: a case only advances to reports_uploaded once a ' +
+      'land_value_search AND a sales_report are on file WITH a stored blob, so a client ' +
+      'cannot show the user why a case is stuck without reading this back.',
+  })
+  document_type: AssessmentDocumentType | null;
 
   @ApiProperty()
   created_at: Date;
@@ -52,6 +66,7 @@ export class AssessmentDocumentResponseDto {
     dto.client_id = doc.client_id;
     dto.dispute_case_id = doc.dispute_case_id;
     dto.document_name = doc.document_name;
+    dto.document_type = doc.document_type;
     dto.created_at = doc.created_at;
     dto.viewUrl = viewUrl;
     dto.downloadUrl = downloadUrl;

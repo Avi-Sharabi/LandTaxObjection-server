@@ -1,4 +1,9 @@
-import { ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { AzureBlobService } from 'src/common/azure-blob/azure-blob.service';
 import { XpmService } from 'src/common/xpm/xpm.service';
@@ -23,7 +28,6 @@ import {
 import { GetClientsQueryDto } from '../../common/dto/paginated-query.dto';
 import { PaginatedClientsResponseDto } from '../../common/dto/paginated-response.dto';
 import { Client, ClientStatus } from './entities/client.entity';
-import { DisputeStatus } from '../dispute-cases/entities/dispute-case.entity';
 import { ValuationNotice } from '../valuation-notices/entities/valuation-notice.entity';
 import { fyiStorageService } from 'src/common/fyi-storage/fyi-storage.service';
 import { ConfigService } from '@nestjs/config';
@@ -62,7 +66,9 @@ export class ClientsService {
     });
   }
 
-  async findPaginated(query: GetClientsQueryDto): Promise<PaginatedClientsResponseDto> {
+  async findPaginated(
+    query: GetClientsQueryDto,
+  ): Promise<PaginatedClientsResponseDto> {
     const { page, limit, search, status, region } = query;
     const skip = (page - 1) * limit;
 
@@ -70,8 +76,16 @@ export class ClientsService {
 
     if (search) {
       where.push(
-        { ...(status && { status }), ...(region && { region }), name: ILike(`%${search}%`) },
-        { ...(status && { status }), ...(region && { region }), email: ILike(`%${search}%`) },
+        {
+          ...(status && { status }),
+          ...(region && { region }),
+          name: ILike(`%${search}%`),
+        },
+        {
+          ...(status && { status }),
+          ...(region && { region }),
+          email: ILike(`%${search}%`),
+        },
       );
     } else {
       where.push({ ...(status && { status }), ...(region && { region }) });
@@ -137,20 +151,30 @@ export class ClientsService {
     // Free — dispute_cases is already loaded above and is already soft-delete
     // filtered (TypeORM appends deleted_at IS NULL to the join for any relation whose
     // entity has @DeleteDateColumn), so this needs no second query.
-    return Object.assign(client, { dispute_case_count: client.dispute_cases.length });
+    return Object.assign(client, {
+      dispute_case_count: client.dispute_cases.length,
+    });
   }
 
-  async update(id: string, updateClientDto: UpdateClientInfoDto): Promise<Client> {
+  async update(
+    id: string,
+    updateClientDto: UpdateClientInfoDto,
+  ): Promise<Client> {
     const client = await this.findOne(id);
     Object.assign(client, updateClientDto);
     return this.clientsRepository.save(client);
   }
 
-  async acceptTc(id: string, _acceptTCDto: AcceptTCDto): Promise<AcceptTcResponseDto> {
+  async acceptTc(
+    id: string,
+    _acceptTCDto: AcceptTCDto,
+  ): Promise<AcceptTcResponseDto> {
     const client = await this.findOne(id);
 
     const assessorEmail = this.config.get<string>('ASSESSOR_EMAIL');
-    const assessor = await this.usersRepository.findOne({ where: { email: assessorEmail } });
+    const assessor = await this.usersRepository.findOne({
+      where: { email: assessorEmail },
+    });
 
     client.tc_accepted_at = new Date();
     client.status = ClientStatus.ACTIVE;
@@ -173,11 +197,10 @@ export class ClientsService {
       };
     }
 
+    // Deliberately does not touch case status. `tnc_agreed` is a manual transition driven by
+    // PATCH /v1/dispute-cases/:id/status, which stamps tc_accepted_at only if it is still null.
     for (const disputeCase of disputeCases) {
       if (assessor) disputeCase.assigned_accountant_id = assessor.id;
-      if (disputeCase.status === DisputeStatus.PENDING_TNC) {
-        disputeCase.status = DisputeStatus.DRAFT;
-      }
     }
     await this.disputeCasesRepository.save(disputeCases);
 
@@ -190,12 +213,16 @@ export class ClientsService {
     const filePath = valuationNotices?.source_document?.file_path ?? null;
 
     if (filePath) {
-      const isFyiProdEnabled = this.config.get('IS_FYI_PROD_ENABLED') === 'true';
+      const isFyiProdEnabled =
+        this.config.get('IS_FYI_PROD_ENABLED') === 'true';
       const file = await this.azureBlobService.getFileContent(filePath);
       const base64 = file.toString('base64');
       const documentId = valuationNotices!.source_document.id;
       isFyiProdEnabled
-        ? await this.fyiStorageService.uploadToFyi({ base64 }, 'Land Tax Assessment Notice')
+        ? await this.fyiStorageService.uploadToFyi(
+            { base64 },
+            'Land Tax Assessment Notice',
+          )
         : this.azureBlobService.uploadToFyiDev(base64, documentId);
     }
 

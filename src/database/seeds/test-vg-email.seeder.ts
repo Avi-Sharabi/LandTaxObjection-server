@@ -3,6 +3,7 @@ import { DataSource } from 'typeorm';
 import {
   DisputeCase,
   DisputeStatus,
+  OutcomeResult,
 } from '../../api/dispute-cases/entities/dispute-case.entity';
 import { ClientStatus } from '../../api/clients/entities/client.entity';
 
@@ -97,15 +98,15 @@ export async function testVgEmail(dataSource: DataSource): Promise<void> {
     ],
   );
 
-  // ── Case: vg_approved test — always reset to submitted_to_vg ──────────────
+  // ── Case: vg_agreed test — always reset to objection_submitted ──────────────
   await dataSource.query(
     `
     INSERT INTO dispute_cases
       (id, case_reference, client_id, property_id, valuation_notice_id,
        assigned_accountant_id, jurisdiction, status, statutory_deadline,
-       no_legal_ground_flagged, lodgment_reference_number, submitted_at, client_approved_at)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-    ON CONFLICT (id) DO UPDATE SET status = 'submitted_to_vg'
+       no_legal_ground_flagged, lodgment_reference_number, submitted_at)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+    ON CONFLICT (id) DO UPDATE SET status = 'objection_submitted'
   `,
     [
       IDS.caseApproved,
@@ -115,24 +116,23 @@ export async function testVgEmail(dataSource: DataSource): Promise<void> {
       IDS.valuationNotice,
       accountant.id,
       'VIC',
-      'submitted_to_vg',
+      'objection_submitted',
       '2026-12-31',
       false,
       'LR-2025-TEST-0001',
       new Date(),
-      new Date(),
     ],
   );
 
-  // ── Case: vg_declined test — always reset to submitted_to_vg ──────────────
+  // ── Case: adverse VG response test — always reset to objection_submitted ──────────────
   await dataSource.query(
     `
     INSERT INTO dispute_cases
       (id, case_reference, client_id, property_id, valuation_notice_id,
        assigned_accountant_id, jurisdiction, status, statutory_deadline,
-       no_legal_ground_flagged, lodgment_reference_number, submitted_at, client_approved_at)
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
-    ON CONFLICT (id) DO UPDATE SET status = 'submitted_to_vg'
+       no_legal_ground_flagged, lodgment_reference_number, submitted_at)
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+    ON CONFLICT (id) DO UPDATE SET status = 'objection_submitted'
     
   `,
     [
@@ -143,33 +143,40 @@ export async function testVgEmail(dataSource: DataSource): Promise<void> {
       IDS.valuationNotice,
       accountant.id,
       'VIC',
-      'submitted_to_vg',
+      'objection_submitted',
       '2026-12-31',
       false,
       'LR-2025-TEST-0002',
-      new Date(),
       new Date(),
     ],
   );
 
   logger.log('Test data ready — triggering subscriber via save()...');
 
-  // ── Trigger subscriber: vg_approved ───────────────────────────────────────
+  // ── Trigger subscriber: vg_agreed ───────────────────────────────────────
   const approvedCase = await dataSource.manager.findOne(DisputeCase, {
     where: { id: IDS.caseApproved },
   });
   if (!approvedCase) throw new Error(`Case ${IDS.caseApproved} not found`);
-  approvedCase.status = DisputeStatus.VG_APPROVED;
+  approvedCase.status = DisputeStatus.VG_AGREED;
   await dataSource.manager.save(DisputeCase, approvedCase);
-  logger.log(`vg_approved — subscriber fired for case SEED-VGEMAIL-001`);
+  logger.log(`vg_agreed — subscriber fired for case SEED-VGEMAIL-001`);
 
-  // ── Trigger subscriber: vg_declined ───────────────────────────────────────
+  // ── Trigger subscriber: an adverse VG response ────────────────────────────
+  // There is no longer a "declined" status: an unfavourable reply is recorded as
+  // VG_RESPONSE_RECEIVED with outcome = rejected, and a human then decides whether to make a
+  // further submission or close the case.
   const declinedCase = await dataSource.manager.findOne(DisputeCase, {
     where: { id: IDS.caseDeclined },
   });
   if (!declinedCase) throw new Error(`Case ${IDS.caseDeclined} not found`);
-  declinedCase.status = DisputeStatus.VG_DECLINED;
-  declinedCase.vg_response_notes = 'VG upheld original valuation.';
+  declinedCase.status = DisputeStatus.VG_RESPONSE_RECEIVED;
+  declinedCase.outcome = OutcomeResult.REJECTED;
+  // What the response said now lives on the audit row for the transition, not on the case —
+  // vg_response_notes was dropped by 1786000000000. This seeder sets the status directly rather
+  // than going through the transition service, so there is no audit row to attach it to.
   await dataSource.manager.save(DisputeCase, declinedCase);
-  logger.log(`vg_declined — subscriber fired for case SEED-VGEMAIL-002`);
+  logger.log(
+    `adverse VG response — subscriber fired for case SEED-VGEMAIL-002`,
+  );
 }
