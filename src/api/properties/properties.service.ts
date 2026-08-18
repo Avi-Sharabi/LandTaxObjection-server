@@ -7,8 +7,16 @@ import { GetPropertiesQueryDto } from '../../common/dto/paginated-query.dto';
 import { PaginatedPropertiesResult, PropertyListItem } from './dto/property-list-item.dto';
 
 // Hoisted to module scope so these are constructed once, not per row/request.
-const NUMBER = new Intl.NumberFormat('en-AU', { maximumFractionDigits: 0 });
-const DATE = new Intl.DateTimeFormat('en-AU', { day: '2-digit', month: 'short', year: 'numeric' });
+const NUMBER = new Intl.NumberFormat('en-AU', {
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+});
+const DATE = new Intl.DateTimeFormat('en-AU', {
+  day: '2-digit',
+  month: 'short',
+  year: 'numeric',
+  timeZone: 'Australia/Sydney',
+});
 
 @Injectable()
 export class PropertiesService {
