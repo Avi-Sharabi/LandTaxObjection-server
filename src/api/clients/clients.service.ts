@@ -11,6 +11,7 @@ import {
   DataSource,
   FindOptionsWhere,
   ILike,
+  In,
   IsNull,
   Repository,
 } from 'typeorm';
@@ -107,10 +108,37 @@ export class ClientsService {
       take: limit,
     });
 
-    return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
+    const totalPages = Math.ceil(total / limit);
+
+    // IN (:...ids) renders as IN () — a syntax error — on an empty array, which an
+    // out-of-range page or a search matching nothing produces.
+    if (data.length === 0) {
+      return { data: [], total, page, limit, totalPages };
+    }
+
+    // One grouped aggregate for the whole page rather than a request per client (the
+    // problem this exists to fix). QueryBuilder appends dc.deleted_at IS NULL itself
+    // (DisputeCase has @DeleteDateColumn) — this is the exact set remove() soft-deletes.
+    // COUNT(*)::int casts server-side so pg returns a number, not an int8 string.
+    const counts = await this.disputeCasesRepository
+      .createQueryBuilder('dc')
+      .select('dc.client_id', 'client_id')
+      .addSelect('COUNT(*)::int', 'count')
+      .where('dc.client_id IN (:...ids)', { ids: data.map((c) => c.id) })
+      .groupBy('dc.client_id')
+      .getRawMany<{ client_id: string; count: number }>();
+
+    // Clients with no cases are absent from a grouped result entirely, hence ?? 0.
+    const countByClientId = new Map(counts.map((r) => [r.client_id, r.count]));
+    const withCounts = data.map((c) => ({
+      ...c,
+      dispute_case_count: countByClientId.get(c.id) ?? 0,
+    }));
+
+    return { data: withCounts, total, page, limit, totalPages };
   }
 
-  async findOne(id: string): Promise<Client> {
+  async findOne(id: string): Promise<Client & { dispute_case_count: number }> {
     const client = await this.clientsRepository.findOne({
       where: { id },
       relations: ['assigned_accountant', 'properties', 'dispute_cases'],
@@ -120,7 +148,12 @@ export class ClientsService {
       throw new NotFoundException(`Client #${id} not found`);
     }
 
-    return client;
+    // Free — dispute_cases is already loaded above and is already soft-delete
+    // filtered (TypeORM appends deleted_at IS NULL to the join for any relation whose
+    // entity has @DeleteDateColumn), so this needs no second query.
+    return Object.assign(client, {
+      dispute_case_count: client.dispute_cases.length,
+    });
   }
 
   async update(
@@ -199,33 +232,19 @@ export class ClientsService {
     };
   }
 
+  // Delegates to removeMany so there is exactly one place that decides lock order
+  // (cases before client) and one place that owns the cascade. Two independent
+  // implementations previously took those locks in opposite orders — this one
+  // client-then-cases, removeMany's old per-id loop cases-then-client — which is a
+  // deadlock waiting for a request on each path to hit the same client at once.
   async remove(id: string, deletedById: string): Promise<{ message: string }> {
-    const exists = await this.clientsRepository.findOne({
-      where: { id },
-      select: { id: true },
-    });
-    if (!exists) throw new NotFoundException(`Client #${id} not found`);
-
-    const now = new Date();
-
-    await this.dataSource.transaction(async (manager) => {
-      await manager.update(
-        DisputeCase,
-        { client_id: id, deleted_at: IsNull() },
-        { deleted_at: now, deleted_by: deletedById },
-      );
-
-      const clientResult = await manager.update(
-        Client,
-        { id, deleted_at: IsNull() },
-        { deleted_at: now, deleted_by: deletedById },
-      );
-
-      if (!clientResult.affected) {
-        throw new ConflictException(`Client #${id} is already deleted`);
-      }
-    });
-
+    const { results } = await this.removeMany([id], deletedById);
+    if (results[0].status === 'not_found') {
+      throw new NotFoundException(`Client #${id} not found`);
+    }
+    if (results[0].status === 'already_deleted') {
+      throw new ConflictException(`Client #${id} is already deleted`);
+    }
     return { message: `Client #${id} has been deleted` };
   }
 
@@ -233,26 +252,52 @@ export class ClientsService {
     ids: string[],
     deletedById: string,
   ): Promise<BulkDeleteClientsResponseDto> {
-    const settled = await Promise.allSettled(
-      ids.map((id) => this.remove(id, deletedById)),
-    );
+    const uniqueIds = [...new Set(ids)];
+    const now = new Date();
 
-    const results: BulkDeleteClientsResultDto[] = settled.map((outcome, i) => {
-      const id = ids[i];
-      if (outcome.status === 'fulfilled') {
-        return { id, status: 'deleted' };
+    // One transaction for the whole batch: a classification read, then two
+    // set-based UPDATEs — instead of a transaction per client (~5 round trips
+    // each, unbounded concurrency against a pg pool of 10).
+    const results = await this.dataSource.transaction(async (manager) => {
+      // withDeleted: true is required — @DeleteDateColumn auto-filters plain finds.
+      const rows = await manager.find(Client, {
+        where: { id: In(uniqueIds) },
+        select: { id: true, deleted_at: true },
+        withDeleted: true,
+      });
+      const deletedAtById = new Map(rows.map((c) => [c.id, c.deleted_at]));
+      const liveIds = uniqueIds.filter((id) => deletedAtById.get(id) === null);
+
+      if (liveIds.length > 0) {
+        // Cases before client, matching remove()'s only lock order.
+        await manager.update(
+          DisputeCase,
+          { client_id: In(liveIds), deleted_at: IsNull() },
+          { deleted_at: now, deleted_by: deletedById },
+        );
+        await manager.update(
+          Client,
+          { id: In(liveIds), deleted_at: IsNull() },
+          { deleted_at: now, deleted_by: deletedById },
+        );
       }
-      const err = outcome.reason;
-      if (err instanceof NotFoundException) {
-        return { id, status: 'not_found' };
-      }
-      if (err instanceof ConflictException) {
-        return { id, status: 'already_deleted' };
-      }
-      this.logger.error(
-        `[BulkDelete] Failed to delete client #${id}: ${err instanceof Error ? err.message : String(err)}`,
-      );
-      return { id, status: 'error' };
+
+      // Status reflects the classification snapshot, not a re-check after the
+      // UPDATE. Under two concurrent deletes of the same id, the loser's UPDATE
+      // criteria (deleted_at: IsNull() above) still protects it from being
+      // touched twice — but the loser's response here still reports "deleted"
+      // rather than "already_deleted". Data is correct either way; only the
+      // reported status can be stale, and only across two overlapping requests
+      // for the same client, which this accountant-only, non-concurrent UI can't
+      // produce today.
+      return uniqueIds.map<BulkDeleteClientsResultDto>((id) => ({
+        id,
+        status: !deletedAtById.has(id)
+          ? 'not_found'
+          : deletedAtById.get(id) === null
+            ? 'deleted'
+            : 'already_deleted',
+      }));
     });
 
     const deleted = results.filter((r) => r.status === 'deleted').length;

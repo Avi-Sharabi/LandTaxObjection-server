@@ -19,7 +19,9 @@ export type ClientListItem = Pick<
   | 'region'
   | 'status'
   | 'created_at'
->;
+> & {
+  dispute_case_count: number;
+};
 
 export class PaginatedClientsResponseDto extends PaginatedResponseDto<ClientListItem> {}
 
