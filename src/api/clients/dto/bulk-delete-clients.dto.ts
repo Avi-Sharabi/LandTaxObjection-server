@@ -9,7 +9,7 @@ export class BulkDeleteClientsDto {
     description: 'List of client UUIDs to delete',
   })
   @IsArray()
-
+  @IsUUID('4', { each: true })
   @ArrayMinSize(1)
   @ArrayMaxSize(MAX_BULK_DELETE_IDS)
   ids: string[];
