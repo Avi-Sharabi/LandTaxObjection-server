@@ -44,47 +44,16 @@ export type DisputeCaseListItem = Pick<
 
 export class PaginatedDisputeCasesResponseDto extends PaginatedResponseDto<DisputeCaseListItem> {}
 
-type PropertyListFields = Pick<
-  Property,
-  | 'id'
-  | 'pid'
-  | 'address'
-  | 'zoning'
-  | 'lot_dp'
-  | 'dimensions'
-  | 'postcode'
-  | 'land_area_sqm'
-  | 'land_area_eplanning_sqm'
-  | 'ownership_pct'
-  | 'height_limit_m'
-  | 'created_at'
->;
-
-type PropertyListNullableOverrides =
-  | 'pid'
-  | 'address'
-  | 'zoning'
-  | 'postcode'
-  | 'land_area_sqm'
-  | 'ownership_pct';
-
+// Every property column is returned as-is; only the relations are trimmed.
+// Note: the four `numeric` columns (ownership_pct, land_area_sqm,
+// land_area_eplanning_sqm, height_limit_m) have no TypeORM transformer, so pg
+// serialises them as strings ("1200.00") despite the entity typing them as
+// numbers. The frontend parses and formats them.
 export type PropertyListItem = Omit<
-  PropertyListFields,
-  PropertyListNullableOverrides
+  Property,
+  'client' | 'valuation_notices' | 'dispute_cases'
 > & {
-  pid: string | null;
-  address: string | null;
-  locality: string;
-  zoning: string | null;
-  postcode: string | null;
-  land_area_sqm: number | null;
-  land_area_display: string | null;
-  land_area_eplanning_display: string | null;
-  ownership_pct: number | null;
-  ownership_display: string | null;
-  height_limit_display: string | null;
-  added_display: string;
-  cases: Array<Pick<DisputeCase, 'id' | 'case_reference'>>;
+  dispute_cases: Array<Pick<DisputeCase, 'id' | 'case_reference'>>;
 };
 
 export class PaginatedPropertiesResponseDto extends PaginatedResponseDto<PropertyListItem> {}

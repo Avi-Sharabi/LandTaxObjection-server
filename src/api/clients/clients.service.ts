@@ -115,7 +115,7 @@ export class ClientsService {
       where: { id },
       // 'properties' is intentionally omitted from client list/detail payloads:
       // the Properties tab fetches its own paginated data from
-      // GET /properties?clientId=... instead. See PropertiesController.findAll.
+      // GET /properties/paginated?clientId=... instead. See PropertiesController.findPaginated.
       relations: ['assigned_accountant', 'dispute_cases'],
     });
 

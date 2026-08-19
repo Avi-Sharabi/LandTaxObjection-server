@@ -1,16 +1,31 @@
-import { IsOptional, IsInt, Min, Max, IsString, MaxLength, IsEnum, IsIn, IsUUID } from 'class-validator';
+import {
+  IsOptional,
+  IsInt,
+  Min,
+  Max,
+  IsString,
+  MaxLength,
+  IsEnum,
+  IsIn,
+  IsUUID,
+} from 'class-validator';
 import { Transform, Type } from 'class-transformer';
-import { OmitType } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional, OmitType } from '@nestjs/swagger';
 import { ClientStatus } from '../../api/clients/entities/client.entity';
-import { DisputeStatus, Jurisdiction } from '../../api/dispute-cases/entities/dispute-case.entity';
+import {
+  DisputeStatus,
+  Jurisdiction,
+} from '../../api/dispute-cases/entities/dispute-case.entity';
 
 export class PaginatedQueryDto {
+  @ApiPropertyOptional({ minimum: 1, default: 1 })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
   @Min(1)
   page: number = 1;
 
+  @ApiPropertyOptional({ minimum: 1, maximum: 100, default: 10 })
   @IsOptional()
   @Type(() => Number)
   @IsInt()
@@ -56,10 +71,14 @@ export class GetDisputeCasesQueryDto extends PaginatedQueryDto {
 // search is not implemented on the properties list, so it's omitted rather than
 // inherited unused — forbidNonWhitelisted then rejects a stray ?search= with a
 // 400 instead of silently accepting and ignoring it.
-export class GetPropertiesQueryDto extends OmitType(PaginatedQueryDto, ['search'] as const) {
-  // IsUUID, not IsString: client_id is a uuid column, so a non-uuid value would
-  // reach Postgres and raise a 500 instead of being rejected as a 400.
-  @IsOptional()
+export class GetPropertiesQueryDto extends OmitType(PaginatedQueryDto, [
+  'search',
+] as const) {
+  // Required: this list only ever renders inside a client, and the properties
+  // table has no other scope. IsUUID keeps a non-uuid from reaching Postgres and
+  // raising a 500 instead of a 400.
+  @ApiProperty({ format: 'uuid' })
+  @IsString()
   @IsUUID()
-  clientId?: string;
+  clientId: string;
 }

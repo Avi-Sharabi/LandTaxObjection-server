@@ -4,22 +4,7 @@ import { Repository } from 'typeorm';
 import { Property } from './entities/property.entity';
 import { UpdatePropertyDto } from './dto/update-property.dto';
 import { GetPropertiesQueryDto } from '../../common/dto/paginated-query.dto';
-import {
-  PaginatedPropertiesResponseDto,
-  PropertyListItem,
-} from '../../common/dto/paginated-response.dto';
-
-// Hoisted to module scope so these are constructed once, not per row/request.
-const NUMBER = new Intl.NumberFormat('en-AU', {
-  minimumFractionDigits: 2,
-  maximumFractionDigits: 2,
-});
-const DATE = new Intl.DateTimeFormat('en-AU', {
-  day: '2-digit',
-  month: 'short',
-  year: 'numeric',
-  timeZone: 'Australia/Sydney',
-});
+import { PaginatedPropertiesResponseDto } from '../../common/dto/paginated-response.dto';
 
 @Injectable()
 export class PropertiesService {
@@ -45,32 +30,18 @@ export class PropertiesService {
   ): Promise<PaginatedPropertiesResponseDto> {
     const { page, limit, clientId } = query;
 
-    const [rows, total] = await this.propertiesRepository.findAndCount({
-      where: clientId ? { client_id: clientId } : {},
+    const [data, total] = await this.propertiesRepository.findAndCount({
+      where: { client_id: clientId },
       relations: { dispute_cases: true },
       // Query loading keeps joinAttributes empty, allowing TypeORM's count to
       // use COUNT(1) instead of COUNT(DISTINCT primary key), at the cost of
-      // follow-up relation queries.
+      // one follow-up query for the relation.
       relationLoadStrategy: 'query',
-      select: {
-        id: true,
-        pid: true,
-        address: true,
-        suburb: true,
-        state: true,
-        postcode: true,
-        zoning: true,
-        lot_dp: true,
-        dimensions: true,
-        land_area_sqm: true,
-        land_area_eplanning_sqm: true,
-        ownership_pct: true,
-        height_limit_m: true,
-        created_at: true,
-        // The query relation loader groups selected cases by primary key;
-        // omitting id makes this relation resolve to an empty array.
-        dispute_cases: { id: true, case_reference: true },
-      },
+      // Only the relation is narrowed — naming no root columns leaves every
+      // property column selected, which is what the list needs. id is
+      // required here: the query relation loader matches cases by primary
+      // key, so omitting it resolves the relation to an empty array.
+      select: { dispute_cases: { id: true, case_reference: true } },
       // id tiebreaker: created_at alone can tie when intake creates several
       // properties in one batch, which would shuffle rows between pages.
       order: { created_at: 'DESC', id: 'ASC' },
@@ -78,65 +49,6 @@ export class PropertiesService {
       take: limit,
     });
 
-    return {
-      data: rows.map((row) => this.toListItem(row)),
-      total,
-      page,
-      limit,
-      totalPages: Math.ceil(total / limit),
-    };
-  }
-
-  private toListItem(property: Property): PropertyListItem {
-    const landArea = this.toNumber(property.land_area_sqm);
-    const landAreaEplanning = this.toNumber(property.land_area_eplanning_sqm);
-    const ownershipPct = this.toNumber(property.ownership_pct);
-    const heightLimit = this.toNumber(property.height_limit_m);
-
-    return {
-      id: property.id,
-      // `|| null` rather than `?? null`: intake creates properties with
-      // postcode: '' (see DisputeIntakeOrchestrator.createProperty), and an
-      // empty string slips past the frontend's `value ?? '—'`, rendering a
-      // labelled but blank field instead of an em-dash.
-      pid: property.pid || null,
-      address: property.address || null,
-      locality: [property.suburb, property.state, property.postcode].filter(Boolean).join(', '),
-      zoning: property.zoning || null,
-      lot_dp: property.lot_dp || null,
-      dimensions: property.dimensions || null,
-      postcode: property.postcode || null,
-      land_area_sqm: landArea,
-      land_area_display: this.formatMeasure(landArea, 'm²'),
-      land_area_eplanning_sqm: landAreaEplanning,
-      land_area_eplanning_display: this.formatMeasure(landAreaEplanning, 'm²'),
-      ownership_pct: ownershipPct,
-      ownership_display: this.formatPercent(ownershipPct),
-      height_limit_m: heightLimit,
-      height_limit_display: this.formatMeasure(heightLimit, 'm'),
-      created_at: property.created_at,
-      added_display: DATE.format(property.created_at),
-      cases: (property.dispute_cases ?? []).map((c) => ({
-        id: c.id,
-        case_reference: c.case_reference,
-      })),
-    };
-  }
-
-  // Postgres `numeric` columns come back from `pg` as strings ("1200.00")
-  // since there's no TypeORM transformer on them — coerce before formatting,
-  // or every display string below renders "NaN".
-  private toNumber(value: number | string | null | undefined): number | null {
-    if (value === null || value === undefined) return null;
-    const n = Number(value);
-    return Number.isNaN(n) ? null : n;
-  }
-
-  private formatMeasure(value: number | null, unit: string): string | null {
-    return value === null ? null : `${NUMBER.format(value)} ${unit}`;
-  }
-
-  private formatPercent(value: number | null): string | null {
-    return value === null ? null : `${value.toFixed(2)}%`;
+    return { data, total, page, limit, totalPages: Math.ceil(total / limit) };
   }
 }
