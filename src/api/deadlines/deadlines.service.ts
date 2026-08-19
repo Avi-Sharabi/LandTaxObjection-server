@@ -2,24 +2,18 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Between, DataSource, EntityManager, FindOptionsWhere, In, LessThan, MoreThan, Not } from 'typeorm';
 import { DisputeCase } from '../dispute-cases/entities/dispute-case.entity';
 import { POST_LODGEMENT_STATUSES } from '../dispute-cases/dispute-status';
+import { auToday, addDays, daysBetween, toDateString, toDbDate } from '../../common/utils/au-date.util';
 import { DeadlineCaseResponseDto } from './dto/deadline-case-response.dto';
 import { CategorizedDeadlineResponseDto } from './dto/categorized-deadline-response.dto';
 import { GetDeadlinesQueryDto } from './dto/get-deadlines-query.dto';
 
 const SAFE_THRESHOLD_DAYS = 14;
 const APPROACHING_THRESHOLD_DAYS = 7;
-const MS_PER_DAY = 86_400_000;
 
 interface CategoryCounts {
   safeTotal: number;
   approachingTotal: number;
   urgentTotal: number;
-}
-
-function addDays(date: Date, days: number): Date {
-  const result = new Date(date);
-  result.setUTCDate(result.getUTCDate() + days);
-  return result;
 }
 
 @Injectable()
@@ -33,11 +27,10 @@ export class DeadlinesService {
     const limit = query.limit ?? 4;
     const skip  = (page - 1) * limit;
 
-    const today = new Date();
-    today.setUTCHours(0, 0, 0, 0);
+    const today = auToday();
 
-    const safeThreshold        = addDays(today, SAFE_THRESHOLD_DAYS);
-    const approachingThreshold = addDays(today, APPROACHING_THRESHOLD_DAYS);
+    const safeThreshold        = toDbDate(addDays(today, SAFE_THRESHOLD_DAYS));
+    const approachingThreshold = toDbDate(addDays(today, APPROACHING_THRESHOLD_DAYS));
 
     const baseWhere: FindOptionsWhere<DisputeCase> = {
       status: Not(In(POST_LODGEMENT_STATUSES)),
@@ -106,7 +99,7 @@ export class DeadlinesService {
     };
   }
 
-  private mapCases(cases: DisputeCase[], today: Date): DeadlineCaseResponseDto[] {
+  private mapCases(cases: DisputeCase[], today: string): DeadlineCaseResponseDto[] {
     return cases
       .map((c): DeadlineCaseResponseDto | null => {
         if (!c.client) {
@@ -118,10 +111,7 @@ export class DeadlinesService {
           return null;
         }
 
-        const deadline = new Date(c.statutory_deadline);
-        deadline.setUTCHours(0, 0, 0, 0);
-
-        const days_remaining = Math.ceil((deadline.getTime() - today.getTime()) / MS_PER_DAY);
+        const days_remaining = daysBetween(today, toDateString(c.statutory_deadline));
 
         return {
           id:                 c.id,
