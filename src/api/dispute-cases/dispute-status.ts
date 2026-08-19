@@ -154,8 +154,12 @@ const POST_ANALYSIS_STATUSES: readonly DisputeStatus[] = [
  * case_closed is a member because it is reachable from lodged statuses, but it also contains
  * never-lodged advisory closes. To ask whether a case was actually lodged, test
  * `submitted_at !== null`; see valuation-report.service.ts.
+ *
+ * Also consumed by `deadlines.service.ts` to exclude cases from statutory-deadline tracking:
+ * `statutory_deadline` is the lodgement deadline, so a case at or after lodgement has already
+ * met it and is no longer deadline-tracked.
  */
-const POST_LODGEMENT_STATUSES: readonly DisputeStatus[] = [
+export const POST_LODGEMENT_STATUSES: readonly DisputeStatus[] = [
   DisputeStatus.OBJECTION_SUBMITTED,
   DisputeStatus.VG_RESPONSE_RECEIVED,
   DisputeStatus.AI_FURTHER_SUBMISSION,

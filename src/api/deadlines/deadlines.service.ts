@@ -1,18 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Between, DataSource, EntityManager, FindOptionsWhere, In, LessThan, MoreThan, Not } from 'typeorm';
-import { DisputeCase, DisputeStatus } from '../dispute-cases/entities/dispute-case.entity';
+import { DisputeCase } from '../dispute-cases/entities/dispute-case.entity';
+import { POST_LODGEMENT_STATUSES } from '../dispute-cases/dispute-status';
 import { DeadlineCaseResponseDto } from './dto/deadline-case-response.dto';
 import { CategorizedDeadlineResponseDto } from './dto/categorized-deadline-response.dto';
 import { GetDeadlinesQueryDto } from './dto/get-deadlines-query.dto';
-
-const TERMINAL_STATUSES: DisputeStatus[] = [
-  DisputeStatus.SUBMITTED_TO_VG,
-  DisputeStatus.VG_APPROVED,
-  DisputeStatus.VG_DECLINED,
-  DisputeStatus.FOR_REVIEW,
-  DisputeStatus.CLOSED,
-  DisputeStatus.CLOSED_NO_OBJECTION,
-];
 
 const SAFE_THRESHOLD_DAYS = 14;
 const APPROACHING_THRESHOLD_DAYS = 7;
@@ -48,7 +40,7 @@ export class DeadlinesService {
     const approachingThreshold = addDays(today, APPROACHING_THRESHOLD_DAYS);
 
     const baseWhere: FindOptionsWhere<DisputeCase> = {
-      status: Not(In(TERMINAL_STATUSES)),
+      status: Not(In(POST_LODGEMENT_STATUSES)),
     };
 
     const { safeCases, approachingCases, urgentCases, safeTotal, approachingTotal, urgentTotal } =
@@ -103,7 +95,7 @@ export class DeadlinesService {
       .select('SUM(CASE WHEN d.statutory_deadline > :safe        THEN 1 ELSE 0 END)', 'safeTotal')
       .addSelect('SUM(CASE WHEN d.statutory_deadline BETWEEN :approaching AND :safe THEN 1 ELSE 0 END)', 'approachingTotal')
       .addSelect('SUM(CASE WHEN d.statutory_deadline < :approaching             THEN 1 ELSE 0 END)', 'urgentTotal')
-      .where('d.status NOT IN (:...terminalStatuses)', { terminalStatuses: TERMINAL_STATUSES })
+      .where('d.status NOT IN (:...lodgementStatuses)', { lodgementStatuses: POST_LODGEMENT_STATUSES })
       .setParameters({ safe: safeThreshold, approaching: approachingThreshold })
       .getRawOne<{ safeTotal: string; approachingTotal: string; urgentTotal: string }>();
 
