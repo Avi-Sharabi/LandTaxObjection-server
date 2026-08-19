@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { AiUpdateDatabaseModule } from './ai-update-database/update-database.module';
+import { DeadlinesModule } from './deadlines/deadlines.module';
 import { AssessmentDocumentsModule } from './assessment-documents/assessment-documents.module';
 import { ClientsModule } from './clients/clients.module';
 import { CleanupModule } from './cleanup/cleanup.module';
@@ -41,6 +42,7 @@ import { PsiImportModule } from './psi-import/psi-import.module';
     DisputeLegalGroundsModule,
     ObjectionPackageModule,
     NotificationsModule,
+    DeadlinesModule,
     PsiImportModule,
   ],
 })
