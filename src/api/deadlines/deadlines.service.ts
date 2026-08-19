@@ -1,135 +1,131 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Between, DataSource, EntityManager, FindOptionsWhere, In, LessThan, MoreThan, Not } from 'typeorm';
+import { InjectRepository } from '@nestjs/typeorm';
+import {
+  Between,
+  FindOperator,
+  In,
+  LessThan,
+  MoreThan,
+  Not,
+  Repository,
+} from 'typeorm';
 import { DisputeCase } from '../dispute-cases/entities/dispute-case.entity';
 import { POST_LODGEMENT_STATUSES } from '../dispute-cases/dispute-status';
-import { auToday, addDays, daysBetween, toDateString, toDbDate } from '../../common/utils/au-date.util';
+import {
+  addDays,
+  auToday,
+  daysBetween,
+  toDateString,
+  toDbDate,
+} from '../../common/utils/au-date.util';
 import { DeadlineCaseResponseDto } from './dto/deadline-case-response.dto';
-import { CategorizedDeadlineResponseDto } from './dto/categorized-deadline-response.dto';
-import { GetDeadlinesQueryDto } from './dto/get-deadlines-query.dto';
+import {
+  DeadlineCategory,
+  GetDeadlinesQueryDto,
+} from './dto/get-deadlines-query.dto';
+import { PaginatedDeadlinesResponseDto } from './dto/paginated-deadlines-response.dto';
 
 const SAFE_THRESHOLD_DAYS = 14;
 const APPROACHING_THRESHOLD_DAYS = 7;
 
-interface CategoryCounts {
-  safeTotal: number;
-  approachingTotal: number;
-  urgentTotal: number;
+/** safe: d > today+14 | approaching: today+7 <= d <= today+14 | urgent: d < today+7. */
+function deadlineRange(
+  category: DeadlineCategory,
+  today: string,
+): FindOperator<Date> {
+  const safeFrom = toDbDate(addDays(today, SAFE_THRESHOLD_DAYS));
+  const approachingFrom = toDbDate(addDays(today, APPROACHING_THRESHOLD_DAYS));
+  switch (category) {
+    case 'safe':
+      return MoreThan(safeFrom);
+    case 'approaching':
+      return Between(approachingFrom, safeFrom);
+    case 'urgent':
+      return LessThan(approachingFrom);
+  }
 }
 
 @Injectable()
 export class DeadlinesService {
   private readonly logger = new Logger(DeadlinesService.name);
 
-  constructor(private readonly dataSource: DataSource) {}
+  constructor(
+    @InjectRepository(DisputeCase)
+    private readonly disputeCasesRepository: Repository<DisputeCase>,
+  ) {}
 
-  async getDeadlineCases(query: GetDeadlinesQueryDto): Promise<CategorizedDeadlineResponseDto> {
-    const page  = query.page  ?? 1;
-    const limit = query.limit ?? 4;
-    const skip  = (page - 1) * limit;
-
+  async getDeadlineCases(
+    query: GetDeadlinesQueryDto,
+  ): Promise<PaginatedDeadlinesResponseDto> {
+    const { category, page, limit } = query;
     const today = auToday();
 
-    const safeThreshold        = toDbDate(addDays(today, SAFE_THRESHOLD_DAYS));
-    const approachingThreshold = toDbDate(addDays(today, APPROACHING_THRESHOLD_DAYS));
-
-    const baseWhere: FindOptionsWhere<DisputeCase> = {
-      status: Not(In(POST_LODGEMENT_STATUSES)),
-    };
-
-    const { safeCases, approachingCases, urgentCases, safeTotal, approachingTotal, urgentTotal } =
-      await this.dataSource.transaction('REPEATABLE READ', async (manager) => {
-        const [safeCases, approachingCases, urgentCases, counts] = await Promise.all([
-          this.fetchPage(manager, { ...baseWhere, statutory_deadline: MoreThan(safeThreshold) }, skip, limit, 'ASC'),
-          this.fetchPage(manager, { ...baseWhere, statutory_deadline: Between(approachingThreshold, safeThreshold) }, skip, limit, 'ASC'),
-          // ASC on urgent: lowest date (most overdue) surfaces first
-          this.fetchPage(manager, { ...baseWhere, statutory_deadline: LessThan(approachingThreshold) }, skip, limit, 'ASC'),
-          this.countAllCategories(manager, approachingThreshold, safeThreshold),
-        ]);
-
-        return { safeCases, approachingCases, urgentCases, ...counts };
-      });
-
-    return {
-      safe:               this.mapCases(safeCases, today),
-      approaching:        this.mapCases(approachingCases, today),
-      urgent:             this.mapCases(urgentCases, today),
-      safeTotal,
-      approachingTotal,
-      urgentTotal,
-      safeHasMore:        skip + limit < safeTotal,
-      approachingHasMore: skip + limit < approachingTotal,
-      urgentHasMore:      skip + limit < urgentTotal,
-    };
-  }
-
-  private fetchPage(
-    manager: EntityManager,
-    where: FindOptionsWhere<DisputeCase>,
-    skip: number,
-    limit: number,
-    order: 'ASC' | 'DESC',
-  ): Promise<DisputeCase[]> {
-    return manager.find(DisputeCase, {
-      where,
-      relations: ['client', 'property'],
-      order: { statutory_deadline: order },
+    const [rows, total] = await this.disputeCasesRepository.findAndCount({
+      where: {
+        status: Not(In(POST_LODGEMENT_STATUSES)),
+        statutory_deadline: deadlineRange(category, today),
+      },
+      relations: { client: true, property: true },
+      select: {
+        id: true,
+        case_reference: true,
+        status: true,
+        statutory_deadline: true,
+        client: { name: true },
+        property: { address: true, suburb: true, state: true, postcode: true },
+      },
+      // id breaks ties: statutory_deadline is a `date` shared by many cases (dozens of seeded
+      // rows share one date), and an unstable tie order duplicates/skips rows while scrolling.
+      order: { statutory_deadline: 'ASC', id: 'ASC' },
+      skip: (page - 1) * limit,
       take: limit,
-      skip,
     });
-  }
 
-  private async countAllCategories(
-    manager: EntityManager,
-    approachingThreshold: Date,
-    safeThreshold: Date,
-  ): Promise<CategoryCounts> {
-    const raw = await manager
-      .createQueryBuilder(DisputeCase, 'd')
-      .select('SUM(CASE WHEN d.statutory_deadline > :safe        THEN 1 ELSE 0 END)', 'safeTotal')
-      .addSelect('SUM(CASE WHEN d.statutory_deadline BETWEEN :approaching AND :safe THEN 1 ELSE 0 END)', 'approachingTotal')
-      .addSelect('SUM(CASE WHEN d.statutory_deadline < :approaching             THEN 1 ELSE 0 END)', 'urgentTotal')
-      .where('d.status NOT IN (:...lodgementStatuses)', { lodgementStatuses: POST_LODGEMENT_STATUSES })
-      .setParameters({ safe: safeThreshold, approaching: approachingThreshold })
-      .getRawOne<{ safeTotal: string; approachingTotal: string; urgentTotal: string }>();
+    const data = rows
+      .map((c) => this.toDeadlineDto(c, today))
+      .filter((c): c is DeadlineCaseResponseDto => c !== null);
 
     return {
-      safeTotal:        Number(raw?.safeTotal)        || 0,
-      approachingTotal: Number(raw?.approachingTotal) || 0,
-      urgentTotal:      Number(raw?.urgentTotal)      || 0,
+      data,
+      total,
+      page,
+      limit,
+      totalPages: Math.ceil(total / limit),
     };
   }
 
-  private mapCases(cases: DisputeCase[], today: string): DeadlineCaseResponseDto[] {
-    return cases
-      .map((c): DeadlineCaseResponseDto | null => {
-        if (!c.client) {
-          this.logger.warn(`Case ${c.id} skipped: missing client relation`);
-          return null;
-        }
-        if (!c.property) {
-          this.logger.warn(`Case ${c.id} skipped: missing property relation`);
-          return null;
-        }
+  private toDeadlineDto(
+    c: DisputeCase,
+    today: string,
+  ): DeadlineCaseResponseDto | null {
+    // Both relations are `nullable: false`, so this should be unreachable — but a soft-deleted
+    // Client is excluded via the JOIN condition, not the main WHERE, so a case whose client was
+    // soft-deleted out of band (e.g. by a hand-composed ai-update-database UPDATE) would come
+    // back with client === null. Cheap insurance against a 500 on c.client.name below.
+    if (!c.client) {
+      this.logger.warn(`Case ${c.id} skipped: missing client relation`);
+      return null;
+    }
+    if (!c.property) {
+      this.logger.warn(`Case ${c.id} skipped: missing property relation`);
+      return null;
+    }
 
-        const days_remaining = daysBetween(today, toDateString(c.statutory_deadline));
-
-        return {
-          id:                 c.id,
-          case_reference:     c.case_reference,
-          status:             c.status,
-          statutory_deadline: c.statutory_deadline,
-          days_remaining,
-          client: {
-            name: c.client.name,
-          },
-          property: {
-            address:  c.property.address,
-            suburb:   c.property.suburb,
-            state:    c.property.state,
-            postcode: c.property.postcode,
-          },
-        };
-      })
-      .filter((c): c is DeadlineCaseResponseDto => c !== null);
+    return {
+      id: c.id,
+      case_reference: c.case_reference,
+      status: c.status,
+      statutory_deadline: c.statutory_deadline,
+      days_remaining: daysBetween(today, toDateString(c.statutory_deadline)),
+      client: {
+        name: c.client.name,
+      },
+      property: {
+        address: c.property.address,
+        suburb: c.property.suburb,
+        state: c.property.state,
+        postcode: c.property.postcode,
+      },
+    };
   }
 }

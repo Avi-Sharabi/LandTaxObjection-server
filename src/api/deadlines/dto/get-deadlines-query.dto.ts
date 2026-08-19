@@ -1,20 +1,12 @@
-import { IsInt, IsOptional, Max, Min } from 'class-validator';
-import { Type } from 'class-transformer';
-import { ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty } from '@nestjs/swagger';
+import { IsIn } from 'class-validator';
+import { PaginatedQueryDto } from '../../../common/dto/paginated-query.dto';
 
-export class GetDeadlinesQueryDto {
-  @ApiPropertyOptional({ default: 1, minimum: 1 })
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  page?: number;
+export const DEADLINE_CATEGORIES = ['safe', 'approaching', 'urgent'] as const;
+export type DeadlineCategory = (typeof DEADLINE_CATEGORIES)[number];
 
-  @ApiPropertyOptional({ default: 4, minimum: 1, maximum: 50 })
-  @IsOptional()
-  @Type(() => Number)
-  @IsInt()
-  @Min(1)
-  @Max(50)
-  limit?: number;
+export class GetDeadlinesQueryDto extends PaginatedQueryDto {
+  @ApiProperty({ enum: DEADLINE_CATEGORIES })
+  @IsIn(DEADLINE_CATEGORIES)
+  category: DeadlineCategory;
 }
