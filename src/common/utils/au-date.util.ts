@@ -47,10 +47,18 @@ export function daysBetween(from: string, to: string): number {
  * Normalise a `date` column value to 'YYYY-MM-DD'. TypeORM hydrates a Postgres `date` column as
  * a string at runtime despite typing it `Date` on the entity — but seeders and in-memory test
  * fixtures often construct a real `Date` directly, so both are accepted here.
+ *
+ * The Date branch reads LOCAL getters, not `toISOString()` (which is UTC) — matching how
+ * TypeORM's own DateUtils.mixedDateToDateString round-trips a `date` column, and how toDbDate
+ * below constructs one. A UTC read here would disagree with toDbDate by a day for any positive
+ * server-local offset, e.g. if this ever ran on an Australia/Sydney-local host rather than UTC.
  */
 export function toDateString(value: Date | string): string {
   if (typeof value === 'string') return value.slice(0, 10);
-  return value.toISOString().slice(0, 10);
+  const y = value.getFullYear();
+  const m = String(value.getMonth() + 1).padStart(2, '0');
+  const d = String(value.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }
 
 /**
@@ -61,10 +69,13 @@ export function toDateString(value: Date | string): string {
  * not assignable. TypeORM's WHERE-parameter path never applies DateUtils.mixedDateToDateString
  * (that only runs on INSERT/UPDATE and result hydration); the raw Date reaches `pg`, which
  * serialises it with the Node process's LOCAL getters (getFullYear/getMonth/getDate), and
- * Postgres' date_in() then reads only the leading YYYY-MM-DD, ignoring the session timezone.
- * So the governing zone is the app server's own clock, not UTC and not Postgres' session
- * timezone — building the Date from local components (not a UTC anchor) is what makes the
- * bound value exactly `date` regardless of what timezone the server happens to run in.
+ * Postgres' date_in() then reads only the leading YYYY-MM-DD — the time-of-day and offset `pg`
+ * appends are discarded, and a bare `date` column has no timezone concept for Postgres to
+ * consult in the first place. Building the Date from local components here, then having `pg`
+ * read it back with local getters, means the two are exact inverses of each other: the server's
+ * local offset is applied and then immediately undone, so it never actually influences the
+ * calendar date that reaches Postgres — that's what makes this correct regardless of what
+ * timezone the server happens to run in, not a UTC-anchored value being "translated" correctly.
  */
 export function toDbDate(date: string): Date {
   const [y, m, d] = date.split('-').map(Number);
