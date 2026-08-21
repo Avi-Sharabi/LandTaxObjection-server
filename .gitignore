@@ -70,4 +70,5 @@ CLAUDE.md
 .env.keys
 .vscode
 
-skills-lock.json
+skills-lock.json.env
+.env
